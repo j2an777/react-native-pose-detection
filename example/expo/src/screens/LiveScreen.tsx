@@ -42,11 +42,13 @@ const MAX_POSES = ['1', '2', '3', '4', '5'] as const;
 // single subject, 0.3 above that. The numbers override it, and 0.3 is the floor worth offering
 // because below it the model returns the same body twice rather than finding a second one.
 const CONFIDENCE = ['auto', '0.3', '0.4', '0.5', '0.6', '0.7'] as const;
-// The One Euro filter is `cutoff = minCutoff + beta * speed`. minCutoff sets how hard a still body
-// is smoothed, beta how quickly that relaxes once it moves, so a low beta is what makes a skeleton
-// trail behind fast movement. Both are on the panel because the right pair is a matter of feel.
-const MIN_CUTOFF = ['0.5', '1', '2', '4'] as const;
-const BETA = ['0', '1', '4', '8', '16'] as const;
+// 'auto' is the package's own default: off for one pose, which MediaPipe already smooths, and on
+// for several. 'on' adds the package's filter anyway, with the two numbers below. It is
+// `cutoff = minCutoff + beta * speed`, speed in body spans per second: minCutoff sets how hard a
+// still body is smoothed, beta how quickly that relaxes once it moves. 0.05 and 80 are MediaPipe's.
+const SMOOTHING = ['auto', 'on', 'off'] as const;
+const MIN_CUTOFF = ['0.01', '0.05', '0.2', '1'] as const;
+const BETA = ['10', '40', '80', '160'] as const;
 
 /**
  * What the angle toggle draws when it is on.
@@ -95,9 +97,9 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   const [dataMode, setDataMode] = React.useState<(typeof DATA_MODES)[number]>('off');
   const [maxPoses, setMaxPoses] = React.useState<(typeof MAX_POSES)[number]>('1');
   const [confidence, setConfidence] = React.useState<(typeof CONFIDENCE)[number]>('auto');
-  const [smoothing, setSmoothing] = React.useState(true);
-  const [minCutoff, setMinCutoff] = React.useState<(typeof MIN_CUTOFF)[number]>('1');
-  const [beta, setBeta] = React.useState<(typeof BETA)[number]>('4');
+  const [smoothing, setSmoothing] = React.useState<(typeof SMOOTHING)[number]>('auto');
+  const [minCutoff, setMinCutoff] = React.useState<(typeof MIN_CUTOFF)[number]>('0.05');
+  const [beta, setBeta] = React.useState<(typeof BETA)[number]>('80');
   const [poseCount, setPoseCount] = React.useState(0);
   const [snapshot, setSnapshot] = React.useState<string | null>(null);
   /**
@@ -238,7 +240,13 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
         targetFps={targetFps === 'auto' ? undefined : Number(targetFps)}
         maxPoses={Number(maxPoses)}
         minConfidence={confidence === 'auto' ? undefined : Number(confidence)}
-        smoothing={smoothing ? { minCutoff: Number(minCutoff), beta: Number(beta) } : false}
+        smoothing={
+          smoothing === 'on'
+            ? { minCutoff: Number(minCutoff), beta: Number(beta) }
+            : smoothing === 'auto'
+            ? 'auto'
+            : false
+        }
         data={{ mode: dataMode }}
         onPose={dataMode === 'off' ? undefined : countFrame}
         resolution={resolution}
@@ -385,8 +393,13 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
                 <ToggleRow title="Joints" value={landmarks} onChange={setLandmarks} />
                 <ToggleRow title="Bones" value={connections} onChange={setConnections} />
                 <ToggleRow title="Angles" value={angles} onChange={setAngles} />
-                <ToggleRow title="Smoothing" value={smoothing} onChange={setSmoothing} />
-                {smoothing ? (
+                <Choice
+                  title="Smoothing"
+                  options={SMOOTHING}
+                  value={smoothing}
+                  onChange={setSmoothing}
+                />
+                {smoothing === 'on' ? (
                   <>
                     <Choice
                       title="Rest cutoff"
