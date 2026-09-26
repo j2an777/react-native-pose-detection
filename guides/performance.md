@@ -61,6 +61,9 @@ slow phone. What that gives under `auto`:
 | 40 ms | 21 | 17 | 12 |
 | 60 ms | 14 | 11 | 8 |
 
+An iPhone 15 measures 16 to 18 ms for the full model on its GPU, the first row: the camera's 30 fps
+with the GPU idle half the time.
+
 A governed rate never drops below 10 fps for a slow device, because below that the skeleton reads
 as broken; heat and idle may go lower. Low Power Mode on iOS and Battery Saver on Android cap it at
 24.

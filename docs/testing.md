@@ -87,13 +87,17 @@ once, and it runs them with nobody tapping when a launch asks it to:
 scripts/device-diagnostics.sh android          # an emulator, or a phone over adb
 scripts/device-diagnostics.sh ios              # an iPhone paired with this Mac
 scripts/device-diagnostics.sh android files    # one scenario, by id
+DELEGATE=cpu scripts/device-diagnostics.sh android startup   # hold it to one delegate
 ```
 
 The script makes a photo and a clip for the file scenario (see
 `scripts/diagnostics-media.swift`), copies them onto the device, and launches the sweep. It prints
 what the camera settled on first (model, delegate, inference p50, rate, heat), then each result
 as it lands, and saves the whole report as `diagnostics-<platform>.json`. The app has to be
-installed first; `APP_ID` picks the bare example over the Expo one. Every run is also saved on
+installed first; `APP_ID` picks the bare example over the Expo one, and with more than one device
+attached `ANDROID_SERIAL` or `DEVICE` picks the phone. Android is granted the camera by the script.
+An iPhone asks on the first run, so somebody allows it once; a sweep without the camera reports
+that as its one failure rather than timing out scenario by scenario. Every run is also saved on
 the device as `diagnostics.json` in the app's documents directory.
 
 | Scenario | What has to hold |
@@ -115,18 +119,28 @@ the device as `diagnostics.json` in the app's documents directory.
 A check that frames came back always waits to see them stop first, because the measured rate
 stays up for two seconds after the last result and would otherwise pass on the frames from before.
 
-**Where it has run.** The full sweep passes on an iPhone 15 (iOS 26.5, Release build) and on the
-Android emulator (Pixel 8a, Android 16 image). The emulator is where it found three of the bugs
-0.2.0 fixes: a view unmounting after its replacement had bound took the new camera with it,
+**Where it has run.** The full sweep passes on an iPhone 15 (iOS 26.5, Release build), a Redmi
+Note 12 (Android 15, Release build, with the file scenario from a debuggable one) and the Android
+emulator (Pixel 8a, Android 16 image). The emulator is where it found three of the bugs 0.2.0
+fixes: a view unmounting after its replacement had bound took the new camera with it,
 `onCameraChange` could reach JavaScript a moment after `switchCamera()` resolved, and the
-emulator's decoder hands frames back in decode order, which the sampler now reorders. On the
-iPhone a mount reached `onReady` in about a second, a restarted detector had frames back in about
-120 ms, and the three-second test clip was sampled in about one second. `idle` skips itself when
-anybody is in frame, so it needs the phone pointed at an empty room.
+emulator's decoder hands frames back in decode order, which the sampler now reorders. The Redmi,
+the first Android phone with a person in front of it, is where the live skeleton turned out to be
+drawn a quarter turn out, which a rendered scene with nobody in it could never show.
+
+On the iPhone the full model ran on the GPU at 16 to 18 ms per inference and held the camera's 30
+fps, a mount reached `onReady` in about a second, a restarted detector had frames back in about
+120 ms, and the three-second test clip was sampled in about one second. The Redmi is a low-end
+phone: the full model costs it about 120 ms on the GPU and 195 ms on the CPU, so it runs at the
+10 fps floor, and building the GPU landmarker adds over a second to every mount. `idle` skips
+itself when anybody is in frame, so it needs the phone pointed at an empty room.
 
 The emulator proves lifecycle and correctness, not speed or heat: its camera is a rendered scene,
 it runs MediaPipe on emulated hardware, and its timings move with whatever else the host is doing.
-Rates, heat and the ten-minute soak are for a real phone.
+Its camera service also sometimes fails a camera reopened within a second of the last one
+closing: CameraX reports it unavailable and does not retry, so `startup` can fail there with the
+camera saying it is active at 0 fps. The same scenario passes on both phones. Rates, heat and the
+ten-minute soak are for a real phone.
 
 ### Driven from the host
 
