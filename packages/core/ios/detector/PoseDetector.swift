@@ -52,16 +52,6 @@ final class PoseDetector {
   private static let dispatchSlots = 8
   private static let probeSize: CGFloat = 256
 
-  /// MediaPipe's own default, and what one subject in a file is detected at.
-  static let defaultStillConfidence: Float = 0.5
-  /// Asking for more than one body needs a lower bar, or the model returns one however high it is.
-  static let multiPoseStillConfidence: Float = 0.3
-
-  /// The threshold `maxPoses` implies when the caller has not chosen one.
-  static func stillConfidence(forMaxPoses maxPoses: Int) -> Float {
-    return maxPoses > 1 ? multiPoseStillConfidence : defaultStillConfidence
-  }
-
   private let landmarker: PoseLandmarker
   /// Held strongly here and weakly by the landmarker, which is what keeps it alive to be called.
   private let relay: LiveStreamRelay?
@@ -193,18 +183,20 @@ extension PoseDetector {
   }
 
   /**
-   A detector for a file rather than a camera. CPU rather than the GPU probe: a still input runs
-   once, and the probe would cost more than the inference it is choosing for.
+   A detector for a file rather than a camera. The CPU unless the caller has decided otherwise: a
+   photo is one inference, and compiling the GPU's shaders costs more than running it. See
+   `FileDetector` for when a video gets the GPU.
    */
   static func createForStillInput(
     modelPath: String,
     maxPoses: Int,
-    minConfidence: Float = defaultStillConfidence,
-    video: Bool
+    minConfidence: Float = StillConfidence.single,
+    video: Bool,
+    delegateKind: Delegate = .CPU
   ) throws -> PoseDetector {
     let landmarker = try build(LandmarkerSpec(
       modelPath: modelPath,
-      delegateKind: .CPU,
+      delegateKind: delegateKind,
       maxPoses: maxPoses,
       minConfidence: minConfidence,
       runningMode: video ? .video : .image
@@ -212,7 +204,7 @@ extension PoseDetector {
     return PoseDetector(
       landmarker: landmarker,
       relay: nil,
-      delegateKind: .CPU,
+      delegateKind: delegateKind,
       modelFileName: fileName(from: modelPath)
     )
   }
@@ -261,7 +253,7 @@ extension PoseDetector {
     return detector
   }
 
-  private static var isSimulator: Bool {
+  static var isSimulator: Bool {
     #if targetEnvironment(simulator)
     return true
     #else

@@ -93,39 +93,32 @@ internal class PoseDetector private constructor(
     ): PoseLandmarkerResult = landmarker.detectForVideo(image, timestampMs)
 
     companion object {
-        /** MediaPipe's own default, and what one subject in a file is detected at. */
-        const val DEFAULT_STILL_CONFIDENCE = 0.5f
-
-        /** Asking for more than one body needs a lower bar, or the model returns one however high it is. */
-        const val MULTI_POSE_STILL_CONFIDENCE = 0.3f
-
-        /** The threshold `maxPoses` implies when the caller has not chosen one. */
-        fun stillConfidence(maxPoses: Int): Float =
-            if (maxPoses > 1) MULTI_POSE_STILL_CONFIDENCE else DEFAULT_STILL_CONFIDENCE
-
         /**
-         * A detector for a file rather than a camera. CPU rather than the GPU probe: a still input
-         * runs once, and the probe would cost more than the inference it is choosing for.
+         * A detector for a file rather than a camera. The CPU unless the caller has decided
+         * otherwise: a photo is one inference, and compiling the GPU's shaders costs more than
+         * running it. See [FileDetector] for when a video gets the GPU.
          */
+        @Suppress("LongParameterList")
         fun createForStillInput(
             context: Context,
             modelFileName: String,
             maxPoses: Int,
             video: Boolean,
-            minConfidence: Float = DEFAULT_STILL_CONFIDENCE,
+            minConfidence: Float = StillConfidence.SINGLE,
+            delegate: Delegate = Delegate.CPU,
         ): PoseDetector {
             val landmarker =
                 build(
                     context = context,
                     modelFileName = modelFileName,
-                    delegate = Delegate.CPU,
+                    delegate = delegate,
                     maxPoses = maxPoses,
                     minConfidence = minConfidence,
                     runningMode = if (video) RunningMode.VIDEO else RunningMode.IMAGE,
                     onResult = null,
                     onError = null,
                 )
-            return PoseDetector(landmarker, Delegate.CPU, modelFileName)
+            return PoseDetector(landmarker, delegate, modelFileName)
         }
 
         /** The plugin installs exactly one model, so listing beats being told which variant. */

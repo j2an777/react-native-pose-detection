@@ -266,43 +266,6 @@ internal class ExportGl(
         return ids[0]
     }
 
-    private fun buildProgram(
-        vertex: String,
-        fragment: String,
-    ): Int {
-        val program = GLES20.glCreateProgram()
-        GLES20.glAttachShader(program, compile(GLES20.GL_VERTEX_SHADER, vertex))
-        GLES20.glAttachShader(program, compile(GLES20.GL_FRAGMENT_SHADER, fragment))
-        GLES20.glLinkProgram(program)
-
-        val linked = IntArray(1)
-        GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0)
-        check(linked[0] != 0) { "could not link the export shader: ${GLES20.glGetProgramInfoLog(program)}" }
-        return program
-    }
-
-    private fun compile(
-        type: Int,
-        source: String,
-    ): Int {
-        val shader = GLES20.glCreateShader(type)
-        GLES20.glShaderSource(shader, source)
-        GLES20.glCompileShader(shader)
-
-        val compiled = IntArray(1)
-        GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0)
-        check(compiled[0] != 0) { "could not compile the export shader: ${GLES20.glGetShaderInfoLog(shader)}" }
-        return shader
-    }
-
-    private fun quadFor(rotationDegrees: Int): FloatArray =
-        when (((rotationDegrees % 360) + 360) % 360) {
-            90 -> QUAD_90
-            180 -> QUAD_180
-            270 -> QUAD_270
-            else -> QUAD_0
-        }
-
     private fun floatBuffer(values: FloatArray): FloatBuffer =
         ByteBuffer
             .allocateDirect(values.size * Float.SIZE_BYTES)
@@ -313,11 +276,52 @@ internal class ExportGl(
                 position(0)
             }
 
-    private companion object {
-        const val EGL_RECORDABLE_ANDROID = 0x3142
+    companion object {
+        private const val EGL_RECORDABLE_ANDROID = 0x3142
+
+        /** Long enough for any real decoder, short enough that one that stalls does not hang a job. */
         const val FRAME_TIMEOUT_MS = 2_500L
         const val MATRIX_SIZE = 16
         const val QUAD_FLOATS = 8
+
+        /** Shared with the video sampler, which draws the same decoded frames through the same quads. */
+        fun buildProgram(
+            vertex: String,
+            fragment: String,
+        ): Int {
+            val program = GLES20.glCreateProgram()
+            GLES20.glAttachShader(program, compile(GLES20.GL_VERTEX_SHADER, vertex))
+            GLES20.glAttachShader(program, compile(GLES20.GL_FRAGMENT_SHADER, fragment))
+            GLES20.glLinkProgram(program)
+
+            val linked = IntArray(1)
+            GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0)
+            check(linked[0] != 0) { "could not link the export shader: ${GLES20.glGetProgramInfoLog(program)}" }
+            return program
+        }
+
+        private fun compile(
+            type: Int,
+            source: String,
+        ): Int {
+            val shader = GLES20.glCreateShader(type)
+            GLES20.glShaderSource(shader, source)
+            GLES20.glCompileShader(shader)
+
+            val compiled = IntArray(1)
+            GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, compiled, 0)
+            check(compiled[0] != 0) { "could not compile the export shader: ${GLES20.glGetShaderInfoLog(shader)}" }
+            return shader
+        }
+
+        /** The quad that draws a frame stored at [rotationDegrees] upright. */
+        fun quadFor(rotationDegrees: Int): FloatArray =
+            when (((rotationDegrees % 360) + 360) % 360) {
+                90 -> QUAD_90
+                180 -> QUAD_180
+                270 -> QUAD_270
+                else -> QUAD_0
+            }
 
         /**
          * A triangle strip: bottom left, bottom right, top left, top right. Rotating these rather

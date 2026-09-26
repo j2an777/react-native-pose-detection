@@ -13,6 +13,7 @@ import com.posedetection.PoseLog
 import com.posedetection.Skeleton
 import com.posedetection.detector.PoseDetector
 import com.posedetection.detector.StaticDetection
+import com.posedetection.detector.StillImage
 import com.posedetection.view.ContentFit
 import com.posedetection.view.OverlayProjection
 import com.posedetection.view.OverlayRenderer
@@ -29,15 +30,17 @@ import java.util.concurrent.atomic.AtomicBoolean
  * not a footnote to it, and it is bought four ways:
  *
  * 1. **Its own detector.** Never the camera's landmarker. Built here, used here, closed here.
- * 2. **CPU inference, always.** [PoseDetector.createForStillInput] asks for the CPU delegate, so an
- *    export cannot contend with the camera for the GPU its own inference is running on. Slower per
- *    frame, and entirely out of the way, which is the trade this package wants: an export has no
- *    deadline and a preview has one thirty times a second. The video pixel path does use the
- *    hardware codec, because that is the platform's cheap path and the alternative, converting
- *    every frame in Kotlin, would compete for far more CPU than the codec ever does for GPU.
+ * 2. **Never the GPU while a camera is detecting.** A video runs inference on the GPU only when no
+ *    camera is running inference and this device's GPU check passed, and on the CPU otherwise, so
+ *    an export cannot contend with a preview for the GPU its own inference runs on. See
+ *    [com.posedetection.detector.FileDetector]. A photo is one inference and always runs on the
+ *    CPU. The video pixel path uses the hardware codec and GL, because that is the platform's
+ *    cheap path and the alternative, converting every frame in Kotlin, would compete for far more
+ *    CPU than the codec ever does for GPU.
  * 3. **A single background thread at low priority.** Serial, so two exports queue up behind each
  *    other instead of ganging up on the camera, and below the camera's own threads so the
- *    scheduler starves the export first.
+ *    scheduler starves the export first. Heat slows it further, see
+ *    [com.posedetection.performance.FilePacer].
  * 4. **Bounded memory.** One frame decoded at a time, one buffer encoded at a time, nothing
  *    accumulated. A long video costs what a short one costs, which is what keeps an export from
  *    ending as a memory-pressure kill of the camera it was running beside.
@@ -111,8 +114,13 @@ internal object PoseExport {
         options: ExportOptions,
         onProgress: (Float) -> Unit,
     ): ExportSummary {
-        val source =
-            StaticDetection.loadBitmap(context, uri)
+        // Detection first, on a picture no larger than it needs, freed before the one that is
+        // painted is decoded: a full-size export of a 48-megapixel photo never holds both. At the
+        // default size the two are the same decode, and it is done once.
+        val paintMax = options.maxSize.takeIf { it > 0 }
+        val shared = paintMax != null && paintMax <= StillImage.DETECTION_MAX_PIXELS
+        val detectable =
+            StillImage.decode(context, uri, if (shared) paintMax else StillImage.DETECTION_MAX_PIXELS)
                 ?: throw ExportError("could not read an image from $uri")
 
         var detector: PoseDetector? = null
@@ -126,11 +134,22 @@ internal object PoseExport {
                     video = false,
                     minConfidence = options.minConfidence,
                 )
-            result = detector.detectImage(BitmapImageBuilder(source).build())
+            result = detector.detectImage(BitmapImageBuilder(detectable).build())
+        } catch (error: Throwable) {
+            detectable.recycle()
+            throw error
         } finally {
             detector?.close()
         }
         onProgress(0.6f)
+
+        val source =
+            if (shared) {
+                detectable
+            } else {
+                detectable.recycle()
+                StillImage.decode(context, uri, paintMax) ?: throw ExportError("could not read an image from $uri")
+            }
 
         val canvas = ExportCanvas.size(source.width, source.height, options.maxSize)
         val painted = Bitmap.createBitmap(canvas[0], canvas[1], Bitmap.Config.ARGB_8888)

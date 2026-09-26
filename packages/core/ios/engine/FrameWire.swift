@@ -17,7 +17,7 @@ enum DataMode {
 }
 
 /**
- The layout of `src/wire.ts`, restated. Every block length is derivable from the header, so a drain
+ The layout of `src/frames/wire.ts`, restated. Every block length is derivable from the header, so a drain
  that arrives after the props that shaped it changed is decoded correctly or rejected. Any
  divergence from the TypeScript constants is a bug even when each side looks right alone.
  */

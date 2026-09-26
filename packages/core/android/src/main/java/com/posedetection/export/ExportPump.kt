@@ -6,6 +6,9 @@ import android.graphics.PorterDuff
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaMuxer
+import com.posedetection.LogCategory
+import com.posedetection.PoseLog
+import com.posedetection.performance.FilePacer
 import com.posedetection.view.ContentFit
 import com.posedetection.view.OverlayProjection
 import com.posedetection.view.OverlayRenderer
@@ -88,6 +91,7 @@ internal class OverlayPainter(
  * thread also means one place to check for cancellation, and no chance of a codec being released
  * from under a thread still using it.
  */
+@Suppress("LongParameterList")
 internal class ExportPump(
     private val decoder: MediaCodec,
     private val encoder: MediaCodec,
@@ -95,12 +99,13 @@ internal class ExportPump(
     private val gl: ExportGl,
     private val audio: ExportAudio?,
     private val cancelled: AtomicBoolean,
+    private val pacer: FilePacer,
 ) {
     /** The last presentation time written, which is the export's real duration. */
     var lastTimeUs = 0L
         private set
 
-    private var cursor = 0
+    private var warnedOrder = false
 
     fun run(
         extractor: MediaExtractor,
@@ -125,7 +130,17 @@ internal class ExportPump(
             if (!decodeDone) {
                 val index = decoder.dequeueOutputBuffer(info, TIMEOUT_US)
                 if (index >= 0) {
-                    val render = info.size > 0
+                    // A decoder that hands frames back in decode order, as the emulator's does
+                    // with B-frames, would take the file's time backwards. Those frames are
+                    // dropped rather than written out of order, which a player cannot play.
+                    val backwards = frames > 0 && info.presentationTimeUs <= lastTimeUs
+                    if (backwards && !warnedOrder) {
+                        warnedOrder = true
+                        PoseLog.warn(LogCategory.ENGINE) {
+                            "the decoder returns frames out of order, so the export skips the late ones"
+                        }
+                    }
+                    val render = info.size > 0 && !backwards
                     decoder.releaseOutputBuffer(index, render)
                     if (render && gl.awaitFrame()) {
                         gl.drawFrame(rotation)
@@ -136,6 +151,8 @@ internal class ExportPump(
                         lastTimeUs = info.presentationTimeUs
                         audio?.drain(muxer, info.presentationTimeUs)
                         if (durationUs > 0) onProgress(info.presentationTimeUs.toFloat() / durationUs)
+                        // Heat slows the picture pass the same way it slows detection.
+                        if (!pacer.rest { cancelled.get() }) throw ExportCancelled()
                     }
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                         decodeDone = true
@@ -217,16 +234,21 @@ internal class ExportPump(
     }
 
     /**
-     * The pose that belongs to this moment, by walking rather than searching: the transcode moves
-     * forward, so this is one comparison per frame in the common case.
+     * The latest pose at or before this moment, or the first one before any was detected. A binary
+     * search rather than a walk forward, so a frame that arrives out of order still gets its own.
      */
     private fun poseAt(
         poses: List<Pose>,
         timeMs: Long,
     ): Int {
         if (poses.isEmpty()) return -1
-        while (cursor + 1 < poses.size && poses[cursor + 1].timeMs <= timeMs) cursor++
-        return cursor
+        var low = 0
+        var high = poses.size - 1
+        while (low < high) {
+            val middle = (low + high + 1) / 2
+            if (poses[middle].timeMs <= timeMs) low = middle else high = middle - 1
+        }
+        return low
     }
 
     private fun MediaExtractor.trackDuration(): Long {

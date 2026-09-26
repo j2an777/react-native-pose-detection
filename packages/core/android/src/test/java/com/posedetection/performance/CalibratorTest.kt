@@ -169,4 +169,33 @@ class CalibratorTest {
         assertEquals(false, second.gpuVerdict)
         assertEquals("a verdict without a measurement is not a cached rate", Calibrator.Phase.CALIBRATING, second.phase)
     }
+
+    @Test
+    fun `a file job's verdict reaches the camera and leaves its measurement alone`() {
+        val camera = make()
+        camera.start(model)
+        feed(camera, 20f, 300, 1_000)
+        camera.persist()
+        assertNull(make().cachedGpu(model))
+
+        make().storeGpu(true, model)
+        assertEquals(true, make().cachedGpu(model))
+
+        val next = make()
+        next.start(model)
+        assertEquals(true, next.gpuVerdict)
+        assertEquals("the measurement survives the file job's write", 20f, next.p50InferenceMs)
+    }
+
+    @Test
+    fun `a camera that never probed keeps the verdict a file job recorded`() {
+        val camera = make()
+        camera.start(model)
+        // Recorded while the camera runs, so the camera's own copy of the verdict is still null.
+        make().storeGpu(false, model)
+        feed(camera, 20f, 300, 1_000)
+        assertNull(camera.gpuVerdict)
+        camera.persist()
+        assertEquals(false, make().cachedGpu(model))
+    }
 }

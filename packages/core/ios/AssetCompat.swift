@@ -4,10 +4,10 @@ import CoreMedia
 /**
  The asset reads that iOS 16 replaced with async ones, in the only place they are allowed to live.
 
- `duration`, `tracks(withMediaType:)`, `preferredTransform`, `naturalSize`, `formatDescriptions` and
- `AVAssetImageGenerator.copyCGImage` all became `load(_:)` and `image(at:)` in iOS 16. None of the
- replacements exist on 15.1, which is the floor React Native 0.74 sets and this package's
- `peerDependencies` inherit, so the old calls are still the ones that run.
+ `duration`, `tracks(withMediaType:)`, `preferredTransform`, `naturalSize` and `formatDescriptions`
+ all became `load(_:)` in iOS 16. None of the replacements exist on 15.1, which is the floor React
+ Native 0.74 sets and this package's `peerDependencies` inherit, so the old calls are still the
+ ones that run.
 
  Every one of them warns, and that is the point of this file: the warnings are the cost of the
  support floor rather than an oversight, so they are gathered here where one comment explains all of
@@ -39,9 +39,5 @@ enum AssetCompat {
   /// is a compile error because it can never fail.
   static func formatDescription(_ track: AVAssetTrack) -> CMFormatDescription? {
     return (track.formatDescriptions as? [CMFormatDescription])?.first
-  }
-
-  static func copyFrame(from generator: AVAssetImageGenerator, at time: CMTime) -> CGImage? {
-    return try? generator.copyCGImage(at: time, actualTime: nil)
   }
 }

@@ -3,52 +3,13 @@ import Foundation
 import MediaPipeTasksVision
 import UIKit
 
-/// What `detectOnImage` and `detectOnVideo` were asked for. Defaults from `guides/static-input.md`.
-struct StaticOptions {
-  let maxPoses: Int
-  let angles: Bool
-  let worldLandmarks: Bool
-  let smoothing: Bool
-  let fps: Int
-  let startMs: Int64
-  let endMs: Int64
-
-  static func forImage(_ raw: [String: Any]?) -> StaticOptions {
-    return StaticOptions(
-      maxPoses: count(raw?["maxPoses"], 1),
-      angles: JS.bool(raw?["angles"]) ?? true,
-      worldLandmarks: JS.bool(raw?["worldLandmarks"]) ?? false,
-      // A single frame has nothing to smooth against, so this is off whatever was asked.
-      smoothing: false,
-      fps: 0,
-      startMs: 0,
-      endMs: 0
-    )
-  }
-
-  static func forVideo(_ raw: [String: Any]?) -> StaticOptions {
-    return StaticOptions(
-      maxPoses: count(raw?["maxPoses"], 1),
-      angles: JS.bool(raw?["angles"]) ?? true,
-      worldLandmarks: JS.bool(raw?["worldLandmarks"]) ?? false,
-      // JavaScript resolves `'auto'` against `maxPoses`. VIDEO mode already smooths one pose.
-      smoothing: JS.bool(raw?["smoothing"]) ?? false,
-      fps: count(raw?["fps"], 10),
-      startMs: max(0, JS.int64(raw?["startMs"]) ?? 0),
-      endMs: JS.int64(raw?["endMs"]) ?? -1
-    )
-  }
-
-  private static func count(_ value: Any?, _ fallback: Int) -> Int {
-    guard let number = JS.int(value) else { return fallback }
-    return max(1, number)
-  }
-}
-
+/// A file job's failure, carrying the code its promise rejects with.
 struct StaticDetectionError: LocalizedError {
+  let code: ErrorCode
   let message: String
 
-  init(_ message: String) {
+  init(_ code: ErrorCode, _ message: String) {
+    self.code = code
     self.message = message
   }
 
@@ -60,15 +21,19 @@ struct StaticDetectionError: LocalizedError {
 /**
  The same detector, without a camera.
 
- Neither of these calibrates or paces itself. There is no live frame budget to hit: a still image
- has no next frame to be late for, and a video job is already as slow as decoding makes it.
+ Nothing here calibrates: a file has no frame budget to hit, so it always runs at full quality. What
+ it does answer to is heat, through `FilePacer`, and to the camera, through `FileDetector`'s choice
+ of delegate.
  */
 enum StaticDetection {
-  private static let millisPerSecond: Int64 = 1_000
-  private static let timescale: CMTimeScale = 1_000
+  private static let millisPerSecond: Double = 1_000
 
-  /// Sampling is even, so the filter is fed the interval it was actually sampled at.
-  private static let sampleIntervalSeconds: Float = 0.1
+  /**
+   Where photo and video detection run: serial, below the camera's own queue, and this package's
+   own. Expo runs every module's async functions on one shared queue, so a video job there held up
+   every other module in the app for as long as it ran.
+   */
+  static let queue = DispatchQueue(label: "com.posedetection.files", qos: .utility)
 
   private static let running = CancelRegistry()
 
@@ -76,15 +41,16 @@ enum StaticDetection {
     running.cancel(taskId)
   }
 
-  /// One entry per detected pose, so a two-person photo decodes to two frames.
+  /// One entry per detected pose, the subject first, so a two-person photo decodes to two frames.
   static func detectImage(
     uri: String,
     options: StaticOptions,
     angleJoints: [String],
     selection: [Int]?
   ) throws -> Data {
-    guard let image = loadImage(uri: uri) else {
-      throw StaticDetectionError("could not read an image from \(uri)")
+    guard let source = StillImage.source(uri: uri),
+          let image = StillImage.decode(source, maxPixels: StillImage.detectionMaxPixels) else {
+      throw StaticDetectionError(.imageDecodeFailed, "could not read an image from \(uri)")
     }
     let shape = shapeFor(options, angleJoints: angleJoints, selection: selection)
 
@@ -93,27 +59,25 @@ enum StaticDetection {
     let detector = try PoseDetector.createForStillInput(
       modelPath: try requireModel(),
       maxPoses: options.maxPoses,
+      minConfidence: options.minConfidence,
       video: false
     )
-    let result = try detector.detectImage(try MPImage(uiImage: image))
+    let result = try detector.detectImage(try MPImage(uiImage: UIImage(cgImage: image)))
 
-    let width = Int(image.size.width * image.scale)
-    let height = Int(image.size.height * image.scale)
-    var frames = [[Float]]()
-    frames.reserveCapacity(result.landmarks.count)
-    for index in result.landmarks.indices {
-      frames.append(encodePose(result, poseIndex: index, shape: shape, width: width, height: height, smoothing: nil))
+    let poses = PoseExport.poses(result)
+    let subject = poses.count > 1 ? PoseBox.primary(poses.map { PoseBox($0) }) : 0
+    let order = poses.isEmpty ? [] : [subject] + poses.indices.filter { $0 != subject }
+    let size = CGSize(width: image.width, height: image.height)
+    let frames = order.map { index in
+      encode(poses[index], result: result, poseIndex: index, shape: shape, size: size, velocity: (.nan, .nan))
     }
     return write(shape: shape, frames: frames, timestamps: [Double](repeating: 0, count: frames.count))
   }
 
   /**
    Sampled at `fps`, not at the video's own rate, and run through VIDEO mode with monotonic
-   timestamps so temporal tracking behaves the way it does live.
-
-   Sequential rather than `generateCGImagesAsynchronously`, which would decode in parallel but
-   deliver out of order: VIDEO mode rejects a timestamp that goes backwards, so the order is the
-   requirement and the parallelism is not available.
+   timestamps so temporal tracking behaves the way it does live. Each frame carries its real
+   position in the video, which is what smoothing and velocity are measured against.
    */
   static func detectVideo(
     uri: String,
@@ -125,93 +89,66 @@ enum StaticDetection {
   ) throws -> Data {
     running.begin(taskId)
     defer { running.end(taskId) }
+    let isCancelled = { running.isCancelled(taskId) }
 
     guard let url = URL(string: uri) ?? URL(string: "file://\(uri)") else {
-      throw StaticDetectionError("could not read a video from \(uri)")
+      throw StaticDetectionError(.videoDecodeFailed, "could not read a video from \(uri)")
     }
-    let asset = AVURLAsset(url: url)
-    let generator = AVAssetImageGenerator(asset: asset)
-    generator.appliesPreferredTrackTransform = true
-    // The sample times are already spaced by the requested fps, so snapping to the nearest keyframe
-    // within half a step is free accuracy nobody asked for and decodes far faster.
-    let tolerance = CMTime(value: CMTimeValue(millisPerSecond / Int64(max(1, options.fps)) / 2), timescale: timescale)
-    generator.requestedTimeToleranceBefore = tolerance
-    generator.requestedTimeToleranceAfter = tolerance
-
+    let sampler = try VideoFrameSampler(url: url, fps: options.fps, startMs: options.startMs, endMs: options.endMs)
     let shape = shapeFor(options, angleJoints: angleJoints, selection: selection)
-    let smoothing = options.smoothing ? OneEuroFilter() : nil
-    let detector = try PoseDetector.createForStillInput(
+    let detector = try FileDetector(
       modelPath: try requireModel(),
       maxPoses: options.maxPoses,
-      video: true
+      minConfidence: options.minConfidence
     )
+    let pacer = FilePacer()
+    let frames = UprightFrames(orientation: sampler.orientation, size: sampler.size)
+    var tracker = VideoTracker(fps: options.fps, smoothing: options.smoothing, size: sampler.size)
 
-    let durationMs = durationMilliseconds(of: asset)
-    let start = min(options.startMs, durationMs)
-    let end = (options.endMs >= 1 && options.endMs <= durationMs) ? options.endMs : durationMs
-    let stepMs = max(1, millisPerSecond / Int64(max(1, options.fps)))
-    let span = max(1, end - start)
-
-    var frames = [[Float]]()
+    var encoded = [[Float]]()
     var timestamps = [Double]()
-    var positionMs = start
+    var lastTimestamp = -1
 
-    while positionMs <= end && !running.isCancelled(taskId) {
-      // The decoded frame, the MPImage over it and everything MediaPipe allocates behind them are
-      // autoreleased, and this loop never returns to a run loop, so without a pool per sample a
-      // long clip holds every frame it has decoded until the whole video is done.
+    while !isCancelled() {
+      guard let frame = try sampler.next() else { break }
+      // MPImage and everything MediaPipe allocates behind it are autoreleased, and this loop never
+      // returns to a run loop, so without a pool per sample a long clip holds every one of them.
       try autoreleasepool {
-        let time = CMTime(value: CMTimeValue(positionMs), timescale: timescale)
-        guard let cgImage = copyFrame(from: generator, at: time) else { return }
-        let image = UIImage(cgImage: cgImage)
-        let result = try detector.detectVideo(try MPImage(uiImage: image), timestampMs: Int(positionMs))
-        guard !result.landmarks.isEmpty else { return }
-        frames.append(encodePose(
-          result,
-          poseIndex: 0,
-          shape: shape,
-          width: cgImage.width,
-          height: cgImage.height,
-          smoothing: smoothing
-        ))
-        timestamps.append(Double(positionMs))
+        // VIDEO mode rejects a timestamp that does not move forward, and a variable frame rate clip
+        // can hand back two frames on the same millisecond.
+        let timestamp = max(Int(frame.timestampMs), lastTimestamp + 1)
+        lastTimestamp = timestamp
+        guard let upright = frames.upright(frame.buffer) else {
+          PoseLog.warn(.engine, "the frame at \(frame.timestampMs) ms could not be turned upright")
+          return
+        }
+        let result = try detector.detect(try MPImage(pixelBuffer: upright, orientation: .up), timestampMs: timestamp)
+        if let pose = tracker.encode(result, shape: shape, atMs: Double(frame.timestampMs)) {
+          encoded.append(pose)
+          timestamps.append(Double(frame.timestampMs))
+        } else {
+          PoseLog.debug(.engine, "nobody found at \(frame.timestampMs) ms")
+        }
       }
-
-      onProgress(min(1, max(0, Float(positionMs - start) / Float(span))))
-      positionMs += stepMs
+      onProgress(sampler.progress(of: frame))
+      if !pacer.rest(isCancelled: isCancelled) { break }
     }
 
     onProgress(1)
-    return write(shape: shape, frames: frames, timestamps: timestamps)
+    return write(shape: shape, frames: encoded, timestamps: timestamps)
   }
 
   // MARK: - Decoding
 
-  /// Both reads are deprecated in iOS 16 and both still run on the 15.1 floor. See `AssetCompat`.
-  static func copyFrame(from generator: AVAssetImageGenerator, at time: CMTime) -> CGImage? {
-    return AssetCompat.copyFrame(from: generator, at: time)
-  }
-
   static func durationMilliseconds(of asset: AVURLAsset) -> Int64 {
     let seconds = AssetCompat.durationSeconds(asset)
     guard seconds.isFinite, seconds > 0 else { return 0 }
-    return Int64(seconds * Double(millisPerSecond))
-  }
-
-  static func loadImage(uri: String) -> UIImage? {
-    guard let url = URL(string: uri), url.scheme != nil else {
-      return UIImage(contentsOfFile: uri)
-    }
-    if url.isFileURL {
-      return UIImage(contentsOfFile: url.path)
-    }
-    guard let data = try? Data(contentsOf: url) else { return nil }
-    return UIImage(data: data)
+    return Int64(seconds * millisPerSecond)
   }
 
   static func requireModel() throws -> String {
     guard let path = PoseDetector.findModelPath() else {
-      throw StaticDetectionError("No pose model is bundled. Run the CLI or prebuild first.")
+      throw StaticDetectionError(.modelNotFound, "No pose model is bundled. Run the CLI or prebuild first.")
     }
     return path
   }
@@ -227,28 +164,14 @@ enum StaticDetection {
   }
 
   /// The same block order the live path writes, because it is the same decoder on the other side.
-  private static func encodePose(
-    _ result: PoseLandmarkerResult,
+  static func encode(
+    _ landmarks: [Float],
+    result: PoseLandmarkerResult,
     poseIndex: Int,
     shape: FrameShape,
-    width: Int,
-    height: Int,
-    smoothing: OneEuroFilter?
+    size: CGSize,
+    velocity: (x: Float, y: Float)
   ) -> [Float] {
-    var landmarks = [Float](repeating: 0, count: Skeleton.landmarkCount * Skeleton.landmarkStride)
-    let pose = result.landmarks[poseIndex]
-
-    for index in 0..<min(Skeleton.landmarkCount, pose.count) {
-      let point = pose[index]
-      let base = index * Skeleton.landmarkStride
-      landmarks[base] = point.x
-      landmarks[base + 1] = point.y
-      landmarks[base + 2] = point.z
-      landmarks[base + 3] = point.visibility?.floatValue ?? 0
-    }
-
-    smoothing?.apply(to: &landmarks, elapsedSeconds: sampleIntervalSeconds)
-
     var frame = [Float](repeating: 0, count: shape.floatsPerFrame)
     var cursor = 0
 
@@ -279,17 +202,16 @@ enum StaticDetection {
         proximal: triple[0],
         vertex: triple[1],
         distal: triple[2],
-        frameWidth: width,
-        frameHeight: height
+        frameWidth: Int(size.width),
+        frameHeight: Int(size.height)
       )
       cursor += 1
     }
 
     Geometry.centerOfMass(landmarks, into: &frame, at: cursor)
     cursor += 2
-    // Velocity needs a previous frame this path does not keep. Unknown, not zero.
-    frame[cursor] = .nan
-    frame[cursor + 1] = .nan
+    frame[cursor] = velocity.x
+    frame[cursor + 1] = velocity.y
     cursor += 2
     frame[cursor] = Geometry.bodySpan(landmarks)
 
@@ -317,5 +239,55 @@ enum StaticDetection {
       )
     }
     return buffer
+  }
+}
+
+/**
+ The subject of a video, followed from one sampled frame to the next: the same rules the live view
+ applies. The largest body is the subject, smoothing and velocity are measured against real
+ timestamps, and both start over when the subject is lost, changes, or a gap opens (see
+ `PoseTrack`).
+ */
+struct VideoTracker {
+  private var track: PoseTrack
+  private let smoothing: OneEuroFilter?
+  private let size: CGSize
+
+  init(fps: Int, smoothing: Bool, size: CGSize) {
+    track = PoseTrack(sampleFps: fps)
+    self.smoothing = smoothing ? OneEuroFilter() : nil
+    self.size = size
+  }
+
+  /// The subject's frame, or nil when nobody was found.
+  mutating func encode(_ result: PoseLandmarkerResult, shape: FrameShape, atMs timestampMs: Double) -> [Float]? {
+    let poses = PoseExport.poses(result)
+    guard !poses.isEmpty else {
+      track.lose()
+      return nil
+    }
+    let boxes = poses.map { PoseBox($0) }
+    let subject = poses.count > 1 ? PoseBox.primary(boxes) : 0
+    var landmarks = poses[subject]
+    let elapsed = track.advance(boxes[subject], atMs: timestampMs)
+
+    if let smoothing = smoothing {
+      // Speed in body spans, as live: x is normalized by width, so its span is scaled to it.
+      let span = Geometry.bodySpan(landmarks)
+      let aspect = size.width > 0 ? Float(size.height / size.width) : 1
+      smoothing.apply(to: &landmarks, elapsedSeconds: elapsed ?? .nan, scaleX: span * aspect, scaleY: span)
+    }
+
+    var center = [Float](repeating: 0, count: 2)
+    Geometry.centerOfMass(landmarks, into: &center, at: 0)
+    let velocity = track.velocity(comX: center[0], comY: center[1], elapsed: elapsed)
+    return StaticDetection.encode(
+      landmarks,
+      result: result,
+      poseIndex: subject,
+      shape: shape,
+      size: size,
+      velocity: velocity
+    )
   }
 }

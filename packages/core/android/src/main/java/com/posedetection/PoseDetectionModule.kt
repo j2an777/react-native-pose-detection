@@ -6,6 +6,7 @@ import android.graphics.Color
 import androidx.core.content.ContextCompat
 import com.posedetection.camera.Facing
 import com.posedetection.detector.StaticDetection
+import com.posedetection.detector.StaticDetectionError
 import com.posedetection.detector.StaticOptions
 import com.posedetection.engine.FrameStreams
 import com.posedetection.engine.OneEuroFilter
@@ -45,24 +46,28 @@ class PoseDetectionModule : Module() {
 
             Events("onVideoProgress", "onExportProgress")
 
+            // Both handed to this package's own thread rather than run on Expo's, which every
+            // module in the app shares: a video job there held all of them up while it ran.
             AsyncFunction(
                 "detectOnImage",
             ) { uri: String, options: Map<String, Any?>?, promise: expo.modules.kotlin.Promise ->
                 val context = appContext.reactContext
                 if (context == null) {
-                    promise.reject("NO_CONTEXT", "The module has no context.", null)
+                    promise.reject(ErrorCode.DETECTION_FAILED.name, "The module has no context.", null)
                     return@AsyncFunction
                 }
-                runCatching {
-                    StaticDetection.detectImage(
-                        context = context,
-                        uri = uri,
-                        options = StaticOptions.forImage(options),
-                        angleJoints = angleJointsFrom(options),
-                        selection = selectionFrom(options),
-                    )
-                }.onSuccess { promise.resolve(NativeArrayBuffer.wrap(it)) }
-                    .onFailure { promise.reject("DETECTION_FAILED", it.message ?: "detection failed", null) }
+                StaticDetection.executor.execute {
+                    runCatching {
+                        StaticDetection.detectImage(
+                            context = context,
+                            uri = uri,
+                            options = StaticOptions.forImage(options),
+                            angleJoints = angleJointsFrom(options),
+                            selection = selectionFrom(options),
+                        )
+                    }.onSuccess { promise.resolve(NativeArrayBuffer.wrap(it)) }
+                        .onFailure { rejectFileJob(promise, it) }
+                }
             }
 
             AsyncFunction(
@@ -70,23 +75,25 @@ class PoseDetectionModule : Module() {
             ) { uri: String, options: Map<String, Any?>?, taskId: Int, promise: expo.modules.kotlin.Promise ->
                 val context = appContext.reactContext
                 if (context == null) {
-                    promise.reject("NO_CONTEXT", "The module has no context.", null)
+                    promise.reject(ErrorCode.DETECTION_FAILED.name, "The module has no context.", null)
                     return@AsyncFunction
                 }
-                runCatching {
-                    StaticDetection.detectVideo(
-                        context = context,
-                        uri = uri,
-                        options = StaticOptions.forVideo(options),
-                        angleJoints = angleJointsFrom(options),
-                        selection = selectionFrom(options),
-                        taskId = taskId,
-                        onProgress = { progress ->
-                            sendEvent("onVideoProgress", mapOf("taskId" to taskId, "progress" to progress))
-                        },
-                    )
-                }.onSuccess { promise.resolve(NativeArrayBuffer.wrap(it)) }
-                    .onFailure { promise.reject("DETECTION_FAILED", it.message ?: "detection failed", null) }
+                StaticDetection.executor.execute {
+                    runCatching {
+                        StaticDetection.detectVideo(
+                            context = context,
+                            uri = uri,
+                            options = StaticOptions.forVideo(options),
+                            angleJoints = angleJointsFrom(options),
+                            selection = selectionFrom(options),
+                            taskId = taskId,
+                            onProgress = { progress ->
+                                sendEvent("onVideoProgress", mapOf("taskId" to taskId, "progress" to progress))
+                            },
+                        )
+                    }.onSuccess { promise.resolve(NativeArrayBuffer.wrap(it)) }
+                        .onFailure { rejectFileJob(promise, it) }
+                }
             }
 
             Function("cancelDetectOnVideo") { taskId: Int -> StaticDetection.cancel(taskId) }
@@ -98,7 +105,7 @@ class PoseDetectionModule : Module() {
             ) { uri: String, options: Map<String, Any?>?, taskId: Int, promise: expo.modules.kotlin.Promise ->
                 val context = appContext.reactContext
                 if (context == null) {
-                    promise.reject("NO_CONTEXT", "The module has no context.", null)
+                    promise.reject(ErrorCode.EXPORT_FAILED.name, "The module has no context.", null)
                     return@AsyncFunction
                 }
                 PoseExport.executor.execute {
@@ -314,8 +321,8 @@ class PoseDetectionModule : Module() {
                     view.currentState()
                 }.runOnQueue(Queues.MAIN)
 
-                // Deliberately not on the main queue. These copy out of a lock the inference thread
-                // also takes, and the whole point of draining is that it does not block the UI.
+                // On main, because the calibration it reads is main-thread state. Frames and the
+                // live rate are read on the JavaScript thread instead, see FrameStreams.
                 AsyncFunction("getProfile") { view: PoseCameraView ->
                     view.profileState()
                 }.runOnQueue(Queues.MAIN)
@@ -325,6 +332,19 @@ class PoseDetectionModule : Module() {
                 }.runOnQueue(Queues.MAIN)
             }
         }
+}
+
+/**
+ * A file that could not be read rejects with its decode code, a missing model with
+ * `MODEL_NOT_FOUND`, and anything that failed after the file was read with `DETECTION_FAILED`:
+ * three different things for the app to tell its user, where one code used to cover all of them.
+ */
+private fun rejectFileJob(
+    promise: expo.modules.kotlin.Promise,
+    error: Throwable,
+) {
+    val code = (error as? StaticDetectionError)?.code ?: ErrorCode.DETECTION_FAILED
+    promise.reject(code.name, error.message ?: "detection failed", null)
 }
 
 /** Resolved by JavaScript for the live path, and passed the same way here. */

@@ -1,7 +1,7 @@
 import Foundation
 import UIKit
 
-/// What `exportPose` was asked for. Defaults from guides/export.md.
+/// What `exportPose` was asked for. Defaults from guides/files.md.
 struct ExportOptions {
   /// The same config the camera's `overlay` prop takes, so a painted file and a live preview are
   /// configured with one vocabulary rather than two.
@@ -53,9 +53,10 @@ struct ExportOptions {
     )
   }
 
+  /// 0.1 to 1, the range the guide documents. At 1 the model has to be certain, which it rarely is.
   private static func minConfidence(_ raw: Any?, maxPoses: Int) -> Float {
-    let auto = Double(PoseDetector.stillConfidence(forMaxPoses: maxPoses))
-    return Float(clamped(JS.number(raw) ?? auto, 0.1, 0.9, auto))
+    let auto = Double(StillConfidence.forMaxPoses(maxPoses))
+    return Float(clamped(JS.number(raw) ?? auto, 0.1, 1, auto))
   }
 
   /**

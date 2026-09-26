@@ -191,15 +191,31 @@ internal class Calibrator(
         return scratch[count / 2]
     }
 
+    /** A verdict this calibrator never saw is kept rather than erased: a file job may have recorded it. */
     private fun write(model: String) {
-        val gpu =
-            when (gpuVerdict) {
-                true -> "gpu"
-                false -> "cpu"
-                null -> ""
-            }
-        store.write(cacheKey(model), "${tier.name}|$p50InferenceMs|$gpu")
+        val verdict = gpuVerdict ?: readCache(model)?.gpu
+        store.write(cacheKey(model), "${tier.name}|$p50InferenceMs|${verdictName(verdict)}")
     }
+
+    /** The GPU verdict alone, for a file job, without touching this calibrator's own state. */
+    fun cachedGpu(model: String): Boolean? = readCache(model)?.gpu
+
+    /** Records a file job's verdict beside whatever the camera measured, which it leaves as it was. */
+    fun storeGpu(
+        usable: Boolean,
+        model: String,
+    ) {
+        val cached = readCache(model)
+        val tier = cached?.tier ?: DeviceTier.MEDIUM
+        store.write(cacheKey(model), "${tier.name}|${cached?.p50Ms ?: 0f}|${verdictName(usable)}")
+    }
+
+    private fun verdictName(verdict: Boolean?): String =
+        when (verdict) {
+            true -> "gpu"
+            false -> "cpu"
+            null -> ""
+        }
 
     private data class Cached(
         val tier: DeviceTier,

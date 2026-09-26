@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 /**
- * These assert the buffer `src/decodeFrames.ts` will be handed. The checks below are the ones that
+ * These assert the buffer `src/frames/decodeFrames.ts` will be handed. The checks below are the ones that
  * decoder performs, restated: if a change here passes and that decoder would reject it, the two
  * have diverged and this suite is where it should surface, not on a device.
  */

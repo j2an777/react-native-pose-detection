@@ -94,7 +94,7 @@ final class Calibrator {
     p50InferenceMs = 0
     gpuVerdict = nil
 
-    if let cached = readCache(modelFileName) {
+    if let cached = Calibrator.readCache(modelFileName, defaults) {
       gpuVerdict = cached.gpu
       if cached.p50Ms > 0 {
         tier = cached.tier
@@ -195,9 +195,24 @@ final class Calibrator {
     return scratch[count / 2]
   }
 
+  /// A verdict this calibrator never saw is kept rather than erased: a file job may have recorded it.
   private func write(_ model: String) {
-    let gpu = gpuVerdict.map { $0 ? "gpu" : "cpu" } ?? ""
+    let verdict = gpuVerdict ?? Calibrator.readCache(model, defaults)?.gpu
+    let gpu = verdict.map { $0 ? "gpu" : "cpu" } ?? ""
     defaults.set("\(tier.rawValue)|\(p50InferenceMs)|\(gpu)", forKey: Calibrator.cacheKey(model))
+  }
+
+  /// The GPU verdict alone, for a file job that has no calibrator of its own.
+  static func cachedGpu(modelFileName: String, defaults: UserDefaults = .standard) -> Bool? {
+    return readCache(modelFileName, defaults)?.gpu
+  }
+
+  /// Records a file job's verdict beside whatever the camera measured, which it leaves as it was.
+  static func storeGpu(_ usable: Bool, modelFileName: String, defaults: UserDefaults = .standard) {
+    let cached = readCache(modelFileName, defaults)
+    let tier = cached?.tier ?? .medium
+    let gpu = usable ? "gpu" : "cpu"
+    defaults.set("\(tier.rawValue)|\(cached?.p50Ms ?? 0)|\(gpu)", forKey: cacheKey(modelFileName))
   }
 
   /// One cache entry. `p50Ms` is 0 when only the GPU check has run.
@@ -208,7 +223,7 @@ final class Calibrator {
   }
 
   /// `tier|p50|gpu`.
-  private func readCache(_ model: String) -> Cached? {
+  private static func readCache(_ model: String, _ defaults: UserDefaults) -> Cached? {
     guard let stored = defaults.string(forKey: Calibrator.cacheKey(model)) else { return nil }
     let parts = stored.split(separator: "|", omittingEmptySubsequences: false)
     guard parts.count == 3, let tier = DeviceTier(rawValue: String(parts[0])) else { return nil }

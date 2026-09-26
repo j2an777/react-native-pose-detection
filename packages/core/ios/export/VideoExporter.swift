@@ -121,7 +121,7 @@ final class VideoExporter {
       geometry: ExportGeometry(
         display: display,
         canvas: canvas,
-        orientation: VideoExporter.orientation(for: transform),
+        orientation: VideoFrameSampler.orientation(for: transform),
         // Fit, not fill: cropping a file the user picked would cut away part of the very thing
         // they asked to have painted.
         projection: OverlayProjection(

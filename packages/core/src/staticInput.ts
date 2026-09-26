@@ -8,8 +8,13 @@ import { resolveSmoothing } from './smoothing';
 import { assertValidFileOptions } from './validation';
 
 export type StaticOptions = {
-  /** 1 to 5. Default 1. */
+  /** 1 to 5. Default 1. The subject, the largest body, is always the first frame. */
   maxPoses?: number;
+  /**
+   * How sure the model has to be before it calls something a body, 0.1 to 1. Left out, it follows
+   * `maxPoses`: `0.5` for one subject and `0.3` above that, the same rule `exportPose` uses.
+   */
+  minConfidence?: number;
   /** `true` computes all twelve. Default `true`, unlike the live path, where the default is none. */
   angles?: boolean | readonly AngleJointName[];
   worldLandmarks?: boolean;
@@ -18,7 +23,10 @@ export type StaticOptions = {
 };
 
 export type VideoOptions = StaticOptions & {
-  /** Sampling rate, not the video's own frame rate. Default 10. */
+  /**
+   * Sampling rate, not the video's own frame rate. Default 10. Each frame is the subject's, the
+   * largest body in it, and carries its real position in the video as its `timestamp`.
+   */
   fps?: number;
   startMs?: number;
   endMs?: number;
@@ -32,7 +40,11 @@ export type VideoOptions = StaticOptions & {
 };
 
 export type VideoTask = {
-  /** Resolves with everything decoded, including after `cancel()`. */
+  /**
+   * Resolves with everything decoded, including after `cancel()`. Rejects with
+   * `VIDEO_DECODE_FAILED` when the file cannot be read, `MODEL_NOT_FOUND` when no model is bundled,
+   * and `DETECTION_FAILED` when inference itself fails.
+   */
   readonly frames: Promise<PoseFrame[]>;
   /** Stops sampling. `frames` then resolves with what was decoded up to that point. */
   cancel(): void;
@@ -70,8 +82,11 @@ function decode(
 }
 
 /**
- * The same detector, no camera. One `PoseFrame` per detected pose, so a photo of two people
- * decodes to two.
+ * The same detector, no camera. One `PoseFrame` per detected pose, the subject first, so a photo of
+ * two people decodes to two. The photo is decoded upright, with its EXIF orientation applied.
+ *
+ * Rejects with `IMAGE_DECODE_FAILED` when the file cannot be read, `MODEL_NOT_FOUND` when no model
+ * is bundled, and `DETECTION_FAILED` when inference itself fails.
  */
 export async function detectOnImage(uri: string, options?: StaticOptions): Promise<PoseFrame[]> {
   assertValidFileOptions(options);

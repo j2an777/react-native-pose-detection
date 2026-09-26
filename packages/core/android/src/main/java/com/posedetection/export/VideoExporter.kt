@@ -6,13 +6,17 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaExtractor
 import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import com.google.mediapipe.framework.image.BitmapImageBuilder
-import com.posedetection.detector.PoseDetector
+import com.posedetection.detector.FileDetector
 import com.posedetection.detector.StaticDetection
+import com.posedetection.detector.StaticDetectionError
+import com.posedetection.detector.VideoFrameSampler
+import com.posedetection.performance.FilePacer
+import com.posedetection.performance.ThermalMonitor
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.roundToInt
 
 /**
  * Two passes: detect the poses, then transcode the video with them painted on.
@@ -36,6 +40,9 @@ internal class VideoExporter(
 ) {
     private var lastReported = -1f
 
+    /** One pacer for both passes, so heat measured during detection carries into the transcode. */
+    private val pacer = FilePacer(ThermalMonitor(context)::readThermal)
+
     fun run(): ExportSummary {
         val poses = detect()
         if (cancelled.get()) throw ExportCancelled()
@@ -45,54 +52,43 @@ internal class VideoExporter(
     // MARK: Pass one, the poses
 
     /**
-     * Frames come back already rotated upright, which is the same space the transcode draws in, so
-     * the landmarks need no correction between the two passes.
+     * Frames come back already turned upright, which is the same space the transcode draws in, so
+     * the landmarks need no correction between the two passes. Each pose carries its frame's real
+     * position in the video, which is what the transcode matches frames against.
      */
     private fun detect(): List<Pose> {
-        val retriever = MediaMetadataRetriever()
-        var detector: PoseDetector? = null
+        var sampler: VideoFrameSampler? = null
+        var detector: FileDetector? = null
         val poses = ArrayList<Pose>()
         try {
-            StaticDetection.open(retriever, context, uri)
-            val durationMs =
-                retriever
-                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                    ?.toLongOrNull()
-                    ?: throw ExportError("the video reports no duration")
-
+            sampler =
+                try {
+                    VideoFrameSampler(context, uri, options.sampleFps, 0L, -1L)
+                } catch (error: StaticDetectionError) {
+                    throw ExportError(error.message ?: "could not read frames from $uri")
+                }
             detector =
-                PoseDetector.createForStillInput(
+                FileDetector(
                     context,
                     StaticDetection.requireModel(context),
                     options.maxPoses,
-                    video = true,
-                    minConfidence = options.minConfidence,
+                    options.minConfidence,
                 )
 
-            val stepMs = (1_000L / options.sampleFps).coerceAtLeast(1L)
-            var positionMs = 0L
-            while (positionMs < durationMs && !cancelled.get()) {
-                val frame =
-                    retriever.getFrameAtTime(
-                        positionMs * MICROS_PER_MILLI,
-                        MediaMetadataRetriever.OPTION_CLOSEST,
-                    )
-                if (frame != null) {
-                    try {
-                        val result = detector.detectVideo(BitmapImageBuilder(frame).build(), positionMs)
-                        val bodies = PoseExport.poses(result)
-                        if (bodies.isNotEmpty()) poses.add(Pose(positionMs, bodies))
-                    } finally {
-                        frame.recycle()
-                    }
-                }
+            var lastTimestamp = -1L
+            while (!cancelled.get()) {
+                val frame = sampler.next() ?: break
+                val timestamp = maxOf(frame.timestampMs, lastTimestamp + 1)
+                lastTimestamp = timestamp
+                val bodies = PoseExport.poses(detector.detect(BitmapImageBuilder(frame.bitmap).build(), timestamp))
+                if (bodies.isNotEmpty()) poses.add(Pose(frame.timestampMs, bodies))
                 // The detect pass is the slow half, so it owns most of the progress bar.
-                report(DETECT_SHARE * positionMs / durationMs)
-                positionMs += stepMs
+                report(DETECT_SHARE * sampler.progress(frame))
+                if (!pacer.rest { cancelled.get() }) break
             }
         } finally {
             detector?.close()
-            retriever.release()
+            sampler?.close()
         }
         return poses
     }
@@ -158,7 +154,7 @@ internal class VideoExporter(
             audio = ExportAudio.open(context, uri)
 
             val painter = OverlayPainter(overlay, canvas, naturalWidth, naturalHeight, upright, options)
-            val pump = ExportPump(decoder, encoder, muxer, gl, audio, cancelled)
+            val pump = ExportPump(decoder, encoder, muxer, gl, audio, cancelled, pacer)
             val frames =
                 pump.run(extractor, rotation, poses, painter) { done ->
                     report(DETECT_SHARE + (1f - DETECT_SHARE) * done)
@@ -213,19 +209,25 @@ internal class VideoExporter(
             MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface,
         )
         format.setInteger(MediaFormat.KEY_BIT_RATE, width * height * BITS_PER_PIXEL)
-        format.setInteger(
-            MediaFormat.KEY_FRAME_RATE,
-            if (source.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-                source.getInteger(MediaFormat.KEY_FRAME_RATE)
-            } else {
-                DEFAULT_FRAME_RATE
-            },
-        )
+        format.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate(source))
         format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_SECONDS)
 
         val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         encoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         return encoder
+    }
+
+    /**
+     * The source's frame rate, which some containers store as a float: `getInteger` on one throws.
+     * A rate the encoder cannot use falls back to 30.
+     */
+    private fun frameRate(source: MediaFormat): Int {
+        if (!source.containsKey(MediaFormat.KEY_FRAME_RATE)) return DEFAULT_FRAME_RATE
+        val rate =
+            runCatching { source.getInteger(MediaFormat.KEY_FRAME_RATE).toFloat() }
+                .recoverCatching { source.getFloat(MediaFormat.KEY_FRAME_RATE) }
+                .getOrNull()
+        return rate?.takeIf { it.isFinite() && it >= 1f }?.roundToInt() ?: DEFAULT_FRAME_RATE
     }
 
     /**

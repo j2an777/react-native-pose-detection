@@ -152,4 +152,31 @@ final class CalibratorTests: XCTestCase {
     XCTAssertEqual(second.gpuVerdict, false)
     XCTAssertEqual(second.phase, .calibrating, "a verdict without a measurement is not a cached rate")
   }
+
+  func testAFileJobsVerdictReachesTheCameraAndLeavesItsMeasurementAlone() {
+    let camera = make()
+    camera.start(modelFileName: model)
+    feed(camera, ms: 20, count: 300, from: 1_000)
+    camera.persist()
+    XCTAssertNil(Calibrator.cachedGpu(modelFileName: model, defaults: defaults))
+
+    Calibrator.storeGpu(true, modelFileName: model, defaults: defaults)
+    XCTAssertEqual(Calibrator.cachedGpu(modelFileName: model, defaults: defaults), true)
+
+    let next = make()
+    next.start(modelFileName: model)
+    XCTAssertEqual(next.gpuVerdict, true)
+    XCTAssertEqual(next.p50InferenceMs, 20, "the measurement survives the file job's write")
+  }
+
+  func testACameraThatNeverProbedKeepsTheVerdictAFileJobRecorded() {
+    let camera = make()
+    camera.start(modelFileName: model)
+    // Recorded while the camera runs, so the camera's own copy of the verdict is still nil.
+    Calibrator.storeGpu(false, modelFileName: model, defaults: defaults)
+    feed(camera, ms: 20, count: 300, from: 1_000)
+    XCTAssertNil(camera.gpuVerdict)
+    camera.persist()
+    XCTAssertEqual(Calibrator.cachedGpu(modelFileName: model, defaults: defaults), false)
+  }
 }

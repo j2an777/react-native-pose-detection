@@ -2,12 +2,12 @@ package com.posedetection.export
 
 import android.content.Context
 import android.net.Uri
-import com.posedetection.detector.PoseDetector
+import com.posedetection.detector.StillConfidence
 import com.posedetection.view.OverlayConfig
 import com.posedetection.view.parseOverlay
 import java.io.File
 
-/** What `exportPose` was asked for. Defaults from `guides/export.md`. */
+/** What `exportPose` was asked for. Defaults from `guides/files.md`. */
 internal class ExportOptions(
     /**
      * The same config the camera's `overlay` prop takes, so a painted file and a live preview are
@@ -52,9 +52,11 @@ internal class ExportOptions(
                 overlay = (overlayRaw as? Map<*, *>)?.let { parseOverlay(it) } ?: OverlayConfig(),
                 drawOverlay = overlayRaw as? Boolean ?: true,
                 maxPoses = maxPoses,
+                // 0.1 to 1, the range the guide documents. At 1 the model has to be certain, which
+                // it rarely is.
                 minConfidence =
-                    ((raw?.get("minConfidence") as? Number)?.toFloat() ?: PoseDetector.stillConfidence(maxPoses))
-                        .coerceIn(0.1f, 0.9f),
+                    ((raw?.get("minConfidence") as? Number)?.toFloat() ?: StillConfidence.forMaxPoses(maxPoses))
+                        .coerceIn(0.1f, 1f),
                 sampleFps = count(raw?.get("fps"), DEFAULT_SAMPLE_FPS, 60),
                 maxSize = maxSize(raw?.get("maxSize")),
                 directory = directory(context, raw?.get("directory") as? String),

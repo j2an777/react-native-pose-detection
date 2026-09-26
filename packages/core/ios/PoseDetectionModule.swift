@@ -19,35 +19,41 @@ public class PoseDetectionModule: Module {
 
     Events("onVideoProgress", "onExportProgress")
 
+    // Both handed to this package's own queue rather than run on Expo's, which every module in the
+    // app shares: a video job there held all of them up while it ran, at the camera's priority.
     AsyncFunction("detectOnImage") { (uri: String, options: [String: Any]?, promise: Promise) in
-      do {
-        let buffer = try StaticDetection.detectImage(
-          uri: uri,
-          options: StaticOptions.forImage(options),
-          angleJoints: angleJoints(from: options),
-          selection: selection(from: options)
-        )
-        promise.resolve(NativeArrayBuffer.wrap(dataWithoutCopy: buffer))
-      } catch {
-        promise.reject("DETECTION_FAILED", error.localizedDescription)
+      StaticDetection.queue.async {
+        do {
+          let buffer = try StaticDetection.detectImage(
+            uri: uri,
+            options: StaticOptions.forImage(options),
+            angleJoints: angleJoints(from: options),
+            selection: selection(from: options)
+          )
+          promise.resolve(NativeArrayBuffer.wrap(dataWithoutCopy: buffer))
+        } catch {
+          rejectFileJob(promise, error)
+        }
       }
     }
 
     AsyncFunction("detectOnVideo") { (uri: String, options: [String: Any]?, taskId: Int, promise: Promise) in
-      do {
-        let buffer = try StaticDetection.detectVideo(
-          uri: uri,
-          options: StaticOptions.forVideo(options),
-          angleJoints: angleJoints(from: options),
-          selection: selection(from: options),
-          taskId: taskId,
-          onProgress: { [weak self] progress in
-            self?.sendEvent("onVideoProgress", ["taskId": taskId, "progress": progress])
-          }
-        )
-        promise.resolve(NativeArrayBuffer.wrap(dataWithoutCopy: buffer))
-      } catch {
-        promise.reject("DETECTION_FAILED", error.localizedDescription)
+      StaticDetection.queue.async { [weak self] in
+        do {
+          let buffer = try StaticDetection.detectVideo(
+            uri: uri,
+            options: StaticOptions.forVideo(options),
+            angleJoints: angleJoints(from: options),
+            selection: selection(from: options),
+            taskId: taskId,
+            onProgress: { progress in
+              self?.sendEvent("onVideoProgress", ["taskId": taskId, "progress": progress])
+            }
+          )
+          promise.resolve(NativeArrayBuffer.wrap(dataWithoutCopy: buffer))
+        } catch {
+          rejectFileJob(promise, error)
+        }
       }
     }
 
@@ -136,8 +142,8 @@ extension PoseDetectionModule {
       Prop("delegate") { (view: PoseCameraView, value: String?) in view.setDelegate(value ?? "auto") }
       Prop("active") { (view: PoseCameraView, value: Bool?) in view.setActive(value ?? true) }
 
-      // A picked image or video in place of the camera. Only the producer changes: every other
-      // prop on this view, and every event off it, behaves the same either way.
+      // What runs and at what size. `detection` parks and resumes the landmarker, `maxPoses` and
+      // `minConfidence` are built into it and rebuild it, and `resolution` rebinds the camera.
       Prop("detection") { (view: PoseCameraView, value: Bool?) in view.setDetection(value ?? true) }
       Prop("maxPoses") { (view: PoseCameraView, value: Int?) in view.setMaxPoses(value ?? 1) }
       Prop("minConfidence") { (view: PoseCameraView, value: Double?) in view.setMinConfidence(value) }
@@ -230,6 +236,19 @@ private func unwrap(_ either: Either<Bool, [String: Any]>?) -> Any? {
   if let flag: Bool = either.get() { return flag }
   if let map: [String: Any] = either.get() { return map }
   return nil
+}
+
+/**
+ A file that could not be read rejects with its decode code, a missing model with `MODEL_NOT_FOUND`,
+ and anything that failed after the file was read with `DETECTION_FAILED`: three different things
+ for the app to tell its user, where one code used to cover all of them.
+ */
+private func rejectFileJob(_ promise: Promise, _ error: Error) {
+  if let failure = error as? StaticDetectionError {
+    promise.reject(failure.code.rawValue, failure.message)
+    return
+  }
+  promise.reject(ErrorCode.detectionFailed.rawValue, error.localizedDescription)
 }
 
 /// Resolved by JavaScript for the live path, and passed the same way here.

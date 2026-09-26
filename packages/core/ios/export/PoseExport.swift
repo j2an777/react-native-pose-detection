@@ -9,13 +9,13 @@ import UIKit
  not a footnote to it, and it is bought four ways:
 
  1. **Its own detector.** Never the camera's landmarker. Built here, used here, released here.
- 2. **CPU inference, always.** `createForStillInput` asks for the CPU delegate, so an export cannot
-    contend with the camera for the GPU that its own inference is running on. Slower per frame, and
-    entirely out of the way, which is the trade this package wants: an export has no deadline and
-    a preview has one thirty times a second.
+ 2. **Never the GPU while a camera is detecting.** A video runs on the GPU only when no camera is
+    running inference and this device's GPU check passed, and on the CPU otherwise, so an export
+    cannot contend with a preview for the GPU its own inference runs on. See `FileDetector`. A
+    photo is one inference and always runs on the CPU.
  3. **A `.utility` serial queue.** Below the camera's `.userInitiated` analysis queue, so under load
     the scheduler starves the export rather than sharing evenly. Serial, so two exports queue up
-    behind each other instead of ganging up on the camera.
+    behind each other instead of ganging up on the camera. Heat slows it further, see `FilePacer`.
  4. **Bounded memory.** One frame decoded at a time, one pooled buffer encoded at a time, nothing
     accumulated across frames. A long video costs the same as a short one, which is what keeps an
     export from ending as a memory-pressure kill of the camera it was running beside.
@@ -94,20 +94,31 @@ enum PoseExport {
     options: ExportOptions,
     onProgress: @escaping (Float) -> Void
   ) throws -> ExportSummary {
-    guard let image = StaticDetection.loadImage(uri: source.absoluteString) else {
-      throw ExportError("could not read an image from \(source.lastPathComponent)")
-    }
+    // Detection first, on a picture no larger than it needs, released before the one that is
+    // painted is decoded: a full-size export of a 48-megapixel photo never holds both. At the
+    // default size the two are the same decode, and it is done once.
+    let paintMax = options.maxSize > 0 ? options.maxSize : nil
+    let shared = paintMax.map { $0 <= StillImage.detectionMaxPixels } ?? false
+    let unreadable = ExportError("could not read an image from \(source.lastPathComponent)")
+    guard let file = StillImage.source(uri: source.absoluteString) else { throw unreadable }
 
-    let detector = try PoseDetector.createForStillInput(
-      modelPath: try StaticDetection.requireModel(),
-      maxPoses: options.maxPoses,
-      minConfidence: options.minConfidence,
-      video: false
-    )
-    let result = try detector.detectImage(try MPImage(uiImage: image))
+    let (result, kept) = try autoreleasepool { () -> (PoseLandmarkerResult, CGImage?) in
+      let maxPixels = shared ? paintMax : StillImage.detectionMaxPixels
+      guard let detectable = StillImage.decode(file, maxPixels: maxPixels) else { throw unreadable }
+      let detector = try PoseDetector.createForStillInput(
+        modelPath: try StaticDetection.requireModel(),
+        maxPoses: options.maxPoses,
+        minConfidence: options.minConfidence,
+        video: false
+      )
+      let result = try detector.detectImage(try MPImage(uiImage: UIImage(cgImage: detectable)))
+      return (result, shared ? detectable : nil)
+    }
     onProgress(0.6)
 
-    let display = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+    guard let picture = kept ?? StillImage.decode(file, maxPixels: paintMax) else { throw unreadable }
+    let image = UIImage(cgImage: picture)
+    let display = CGSize(width: picture.width, height: picture.height)
     let canvas = exportCanvasSize(display: display, maxSize: options.maxSize)
     // Fit, not fill: cropping a picture the user picked would cut away part of the very thing they
     // asked to have painted.

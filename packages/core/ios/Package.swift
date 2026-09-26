@@ -37,7 +37,12 @@ let package = Package(
         "view/PoseCameraView+Ref.swift",
         "view/PoseCameraView+Session.swift",
         "camera",
-        "detector",
+        "detector/PoseDetector.swift",
+        "detector/StaticDetection.swift",
+        "detector/StillImage.swift",
+        "detector/VideoFrameSampler.swift",
+        "detector/FileDetector.swift",
+        "detector/UprightFrames.swift",
         "export/ExportOptions.swift",
         "export/PoseExport.swift",
         "export/VideoExporter.swift",
@@ -57,7 +62,8 @@ let package = Package(
         "engine",
         "performance",
         "view/OverlayProjection.swift",
-        "export/ExportCanvas.swift"
+        "export/ExportCanvas.swift",
+        "detector/StaticOptions.swift"
       ]
     ),
     .testTarget(

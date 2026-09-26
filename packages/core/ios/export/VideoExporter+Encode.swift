@@ -19,34 +19,34 @@ extension VideoExporter {
     geometry: ExportGeometry,
     output: URL
   ) throws -> ExportSummary {
-    let detector = try PoseDetector.createForStillInput(
+    let detector = try FileDetector(
       modelPath: try StaticDetection.requireModel(),
       maxPoses: options.maxPoses,
-      minConfidence: options.minConfidence,
-      video: true
+      minConfidence: options.minConfidence
+    )
+    let pacer = FilePacer()
+    // Detection gets its own upright, smaller copy of each sampled frame; the painting still draws
+    // the full frame, turned by UIKit. See UprightFrames for why MediaPipe is not told to turn it.
+    let upright = UprightFrames(
+      orientation: geometry.orientation,
+      size: exportCanvasSize(display: geometry.display, maxSize: VideoFrameSampler.maxLongSide)
     )
     let scale = overlayScale(canvas: geometry.canvas)
     let palette = OverlayPalette(options.overlay, scale: scale)
 
-    guard reader.reader.startReading() else {
-      throw ExportError(reader.reader.error?.localizedDescription ?? "could not start reading the video")
-    }
-    guard writer.writer.startWriting() else {
-      throw ExportError(writer.writer.error?.localizedDescription ?? "could not start writing the export")
-    }
+    try start(reader: reader, writer: writer)
 
     let durationMs = max(1, StaticDetection.durationMilliseconds(of: asset))
-    let stepMs = max(1, 1000 / options.sampleFps)
+    var clock = SampleClock(stepMs: max(1, 1000 / options.sampleFps))
 
     // Held between samples and redrawn every frame, exactly as the live overlay holds the last
     // pose between inferences. The renderer takes each buffer by value, and Swift's copy on write
     // makes that a retain rather than 132 floats, so the steady state allocates nothing at all.
     var poses = [[Float]]()
-    var nextSampleMs = 0
-    var lastTimestampMs = -1
     var frameCount = 0
     var posesFound = 0
     var started = false
+    var sampled = false
     var pendingAudio: CMSampleBuffer?
 
     while let sample = reader.video.copyNextSampleBuffer() {
@@ -65,16 +65,11 @@ extension VideoExporter {
         }
         let positionMs = Int(CMTimeGetSeconds(presentation) * 1000)
 
-        if positionMs >= nextSampleMs {
-          // VIDEO mode rejects a timestamp that does not move forward, and a variable frame rate
-          // clip can hand back two frames on the same millisecond.
-          let timestamp = max(positionMs, lastTimestampMs + 1)
-          lastTimestampMs = timestamp
-          let image = try MPImage(pixelBuffer: buffer, orientation: geometry.orientation)
-          let result = try detector.detectVideo(image, timestampMs: timestamp)
-          poses = PoseExport.poses(result)
-          if !poses.isEmpty { posesFound += 1 }
-          nextSampleMs = positionMs + stepMs
+        if let timestamp = clock.due(atMs: positionMs), let turned = upright.upright(buffer) {
+          let image = try MPImage(pixelBuffer: turned, orientation: .up)
+          poses = PoseExport.poses(try detector.detect(image, timestampMs: timestamp))
+          posesFound += poses.isEmpty ? 0 : 1
+          sampled = true
         }
 
         let renderers = poses.map {
@@ -93,6 +88,12 @@ extension VideoExporter {
 
         try drain(audio: reader, into: writer, upTo: presentation, pending: &pendingAudio)
         report(Float(positionMs) / Float(durationMs))
+      }
+      // Once per sample rather than per frame: the rest covers the painting and encoding since the
+      // last one too, which is what halving the job's speed means.
+      if sampled {
+        sampled = false
+        if !pacer.rest(isCancelled: isCancelled) { throw ExportCancelled() }
       }
     }
 
@@ -113,6 +114,15 @@ extension VideoExporter {
       frameCount: frameCount,
       posesFound: posesFound
     )
+  }
+
+  private func start(reader: ReadSide, writer: WriteSide) throws {
+    guard reader.reader.startReading() else {
+      throw ExportError(reader.reader.error?.localizedDescription ?? "could not start reading the video")
+    }
+    guard writer.writer.startWriting() else {
+      throw ExportError(writer.writer.error?.localizedDescription ?? "could not start writing the export")
+    }
   }
 
   /// Nil when the overlay is switched off, so a frame with no skeleton takes the same path as a
@@ -310,13 +320,28 @@ extension VideoExporter {
     lastReportedProgress = clamped
     onProgress(clamped)
   }
+}
 
-  static func orientation(for transform: CGAffineTransform) -> UIImage.Orientation {
-    switch (transform.a, transform.b, transform.c, transform.d) {
-    case (0, 1, -1, 0): return .right
-    case (0, -1, 1, 0): return .left
-    case (-1, 0, 0, -1): return .down
-    default: return .up
-    }
+/// When the next detection is due, and the last timestamp VIDEO mode was handed.
+struct SampleClock {
+  let stepMs: Int
+  private var nextMs = 0
+  private var lastTimestampMs = -1
+
+  init(stepMs: Int) {
+    self.stepMs = stepMs
+  }
+
+  /**
+   The timestamp to detect this frame at, or nil when no sample is due. VIDEO mode rejects a
+   timestamp that does not move forward, and a variable frame rate clip can hand back two frames on
+   the same millisecond.
+   */
+  mutating func due(atMs positionMs: Int) -> Int? {
+    guard positionMs >= nextMs else { return nil }
+    let timestamp = max(positionMs, lastTimestampMs + 1)
+    lastTimestampMs = timestamp
+    nextMs = positionMs + stepMs
+    return timestamp
   }
 }
