@@ -132,6 +132,26 @@ rate means expensive inference, not a stuck setting. What you can change:
 - `analysisResolution`, which is what the model actually sees
 - check `onReady`'s `delegate`: on CPU, a lower frame rate is expected
 
+## The screen locks during a workout
+
+The package leaves the screen timeout alone: it is app-wide state, and only your app knows when a
+workout starts and ends. Somebody standing back from the phone is not touching it, so the screen
+locks after the usual timeout and the camera stops with it. Keep the screen on while the camera is
+up, for example with [`expo-keep-awake`](https://docs.expo.dev/versions/latest/sdk/keep-awake/),
+which a bare app can use too, since this package already needs Expo modules:
+
+```tsx
+import { useKeepAwake } from 'expo-keep-awake';
+import { PoseCamera } from 'react-native-pose-detection';
+
+export function Workout() {
+  useKeepAwake();
+  return <PoseCamera style={{ flex: 1 }} />;
+}
+```
+
+The example app does this on its camera screens.
+
 ## Triggers fire twice / not at all
 
 Firing twice per rep usually means `enter` and `exit` thresholds sit too close together: widen

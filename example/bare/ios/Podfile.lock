@@ -39,7 +39,7 @@ PODS:
     - ExpoModulesCore
   - ExpoImagePicker (57.0.9):
     - ExpoModulesCore
-  - ExpoKeepAwake (57.0.1):
+  - ExpoKeepAwake (57.0.2):
     - ExpoModulesCore
   - ExpoLogBox (57.0.2):
     - React-Core
@@ -2269,7 +2269,7 @@ SPEC CHECKSUMS:
   ExpoFileSystem: 1dbd58528f91271baf87da7d8d67bffc8f863f7f
   ExpoFont: 59e1faf66ba9bcd232ae1e2ce58d202a48b6f65e
   ExpoImagePicker: 17b135ef3290b4e11cfbb790ed2026bf650dc65a
-  ExpoKeepAwake: c26f14275017370cc8a4b7b43a0e23361f2053a5
+  ExpoKeepAwake: 72af0b3be3615e59bc819d26061ff4e06b155ee0
   ExpoLogBox: 6bb73c341aca22e699bd4da6cc61afc844e1a648
   ExpoModulesCore: 4e357ccc58fec60fc18a570f95f9909d0036f42d
   ExpoModulesJSI: b20fefa4cdd9097e7e6b715466d1900b8c5d4711

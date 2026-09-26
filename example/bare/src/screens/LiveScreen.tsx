@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useKeepAwake } from 'expo-keep-awake';
 import * as React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,6 +77,9 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   const camera = React.useRef<PoseCameraRef>(null);
   const permission = useCameraPermission();
   const insets = useSafeAreaInsets();
+  // Somebody doing a set stands back from the phone and stops touching it, and the screen would
+  // lock, stopping the camera, partway through. The package leaves this to the app.
+  useKeepAwake();
 
   const [panel, setPanel] = React.useState<Category | null>(null);
 

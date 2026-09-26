@@ -1,4 +1,5 @@
 import { File, Paths } from 'expo-file-system';
+import { useKeepAwake } from 'expo-keep-awake';
 import * as React from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -52,6 +53,9 @@ export function DiagnosticsScreen({
   const facing = React.useRef<'front' | 'back' | null>(null);
   const cameraChanges = React.useRef(0);
   const insets = useSafeAreaInsets();
+  // A sweep runs for minutes with nobody touching the phone, and a locked screen would stop the
+  // camera partway through it.
+  useKeepAwake();
 
   const onReady = React.useCallback((event: ReadyEvent) => {
     readyCount.current += 1;
