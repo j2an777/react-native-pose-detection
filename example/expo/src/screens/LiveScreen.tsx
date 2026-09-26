@@ -10,8 +10,8 @@ import {
   type CameraChangeEvent,
   type ErrorEvent,
   type LogEntry,
-  type PerformanceEvent,
   type PoseCameraRef,
+  type ProfileState,
   type ReadyEvent,
 } from 'react-native-pose-detection';
 
@@ -100,6 +100,11 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   const [beta, setBeta] = React.useState<(typeof BETA)[number]>('4');
   const [poseCount, setPoseCount] = React.useState(0);
   const [snapshot, setSnapshot] = React.useState<string | null>(null);
+  /**
+   * Counted in a ref and shown a few times a second. A state update per frame re-rendered this
+   * whole screen thirty times a second, which is the JavaScript load the package is built to avoid.
+   */
+  const framesSeen = React.useRef(0);
 
   const [logLevel, setLevel] = React.useState<(typeof LOG_LEVELS)[number]>('off');
   const [showLogs, setShowLogs] = React.useState(false);
@@ -107,21 +112,21 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   const [lines, setLines] = React.useState<LogEntry[]>([]);
 
   const [ready, setReady] = React.useState<ReadyEvent | null>(null);
-  const [performance, setPerformance] = React.useState<PerformanceEvent | null>(null);
-  const [fpsLive, setFpsLive] = React.useState(0);
+  const [measured, setMeasured] = React.useState<ProfileState | null>(null);
   const [notice, setNotice] = React.useState<{ message: string; fatal: boolean } | null>(null);
 
   /**
    * The measured rate changes every second and no event carries it: performance events fire when
-   * the configuration moves, not when the measurement does. Polled, and only while the readout is
-   * on screen, so a hidden stat bar costs nothing.
+   * the configuration moves, not when the measurement does. Polled, and only while a readout is on
+   * screen, so a hidden stat bar and a closed debug panel cost nothing.
    */
+  const reading = showStats || panel === 'debug';
   React.useEffect(() => {
-    if (!showStats || !ready) return;
+    if (!reading || !ready) return;
     const read = () => {
       void camera.current
         ?.getProfile()
-        .then((profile) => setFpsLive(profile.measuredFps))
+        .then(setMeasured)
         .catch(() => undefined);
     };
     // Once now, then on the interval: waiting a full period before the first read leaves the
@@ -129,7 +134,17 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
     read();
     const poll = setInterval(read, FPS_POLL_MS);
     return () => clearInterval(poll);
-  }, [showStats, ready]);
+  }, [reading, ready]);
+
+  React.useEffect(() => {
+    if (dataMode === 'off') return;
+    const show = setInterval(() => setPoseCount(framesSeen.current), FRAME_COUNT_MS);
+    return () => clearInterval(show);
+  }, [dataMode]);
+
+  const countFrame = React.useCallback(() => {
+    framesSeen.current += 1;
+  }, []);
 
   const onReady = React.useCallback((event: ReadyEvent) => {
     setReady(event);
@@ -140,10 +155,6 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   }, []);
   const onCameraChange = React.useCallback(
     (event: CameraChangeEvent) => setFacing(event.facing),
-    [],
-  );
-  const onPerformanceChange = React.useCallback(
-    (event: PerformanceEvent) => setPerformance(event),
     [],
   );
 
@@ -207,11 +218,11 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
     );
   }
 
-  const fps = fpsLive;
+  const fps = measured?.measuredFps ?? 0;
   // Everything at the bottom stacks off one base, so a panel can never land under the rail.
   const railBottom = insets.bottom + theme.space(4);
   const panelBottom = railBottom + RAIL_HEIGHT + theme.space(3);
-  const target = performance?.targetFps ?? ready?.targetFps ?? 0;
+  const target = measured?.resolved.targetFps ?? ready?.targetFps ?? 0;
 
   return (
     <View style={styles.root}>
@@ -229,7 +240,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
         minConfidence={confidence === 'auto' ? undefined : Number(confidence)}
         smoothing={smoothing ? { minCutoff: Number(minCutoff), beta: Number(beta) } : false}
         data={{ mode: dataMode }}
-        onPose={dataMode === 'off' ? undefined : () => setPoseCount((value) => value + 1)}
+        onPose={dataMode === 'off' ? undefined : countFrame}
         resolution={resolution}
         analysisResolution={analysis}
         overlay={
@@ -245,7 +256,6 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
         onReady={onReady}
         onError={onError}
         onCameraChange={onCameraChange}
-        onPerformanceChange={onPerformanceChange}
       />
 
       {/* Closes any open panel without stealing a tap that was meant for a control. */}
@@ -265,7 +275,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
           <Glass style={styles.statBar} radius={theme.radius.pill} intensity={55}>
             <Live label="fps" value={ready ? `${fps}` : '–'} hint={target ? `/${target}` : ''} />
             <Divider />
-            <Live label="lens" value={facing} />
+            <Live label="limit" value={measured?.limitedBy ?? '–'} />
             <Divider />
             <Live label="gpu" value={ready?.delegate ?? '–'} />
             <Divider />
@@ -412,6 +422,8 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
 
             {panel === 'debug' ? (
               <>
+                <Readout ready={ready} measured={measured} facing={facing} />
+                <Rule />
                 <ToggleRow title="Readout" value={showStats} onChange={setShowStats} />
                 <Rule />
                 <Choice
@@ -427,6 +439,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
                   options={DATA_MODES}
                   value={dataMode}
                   onChange={(next) => {
+                    framesSeen.current = 0;
                     setPoseCount(0);
                     setDataMode(next);
                   }}
@@ -481,6 +494,8 @@ const LOG_LIMIT = 40;
 const RAIL_HEIGHT = 58;
 /** The native side refreshes its measurement once a second, so asking faster reads the same number. */
 const FPS_POLL_MS = 1000;
+/** Often enough to read as live, rarely enough that counting frames never costs a render per frame. */
+const FRAME_COUNT_MS = 250;
 
 /** `Resolution` is a width and a height, not the preset name that was asked for. */
 function shortSize(size?: { width: number; height: number }) {
@@ -503,7 +518,79 @@ function Divider() {
   return <View style={styles.divider} />;
 }
 
+/**
+ * Everything the governor knows, in one place: what it measured, what it chose, and why. What a
+ * person needs to judge a device before and after a change, and to explain a rate below target.
+ */
+function Readout({
+  ready,
+  measured,
+  facing,
+}: {
+  ready: ReadyEvent | null;
+  measured: ProfileState | null;
+  facing: 'front' | 'back';
+}) {
+  const rows: [string, string][] = [
+    [
+      'Rate',
+      measured
+        ? `${measured.measuredFps} of ${measured.resolved.targetFps} fps, camera ${measured.cameraFps}`
+        : '–',
+    ],
+    ['Limited by', measured?.limitedBy ?? '–'],
+    [
+      'Inference p50',
+      measured && measured.p50InferenceMs > 0 ? `${measured.p50InferenceMs.toFixed(1)} ms` : '–',
+    ],
+    ['Device', measured ? `${measured.tier} tier, ${measured.phase} (${measured.source})` : '–'],
+    [
+      'Heat',
+      measured ? `${measured.thermalState}${measured.lowPower ? ', low power on' : ''}` : '–',
+    ],
+    ['Lens', facing],
+    ['Model', ready ? `${ready.model} on ${measured?.resolved.delegate ?? ready.delegate}` : '–'],
+    [
+      'Frames',
+      measured && ready
+        ? `preview ${measured.resolved.preview}, model sees ${shortSize(ready.analysisResolution)}`
+        : '–',
+    ],
+  ];
+  return (
+    <View style={styles.readout}>
+      {rows.map(([label, value]) => (
+        <View key={label} style={styles.readoutRow}>
+          <Text style={styles.readoutLabel}>{label}</Text>
+          <Text style={styles.readoutValue} numberOfLines={1}>
+            {value}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  readout: {
+    gap: theme.space(1.5),
+    paddingVertical: theme.space(1),
+  },
+  readoutRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: theme.space(3),
+  },
+  readoutLabel: {
+    color: theme.color.muted,
+    fontSize: 13,
+  },
+  readoutValue: {
+    flexShrink: 1,
+    color: theme.color.text,
+    fontSize: 13,
+    fontVariant: ['tabular-nums'],
+  },
   root: {
     flex: 1,
     backgroundColor: '#000',
