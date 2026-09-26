@@ -98,7 +98,7 @@ extension PoseCameraView {
     // `switchCamera()` leaves behind, so only a pinned facing is reconciled here.
     guard pinnedFacing else { return }
     let target = resolveFacing()
-    guard target != camera.facing else { return }
+    guard target != camera.targetFacing else { return }
     // Reconciling a prop is not the interactive switch, and a paused session has nothing to switch,
     // so the value is parked for the next bind instead of failing a switch nobody asked for.
     if camera.isBound {

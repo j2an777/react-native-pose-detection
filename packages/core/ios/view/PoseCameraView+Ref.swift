@@ -3,8 +3,9 @@ import UIKit
 
 /// The imperative surface behind the ref, and every event this view sends.
 extension PoseCameraView {
+  /// From where the last queued switch is heading, so two quick switches go there and back.
   func switchCamera(onDone: @escaping (String) -> Void, onFailed: @escaping (String) -> Void) {
-    setFacingInternal(camera.facing.opposite, onDone: onDone, onFailed: onFailed)
+    setFacingInternal(camera.targetFacing.opposite, onDone: onDone, onFailed: onFailed)
   }
 
   func setFacingInternal(

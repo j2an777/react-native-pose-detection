@@ -21,27 +21,46 @@ enum Facing {
 /**
  Owns the capture session. Knows about frames, not poses.
 
- **Every field here belongs to `sessionQueue`**, a serial queue of its own, unlike Android where
- CameraX forces the session onto the main thread. `startRunning` blocks until the camera is up, so
- running it on main would stall the first frame of every mount behind it. Callbacks hop to main,
- because the view's state lives there.
+ **The session, its input and its output belong to `sessionQueue`**, a serial queue of its own,
+ unlike Android where CameraX forces the session onto the main thread. `startRunning` blocks until
+ the camera is up, so running it on main would stall the first frame of every mount behind it.
+ Everything else here is main-thread state, and callbacks hop to main because the view's state
+ lives there.
 
  Sample buffers are delivered on `analysisQueue` and inference runs there too, so a buffer never
  escapes the callback it arrived in.
  */
 final class CameraSource {
-  private let sessionQueue = DispatchQueue(label: "com.posedetection.session")
-  private let analysisQueue: DispatchQueue
-  private weak var previewView: PreviewView?
-  private weak var output: AVCaptureVideoDataOutput?
-  private weak var sampleDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
+  let sessionQueue = DispatchQueue(label: "com.posedetection.session")
+  let analysisQueue: DispatchQueue
+  weak var previewView: PreviewView?
 
-  private var session: AVCaptureSession?
-  private var input: AVCaptureDeviceInput?
+  /**
+   Weak because the view owns this camera, and never cleared, because a detached view that comes
+   back starts this same camera again. Clearing it on release once left a reattached view with a
+   running preview and no frames reaching the detector, which is the counterpart of Android
+   setting its analyzer again on every bind.
+   */
+  weak var sampleDelegate: AVCaptureVideoDataOutputSampleBufferDelegate?
+
+  // Session queue only.
+  var session: AVCaptureSession?
+  var input: AVCaptureDeviceInput?
+  var output: AVCaptureVideoDataOutput?
+  /// The lens actually attached to `session`, which is what a rollback returns to.
+  var boundFacing: Facing = .front
 
   /// Main-thread mirror of the session state, so the view can report it without a queue hop.
   private(set) var facing: Facing = .front
   private(set) var isBound = false
+
+  /**
+   The lens once every switch already asked for has landed. A switch made while another is still
+   rebinding starts from here rather than from `facing`, so two quick switches go there and back,
+   the way two synchronous binds do on Android.
+   */
+  private(set) var targetFacing: Facing = .front
+  private var switchesInFlight = 0
 
   var previewSize = CaptureSize(width: 1280, height: 720)
   var analysisSize = CaptureSize(width: 640, height: 480)
@@ -49,11 +68,20 @@ final class CameraSource {
   /// `auto` prefers front and falls back to back. A pinned lens fails instead of falling back.
   var facingFallbackAllowed = false
 
-  /// Tells a callback that lands a turn later whether its session still exists.
-  private var startToken = 0
+  /**
+   Bumped by every start, pause, resume and release, and compared by whatever lands a turn later to
+   learn whether it has been superseded. Behind a lock rather than main-thread state like the rest,
+   because the session queue has to read it too: it is how a pause that lands while `startRunning`
+   is still blocking keeps the camera off instead of leaving it running behind a view that asked for
+   it off.
+   */
+  let token = Guarded(0)
+
+  /// Kept so `resume()` can re-run what a start runs once the camera is up, as Android does.
+  private var onBound: (() -> Void)?
 
   /// Read on the session queue, written on main when the device rotates.
-  private var orientation: AVCaptureVideoOrientation = .portrait
+  var orientation: AVCaptureVideoOrientation = .portrait
 
   private var analyzerEnabled = false
 
@@ -66,36 +94,55 @@ final class CameraSource {
   // MARK: - Lifecycle
 
   func start(facing: Facing, onBound: @escaping () -> Void, onFailed: @escaping (ErrorCode, Error?) -> Void) {
-    startToken += 1
-    let token = startToken
+    let current = bump()
     self.facing = facing
+    targetFacing = facing
+    self.onBound = onBound
     orientation = currentOrientation()
+    let request = SessionRequest(
+      target: facing,
+      previewSize: previewSize,
+      analysisSize: analysisSize,
+      fallbackAllowed: facingFallbackAllowed,
+      analyzerEnabled: analyzerEnabled,
+      token: current
+    )
 
     sessionQueue.async { [weak self] in
       guard let self = self else { return }
+      let resolved: Facing
       do {
-        try self.configure(target: facing, token: token)
+        resolved = try self.configure(request)
       } catch {
         PoseLog.error(.camera, "camera start failed: \(error.localizedDescription)")
-        DispatchQueue.main.async { onFailed(.cameraStartFailed, error) }
+        DispatchQueue.main.async {
+          guard self.isCurrent(current) else { return }
+          onFailed(.cameraStartFailed, error)
+        }
         return
       }
+      let session = self.session
       DispatchQueue.main.async {
-        guard token == self.startToken else { return }
+        guard self.isCurrent(current) else { return }
+        self.facing = resolved
+        self.targetFacing = resolved
+        self.attachPreview(session)
         self.isBound = true
         onBound()
       }
     }
   }
 
-  /// Rebinds, restoring the old lens on failure. `onDone` reports the lens actually bound.
+  /**
+   Rebinds, restoring the old lens on failure. `onDone` reports the lens actually bound.
+
+   Every call settles exactly once. A switch made while another is rebinding queues behind it; one
+   that a pause or release overtakes fails with `CAMERA_SWITCH_FAILED` rather than leaving its
+   promise pending forever.
+   */
   func switchTo(_ target: Facing, onDone: @escaping (Facing) -> Void, onFailed: @escaping (ErrorCode, Error?) -> Void) {
     guard isBound else {
       onFailed(.cameraSwitchFailed, CameraError("camera is not running"))
-      return
-    }
-    if target == facing {
-      onDone(facing)
       return
     }
     // The `auto` fallback belongs on the first bind, not here. Letting it run would rebind the lens
@@ -106,32 +153,47 @@ final class CameraSource {
       return
     }
 
-    let previous = facing
-    startToken += 1
-    let token = startToken
+    let current = token.value
+    targetFacing = target
+    switchesInFlight += 1
+
+    // Resolves a switch that did land, unless something overtook it on the way back to main.
+    let landedOrSuperseded: (Bool) -> Void = { superseded in
+      if superseded {
+        onFailed(.cameraSwitchFailed, CameraError("the camera was paused or released before the switch finished"))
+      } else {
+        onDone(target)
+      }
+    }
 
     sessionQueue.async { [weak self] in
       guard let self = self else { return }
+      guard self.isCurrent(current), self.session != nil else {
+        self.finishSwitch(current, landed: nil) { _ in
+          onFailed(.cameraSwitchFailed, CameraError("the camera stopped before the switch ran"))
+        }
+        return
+      }
+      let previous = self.boundFacing
+      if previous == target {
+        // Already there, because an earlier switch in the queue took it there.
+        self.finishSwitch(current, landed: target, then: landedOrSuperseded)
+        return
+      }
       do {
         try self.swapInput(to: target)
-        DispatchQueue.main.async {
-          guard token == self.startToken else { return }
-          self.facing = target
-          // The preview layer keeps its connection across an input swap, so its mirroring is the
-          // old lens's until this runs. Without it, switching front to back leaves the preview
-          // mirrored and the overlay lands on the wrong side of the body.
-          self.applyPreviewOrientation()
-          PoseLog.debug(.camera, "switched \(previous.nameForJs) to \(target.nameForJs)")
-          onDone(target)
-        }
+        PoseLog.debug(.camera, "switched \(previous.nameForJs) to \(target.nameForJs)")
+        self.finishSwitch(current, landed: target, then: landedOrSuperseded)
       } catch {
         PoseLog.warn(.camera, "switch to \(target.nameForJs) failed, rolling back: \(error.localizedDescription)")
         do {
           try self.swapInput(to: previous)
-          DispatchQueue.main.async { onFailed(.cameraSwitchFailed, error) }
+          self.finishSwitch(current, landed: previous) { _ in
+            onFailed(.cameraSwitchFailed, error)
+          }
         } catch let rollbackError {
           // The previous camera is gone too. This is no longer recoverable.
-          DispatchQueue.main.async {
+          self.finishSwitch(current, landed: nil) { _ in
             self.isBound = false
             onFailed(.cameraUnavailable, rollbackError)
           }
@@ -151,10 +213,11 @@ final class CameraSource {
     PoseLog.debug(.camera, "target rotation now \(next.rawValue)")
   }
 
-  /// Parks a facing change made while unbound so the next bind picks it up.
+  /// Parks a facing change made while unbound so the next bind, or resume, picks it up.
   func setPendingFacing(_ target: Facing) {
     guard !isBound else { return }
     facing = target
+    targetFacing = target
   }
 
   /**
@@ -163,180 +226,132 @@ final class CameraSource {
    */
   func setAnalyzerEnabled(_ enabled: Bool) {
     analyzerEnabled = enabled
-    let delegate = enabled ? sampleDelegate : nil
     let queue = analysisQueue
     sessionQueue.async { [weak self] in
-      self?.output?.setSampleBufferDelegate(delegate, queue: enabled ? queue : nil)
+      guard let self = self else { return }
+      self.output?.setSampleBufferDelegate(enabled ? self.sampleDelegate : nil, queue: enabled ? queue : nil)
     }
   }
 
+  /**
+   Stops the session whatever state it is in. Queued rather than guarded on `isBound`, so a pause
+   that lands while a start is still configuring runs after it and finds the session it built.
+   */
   func pause() {
-    startToken += 1
-    guard isBound else { return }
+    bump()
     isBound = false
     sessionQueue.async { [weak self] in
-      self?.session?.stopRunning()
+      guard let session = self?.session, session.isRunning else { return }
+      session.stopRunning()
       PoseLog.info(.camera, "session stopped")
     }
   }
 
+  /**
+   Restarts what `pause()` stopped and re-runs what a start runs once the camera is up: the preview
+   attach and `onBound`. A pause that landed during startup left a session that was built but
+   never started, and without both of those it came back as a running camera with no preview, no
+   detector and no `onReady`.
+   */
   func resume(onFailed: @escaping (ErrorCode, Error?) -> Void) {
     guard !isBound else { return }
-    let target = facing
+    let current = bump()
+    let target = targetFacing
 
-    // A pause that landed during startup left no session to restart, so the start is re-issued.
-    // That is what makes pause-then-resume during startup recoverable instead of permanently dead.
-    guard session != nil else {
-      start(facing: target, onBound: {}, onFailed: onFailed)
-      return
-    }
-
-    startToken += 1
-    let token = startToken
     sessionQueue.async { [weak self] in
-      guard let self = self, let session = self.session else { return }
-      session.startRunning()
+      guard let self = self, self.isCurrent(current) else { return }
+      guard let session = self.session else {
+        // Nothing was ever built: the start failed, or a release came first. Start over.
+        DispatchQueue.main.async {
+          guard self.isCurrent(current) else { return }
+          self.start(facing: target, onBound: self.onBound ?? {}, onFailed: onFailed)
+        }
+        return
+      }
+
+      // A facing parked while paused, which Android's resume binds the same way.
+      if target != self.boundFacing {
+        do {
+          try self.swapInput(to: target)
+        } catch {
+          PoseLog.warn(.camera, "could not resume on \(target.nameForJs): \(error.localizedDescription)")
+        }
+      }
+      if !session.isRunning { session.startRunning() }
+      guard self.isCurrent(current) else {
+        session.stopRunning()
+        return
+      }
+
+      let bound = self.boundFacing
       DispatchQueue.main.async {
-        guard token == self.startToken else { return }
+        guard self.isCurrent(current) else { return }
+        self.facing = bound
+        self.targetFacing = bound
+        self.attachPreview(session)
         self.isBound = true
+        self.onBound?()
       }
     }
   }
 
   func release() {
-    startToken += 1
+    bump()
     isBound = false
-    let doomed = session
-    let doomedOutput = output
-    session = nil
-    input = nil
-    sampleDelegate = nil
+    onBound = nil
     previewView?.previewLayer?.session = nil
-    sessionQueue.async {
-      doomedOutput?.setSampleBufferDelegate(nil, queue: nil)
-      doomed?.stopRunning()
+    // Strongly: the view may be gone by the time this runs, and the session still has to stop.
+    sessionQueue.async { [self] in
+      output?.setSampleBufferDelegate(nil, queue: nil)
+      session?.stopRunning()
+      session = nil
+      input = nil
+      output = nil
     }
   }
 
-  // MARK: - Session queue only
+  // MARK: - Tokens
 
-  private func configure(target: Facing, token: Int) throws {
-    let session = AVCaptureSession()
-    session.beginConfiguration()
-    session.sessionPreset = CameraSource.preset(for: previewSize)
-
-    let resolved = try resolveDevice(target)
-    let deviceInput = try AVCaptureDeviceInput(device: resolved.device)
-    guard session.canAddInput(deviceInput) else {
-      session.commitConfiguration()
-      throw CameraError("this device will not accept the \(resolved.facing.nameForJs) camera")
+  @discardableResult
+  private func bump() -> Int {
+    return token.mutate { value -> Int in
+      value += 1
+      return value
     }
-    session.addInput(deviceInput)
-
-    let videoOutput = AVCaptureVideoDataOutput()
-    // A slow frame is dropped rather than queued, so the pipeline degrades in latency instead of
-    // falling behind forever. The counterpart of STRATEGY_KEEP_ONLY_LATEST on Android.
-    videoOutput.alwaysDiscardsLateVideoFrames = true
-    videoOutput.videoSettings = videoSettings()
-    guard session.canAddOutput(videoOutput) else {
-      session.commitConfiguration()
-      throw CameraError("this device will not accept a video data output")
-    }
-    session.addOutput(videoOutput)
-
-    self.session = session
-    self.input = deviceInput
-    self.output = videoOutput
-
-    applyOrientation(orientation)
-    session.commitConfiguration()
-
-    if analyzerEnabled {
-      videoOutput.setSampleBufferDelegate(sampleDelegate, queue: analysisQueue)
-    }
-
-    // Before the layer is attached: assigning `previewLayer.session` opens its own configuration
-    // block, and doing that from main while this queue is inside `startRunning` puts two on one
-    // session, which AVFoundation aborts on. A simulator hid the overlap; an iPhone 15 did not.
-    session.startRunning()
-
-    DispatchQueue.main.async { [weak self] in
-      guard let self = self, token == self.startToken else { return }
-      self.facing = resolved.facing
-      self.previewView?.previewLayer?.session = session
-      self.applyPreviewOrientation()
-    }
-    PoseLog.info(
-      .camera,
-      "bound \(resolved.facing.nameForJs) preview=\(previewSize.width)x\(previewSize.height) "
-        + "analysis=\(analysisSize.width)x\(analysisSize.height)"
-    )
   }
 
-  private func swapInput(to target: Facing) throws {
-    guard let session = session else { throw CameraError("no capture session") }
-    guard let device = device(for: target) else {
-      throw CameraError("this device has no \(target.nameForJs) camera")
-    }
-
-    session.beginConfiguration()
-    defer { session.commitConfiguration() }
-
-    if let existing = input {
-      session.removeInput(existing)
-    }
-    let next = try AVCaptureDeviceInput(device: device)
-    guard session.canAddInput(next) else {
-      throw CameraError("this device will not accept the \(target.nameForJs) camera")
-    }
-    session.addInput(next)
-    input = next
-    // Inside the configuration block, so no frame is ever delivered with the old rotation.
-    applyOrientation(orientation)
+  func isCurrent(_ candidate: Int) -> Bool {
+    return token.value == candidate
   }
 
-  private func applyOrientation(_ orientation: AVCaptureVideoOrientation) {
-    guard let connection = output?.connection(with: .video) else { return }
-    CaptureRotation.apply(orientation, to: connection)
-    // Never mirrored: the landmarks have to describe the real world.
-    CaptureRotation.mirror(false, on: connection)
-  }
+  // MARK: - Switch bookkeeping, main thread
 
-  private func videoSettings() -> [String: Any] {
-    return [
-      kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
-      kCVPixelBufferWidthKey as String: analysisSize.width,
-      kCVPixelBufferHeightKey as String: analysisSize.height
-    ]
-  }
-
-  private func resolveDevice(_ target: Facing) throws -> (device: AVCaptureDevice, facing: Facing) {
-    if let device = device(for: target) {
-      return (device, target)
+  /**
+   Hops to main and settles one switch exactly once. `landed` is the lens bound once this switch is
+   done, or nil when it never got as far as the session. `settle` is told whether a start, pause,
+   resume or release overtook the switch meanwhile, in which case nothing it bound is recorded.
+   */
+  private func finishSwitch(_ current: Int, landed: Facing?, then settle: @escaping (_ superseded: Bool) -> Void) {
+    DispatchQueue.main.async {
+      self.switchesInFlight -= 1
+      let superseded = !self.isCurrent(current)
+      if !superseded, let landed = landed {
+        self.facing = landed
+        // The preview layer keeps its connection across an input swap, so its mirroring is the old
+        // lens's until this runs. Without it, switching front to back leaves the preview mirrored
+        // and the overlay lands on the wrong side of the body.
+        self.applyPreviewOrientation()
+      }
+      self.syncTargetWhenIdle()
+      settle(superseded)
     }
-    guard facingFallbackAllowed, let fallback = device(for: target.opposite) else {
-      throw CameraError("this device has no \(target.nameForJs) camera")
+  }
+
+  /// Once nothing is queued, the target is whatever is actually bound. Main thread only.
+  private func syncTargetWhenIdle() {
+    if switchesInFlight <= 0 {
+      switchesInFlight = 0
+      targetFacing = facing
     }
-    PoseLog.info(.camera, "no \(target.nameForJs) camera on this device, using \(target.opposite.nameForJs)")
-    return (fallback, target.opposite)
-  }
-
-  private func device(for target: Facing) -> AVCaptureDevice? {
-    return AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: target.position)
-  }
-
-  // MARK: - Main thread only
-
-  private func applyPreviewOrientation() {
-    guard let connection = previewView?.previewLayer?.connection else { return }
-    CaptureRotation.apply(orientation, to: connection)
-    CaptureRotation.mirror(facing == .front, on: connection)
-  }
-
-  private func currentOrientation() -> AVCaptureVideoOrientation {
-    guard Thread.isMainThread, let interface = previewView?.window?.windowScene?.interfaceOrientation else {
-      return orientation
-    }
-    return CaptureRotation.videoOrientation(for: interface)
   }
 }
