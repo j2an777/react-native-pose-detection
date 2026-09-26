@@ -28,9 +28,6 @@ public class PoseCameraView: ExpoView {
   static let millisPerSecond = 1_000.0
   static let nanosPerMilli = 1_000_000.0
 
-  /// Six frames at 30 fps. Longer than a stutter, shorter than anything worth measuring across.
-  static let maxVelocityGapMs = 200.0
-
   static let minTargetFps = 1
   static let maxTargetFps = 60
 
@@ -47,9 +44,6 @@ public class PoseCameraView: ExpoView {
   /// A sensor frame this close to its due time counts as on time. Sensor clocks jitter by a few
   /// milliseconds, and a strict compare would drop a frame that is early by one.
   static let pacingJitterMs = 5.0
-
-  /// Two boxes within this much area are the same size, and the centre breaks the tie.
-  static let areaTieEpsilon: Float = 1e-4
 
   /// How long a landmarker nobody is using is kept before its memory is given back: long enough
   /// that toggling detection or the camera, or a restart for new geometry, skips the build.
@@ -156,15 +150,19 @@ public class PoseCameraView: ExpoView {
    live reading is built from thread-safe values only, never from the view, so it can run on the
    JavaScript thread. See `FrameStreams`.
    */
-  private(set) lazy var stream = FrameStream(frames: frames) { [measuredFps, lastResultMs, rate, idleFps, feeding] in
-    PoseCameraView.liveState(
-      measuredFps: measuredFps,
-      lastResultMs: lastResultMs,
-      rate: rate,
-      idleFps: idleFps,
-      feeding: feeding
-    )
-  }
+  private(set) lazy var stream = FrameStream(
+    frames: frames,
+    readDetecting: { [feeding, detector] in feeding.value && detector.value != nil },
+    readLive: { [measuredFps, lastResultMs, rate, idleFps, feeding] in
+      PoseCameraView.liveState(
+        measuredFps: measuredFps,
+        lastResultMs: lastResultMs,
+        rate: rate,
+        idleFps: idleFps,
+        feeding: feeding
+      )
+    }
+  )
   var streamId: Int?
   let triggers = TriggerEngine()
   let smoothing = OneEuroFilter()

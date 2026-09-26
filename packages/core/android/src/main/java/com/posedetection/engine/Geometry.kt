@@ -179,11 +179,39 @@ internal data class PoseBox(
         return if (union > 0f) intersection / union else 0f
     }
 
-    private fun area(): Float = maxOf(0f, maxX - minX) * maxOf(0f, maxY - minY)
+    fun area(): Float = maxOf(0f, maxX - minX) * maxOf(0f, maxY - minY)
 
     companion object {
         /** Below this much overlap two consecutive primary poses are different people. */
         const val SAME_BODY_OVERLAP = 0.3f
+
+        /** Two areas closer than this are a tie, which the distance from the frame's centre breaks. */
+        const val AREA_TIE_EPSILON = 1e-4f
+
+        /**
+         * The subject among several bodies: the largest box, ties broken by distance from the
+         * frame's centre. MediaPipe's own order is detection order and means nothing about who the
+         * subject is. The live view applies the same rule to MediaPipe's landmarks without building
+         * boxes first.
+         */
+        fun primary(boxes: List<PoseBox>): Int {
+            var best = 0
+            var bestArea = -1f
+            var bestOffset = Float.MAX_VALUE
+            for ((index, box) in boxes.withIndex()) {
+                val area = box.area()
+                val offset = abs((box.minX + box.maxX) / 2 - 0.5f) + abs((box.minY + box.maxY) / 2 - 0.5f)
+                val better =
+                    area > bestArea + AREA_TIE_EPSILON ||
+                        (abs(area - bestArea) <= AREA_TIE_EPSILON && offset < bestOffset)
+                if (better) {
+                    best = index
+                    bestArea = area
+                    bestOffset = offset
+                }
+            }
+            return best
+        }
 
         /** The landmarks' bounding box, read from the flat landmark buffer. */
         fun of(landmarks: FloatArray): PoseBox {

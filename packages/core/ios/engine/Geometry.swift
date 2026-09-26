@@ -155,6 +155,32 @@ struct PoseBox: Equatable {
   /// Below this much overlap two consecutive primary poses are different people.
   static let sameBodyOverlap: Float = 0.3
 
+  /// Two areas closer than this are a tie, which the distance from the frame's centre breaks.
+  static let areaTieEpsilon: Float = 1e-4
+
+  /**
+   The subject among several bodies: the largest box, ties broken by distance from the frame's
+   centre. MediaPipe's own order is detection order and means nothing about who the subject is.
+   The live view applies the same rule to MediaPipe's landmarks without building boxes first.
+   */
+  static func primary(_ boxes: [PoseBox]) -> Int {
+    var best = 0
+    var bestArea: Float = -1
+    var bestOffset = Float.greatestFiniteMagnitude
+    for (index, box) in boxes.enumerated() {
+      let area = box.area
+      let offset = abs((box.minX + box.maxX) / 2 - 0.5) + abs((box.minY + box.maxY) / 2 - 0.5)
+      let better = area > bestArea + areaTieEpsilon
+        || (abs(area - bestArea) <= areaTieEpsilon && offset < bestOffset)
+      if better {
+        best = index
+        bestArea = area
+        bestOffset = offset
+      }
+    }
+    return best
+  }
+
   /// The landmarks' bounding box, read from the flat landmark buffer.
   init(_ landmarks: [Float]) {
     var minX = Float.greatestFiniteMagnitude
@@ -188,7 +214,7 @@ struct PoseBox: Equatable {
     return union > 0 ? intersection / union : 0
   }
 
-  private var area: Float {
+  var area: Float {
     return max(0, maxX - minX) * max(0, maxY - minY)
   }
 }

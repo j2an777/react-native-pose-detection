@@ -85,6 +85,20 @@ final class OneEuroFilterTests: XCTestCase {
     XCTAssertEqual(landmarks[0], 0.9, "untouched, not filtered against nothing")
   }
 
+  func testAGapStartsTheFilterOverFromTheFrameAfterIt() {
+    filter.configure(minCutoff: 0.1, beta: 0)
+    var before = frame(0.1)
+    filter.apply(to: &before, elapsedSeconds: step)
+    var gap = frame(0.9)
+    filter.apply(to: &gap, elapsedSeconds: .nan)
+
+    // Held still at the new place: filtered against the frame after the gap, nothing moves. Against
+    // the stale state from before it, this frame would be dragged back toward 0.1.
+    var next = frame(0.9)
+    filter.apply(to: &next, elapsedSeconds: step)
+    XCTAssertEqual(next[0], 0.9, accuracy: 1e-6)
+  }
+
   func testAResetMakesTheNextFrameTheFirstOneAgain() {
     filter.configure(minCutoff: 0.1, beta: 0)
     var seed = frame(0)

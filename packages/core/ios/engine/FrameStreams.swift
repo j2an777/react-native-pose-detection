@@ -8,14 +8,25 @@ import Foundation
 final class FrameStream {
   let frames: FrameRingBuffer
   private let readLive: () -> [String: Any]
+  private let readDetecting: () -> Bool
 
-  init(frames: FrameRingBuffer, readLive: @escaping () -> [String: Any]) {
+  init(
+    frames: FrameRingBuffer,
+    readDetecting: @escaping () -> Bool = { false },
+    readLive: @escaping () -> [String: Any]
+  ) {
     self.frames = frames
+    self.readDetecting = readDetecting
     self.readLive = readLive
   }
 
   func live() -> [String: Any] {
     return readLive()
+  }
+
+  /// True while this camera runs inference, which is when a file job must stay off the GPU.
+  var isDetecting: Bool {
+    return readDetecting()
   }
 }
 
@@ -72,5 +83,13 @@ final class FrameStreams {
 
   func live(_ id: Int) -> [String: Any] {
     return stream(id)?.live() ?? [:]
+  }
+
+  /// Whether any mounted camera is running inference right now.
+  func anyDetecting() -> Bool {
+    lock.lock()
+    let all = streams.values.compactMap { $0.stream }
+    lock.unlock()
+    return all.contains { $0.isDetecting }
   }
 }

@@ -29,6 +29,7 @@ import com.posedetection.camera.Facing
 import com.posedetection.camera.FrameConverter
 import com.posedetection.detector.DelegateRequest
 import com.posedetection.detector.PoseDetector
+import com.posedetection.engine.Continuity
 import com.posedetection.engine.DEFAULT_FLUSH_MS
 import com.posedetection.engine.DEFAULT_THROTTLE_MS
 import com.posedetection.engine.DataMode
@@ -182,7 +183,7 @@ class PoseCameraView(
      * What JavaScript reads synchronously, registered under the id `<PoseCamera>` passes as a prop.
      * Its live reading only touches volatile fields, so it is safe on the JavaScript thread.
      */
-    private val stream = FrameStream(frames) { liveState() }
+    private val stream = FrameStream(frames, { feeding && detector != null }) { liveState() }
     private var streamId: Int? = null
     private val triggers = TriggerEngine()
     private val smoothing = OneEuroFilter()
@@ -1096,9 +1097,12 @@ class PoseCameraView(
         previousBox = box
 
         // A gap means a switch, a pause, or a backgrounded app. The positions on either side are
-        // real, the difference between them is not a movement that happened at that speed.
+        // real, the difference between them is not a movement that happened at that speed. What
+        // counts as a gap depends on the rate frames are expected at, see `Continuity`.
         val elapsedMs = nowMs.toDouble() - previousFrameMs
-        val comparable = previousFrameMs > 0.0 && elapsedMs > 0.0 && elapsedMs <= MAX_VELOCITY_GAP_MS
+        val expectedFps = (idleFps ?: rate.fps).toDouble()
+        val comparable =
+            previousFrameMs > 0.0 && elapsedMs > 0.0 && elapsedMs <= Continuity.maxGapMs(expectedFps)
         val elapsedSeconds = if (comparable) (elapsedMs / MILLIS_PER_SECOND).toFloat() else Float.NaN
 
         // Landmarks are normalized to the rotated frame MediaPipe was asked to process, not to the
@@ -1161,7 +1165,8 @@ class PoseCameraView(
             val offset = abs((minX + maxX) / 2f - 0.5f) + abs((minY + maxY) / 2f - 0.5f)
 
             val better =
-                area > bestArea + AREA_TIE_EPSILON || (abs(area - bestArea) <= AREA_TIE_EPSILON && offset < bestOffset)
+                area > bestArea + PoseBox.AREA_TIE_EPSILON ||
+                    (abs(area - bestArea) <= PoseBox.AREA_TIE_EPSILON && offset < bestOffset)
             if (better) {
                 best = index
                 bestArea = area
@@ -1839,9 +1844,6 @@ class PoseCameraView(
         const val MILLIS_PER_SECOND = 1_000.0
         const val NANOS_PER_MILLI = 1_000_000.0
 
-        /** Six frames at 30 fps. Longer than a stutter, shorter than anything worth measuring across. */
-        const val MAX_VELOCITY_GAP_MS = 200.0
-
         /** id, phase, count, timestamp, and at most durationMs and snapshotId. */
         const val TRIGGER_PAYLOAD_SLOTS = 6
 
@@ -1866,9 +1868,6 @@ class PoseCameraView(
          * few milliseconds, and a strict compare would drop a frame that is early by one.
          */
         const val PACING_JITTER_MS = 5.0
-
-        /** Two boxes within this much area are the same size, and the centre breaks the tie. */
-        const val AREA_TIE_EPSILON = 1e-4f
 
         const val PRE_WARM_SIZE = 256
 

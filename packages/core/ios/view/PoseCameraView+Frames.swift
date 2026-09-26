@@ -61,12 +61,9 @@ extension PoseCameraView: PoseDetectorObserver {
   }
 
   /**
-   Everything a pose goes through once it exists, whatever produced it.
-
-   The camera reaches this through the detector callback above; a picked image or video reaches it
-   from anywhere else. Keeping one path is the point: smoothing, geometry, the trigger evaluator,
-   the ring buffer and the overlay all behave identically on a file and on the camera, so there is
-   no second implementation to keep in step.
+   Everything a camera pose goes through once it exists: smoothing, geometry, the trigger
+   evaluator, the ring buffer and the overlay, in that order. Photos and videos take their own path,
+   `StaticDetection`, which applies the same rules to a file's frames without a view.
    */
   func accept(_ result: PoseLandmarkerResult) {
     let poses = result.landmarks
@@ -104,9 +101,12 @@ extension PoseCameraView: PoseDetectorObserver {
     previousBox = box
 
     // A gap means a switch, a pause, or a backgrounded app. The positions on either side are real,
-    // the difference between them is not a movement that happened at that speed.
+    // the difference between them is not a movement that happened at that speed. What counts as a
+    // gap depends on the rate frames are expected at, see `Continuity`.
     let elapsedMs = Double(nowMs) - previousFrameMs.value
-    let comparable = previousFrameMs.value > 0 && elapsedMs > 0 && elapsedMs <= PoseCameraView.maxVelocityGapMs
+    let expectedFps = Double(idleFps.value ?? rate.value.fps)
+    let comparable = previousFrameMs.value > 0 && elapsedMs > 0
+      && elapsedMs <= Continuity.maxGapMs(fps: expectedFps)
     let elapsedSeconds = comparable ? Float(elapsedMs / PoseCameraView.millisPerSecond) : Float.nan
 
     let size = frameSize.value
@@ -200,8 +200,8 @@ extension PoseCameraView: PoseDetectorObserver {
 
       let area = (maxX - minX) * (maxY - minY)
       let offset = abs((minX + maxX) / 2 - 0.5) + abs((minY + maxY) / 2 - 0.5)
-      let better = area > bestArea + PoseCameraView.areaTieEpsilon
-        || (abs(area - bestArea) <= PoseCameraView.areaTieEpsilon && offset < bestOffset)
+      let better = area > bestArea + PoseBox.areaTieEpsilon
+        || (abs(area - bestArea) <= PoseBox.areaTieEpsilon && offset < bestOffset)
       if better {
         best = index
         bestArea = area

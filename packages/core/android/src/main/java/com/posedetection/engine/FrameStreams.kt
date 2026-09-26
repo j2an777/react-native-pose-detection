@@ -10,9 +10,14 @@ import java.nio.ByteBuffer
  */
 internal class FrameStream(
     val frames: FrameRingBuffer,
+    private val readDetecting: () -> Boolean = { false },
     private val readLive: () -> Map<String, Any?>,
 ) {
     fun live(): Map<String, Any?> = readLive()
+
+    /** True while this camera runs inference, which is when a file job must stay off the GPU. */
+    val isDetecting: Boolean
+        get() = readDetecting()
 }
 
 /**
@@ -53,4 +58,10 @@ internal object FrameStreams {
     ): ByteBuffer = stream(id)?.frames?.takeSnapshot(ticket) ?: WireWriter.empty()
 
     fun live(id: Int): Map<String, Any?> = stream(id)?.live() ?: emptyMap()
+
+    /** Whether any mounted camera is running inference right now. */
+    fun anyDetecting(): Boolean {
+        val all = synchronized(this) { streams.values.mapNotNull { it.get() } }
+        return all.any { it.isDetecting }
+    }
 }

@@ -40,4 +40,16 @@ final class FrameStreamsTests: XCTestCase {
     streams.unregister(first, id: 1)
     XCTAssertTrue(streams.stream(1) === second)
   }
+
+  func testAnyDetectingIsTrueOnlyWhileSomeCameraRunsInference() {
+    let streams = FrameStreams()
+    var running = false
+    let idle = makeStream()
+    let live = FrameStream(frames: FrameRingBuffer(), readDetecting: { running }, readLive: { [:] })
+    streams.register(idle, id: 1)
+    streams.register(live, id: 2)
+    XCTAssertFalse(streams.anyDetecting())
+    running = true
+    XCTAssertTrue(streams.anyDetecting())
+  }
 }

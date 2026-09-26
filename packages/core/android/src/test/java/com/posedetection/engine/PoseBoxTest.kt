@@ -30,4 +30,18 @@ class PoseBoxTest {
         landmarks[Skeleton.LEFT_WRIST * Skeleton.LANDMARK_STRIDE + Skeleton.OFFSET_X] = 0.2f
         assertEquals(PoseBox(0.2f, 0.1f, 0.5f, 0.9f), PoseBox.of(landmarks))
     }
+
+    @Test
+    fun `the primary is the largest body`() {
+        val near = PoseBox(0.5f, 0.1f, 0.9f, 0.95f)
+        val far = PoseBox(0.1f, 0.4f, 0.2f, 0.6f)
+        assertEquals("detection order means nothing about the subject", 1, PoseBox.primary(listOf(far, near)))
+    }
+
+    @Test
+    fun `a tie goes to whoever is nearer the centre`() {
+        val edge = PoseBox(0.0f, 0.3f, 0.2f, 0.7f)
+        val centre = PoseBox(0.4f, 0.3f, 0.6f, 0.7f)
+        assertEquals(1, PoseBox.primary(listOf(edge, centre)))
+    }
 }

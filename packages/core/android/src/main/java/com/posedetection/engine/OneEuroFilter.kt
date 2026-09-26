@@ -50,7 +50,9 @@ internal class OneEuroFilter {
     /**
      * [elapsedSeconds] is the real interval, not a nominal one: the filter's whole behavior is a
      * function of it, and feeding a constant makes it lie whenever a frame is late. A non-positive
-     * or unknown interval leaves the frame untouched rather than dividing by it.
+     * or unknown interval is a gap, so the frame passes through untouched and the filter starts
+     * over from it. Keeping the state from before the gap would filter the next frame against a
+     * position the body left long ago.
      *
      * [scaleX] and [scaleY] turn a speed in normalized units into one in body spans: the span in
      * each axis's own units, so a distant subject's small movements count as much as a near one's
@@ -63,11 +65,10 @@ internal class OneEuroFilter {
         scaleX: Float = 1f,
         scaleY: Float = 1f,
     ) {
-        if (!primed) {
+        if (!primed || elapsedSeconds.isNaN() || elapsedSeconds <= 0f) {
             seed(landmarks)
             return
         }
-        if (elapsedSeconds.isNaN() || elapsedSeconds <= 0f) return
 
         val derivativeAlpha = alpha(DERIVATIVE_CUTOFF, elapsedSeconds)
 

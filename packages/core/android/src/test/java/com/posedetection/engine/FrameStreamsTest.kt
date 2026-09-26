@@ -1,5 +1,6 @@
 package com.posedetection.engine
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -33,5 +34,19 @@ class FrameStreamsTest {
         assertSame(second, FrameStreams.stream(7002))
         FrameStreams.unregister(second, 7002)
         assertNull(FrameStreams.stream(7002))
+    }
+
+    @Test
+    fun `any detecting is true only while some camera runs inference`() {
+        var running = false
+        val idle = stream()
+        val live = FrameStream(FrameRingBuffer(), { running }) { emptyMap() }
+        FrameStreams.register(idle, 7003)
+        FrameStreams.register(live, 7004)
+        assertFalse(FrameStreams.anyDetecting())
+        running = true
+        assertTrue(FrameStreams.anyDetecting())
+        FrameStreams.unregister(idle, 7003)
+        FrameStreams.unregister(live, 7004)
     }
 }

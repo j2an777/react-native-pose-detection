@@ -101,6 +101,19 @@ class OneEuroFilterTest {
     }
 
     @Test
+    fun `a gap starts the filter over from the frame after it`() {
+        filter.configure(0.1f, 0f)
+        filter.apply(frame(0.1f), 1f / 30f)
+        filter.apply(frame(0.9f), Float.NaN)
+
+        // Held still at the new place: filtered against the frame after the gap, nothing moves.
+        // Against the stale state from before it, this frame would be dragged back toward 0.1.
+        val next = frame(0.9f)
+        filter.apply(next, 1f / 30f)
+        assertEquals(0.9f, x(next), 1e-6f)
+    }
+
+    @Test
     fun `a reset makes the next frame the first one again`() {
         filter.configure(minCutoff = 0.1f, beta = 0f)
         filter.apply(frame(0f), 1f / 30f)

@@ -24,4 +24,16 @@ final class PoseBoxTests: XCTestCase {
     let box = PoseBox(landmarks)
     XCTAssertEqual(box, PoseBox(minX: 0.2, minY: 0.1, maxX: 0.5, maxY: 0.9))
   }
+
+  func testThePrimaryIsTheLargestBody() {
+    let near = PoseBox(minX: 0.5, minY: 0.1, maxX: 0.9, maxY: 0.95)
+    let far = PoseBox(minX: 0.1, minY: 0.4, maxX: 0.2, maxY: 0.6)
+    XCTAssertEqual(PoseBox.primary([far, near]), 1, "detection order means nothing about the subject")
+  }
+
+  func testATieGoesToWhoeverIsNearerTheCentre() {
+    let edge = PoseBox(minX: 0.0, minY: 0.3, maxX: 0.2, maxY: 0.7)
+    let centre = PoseBox(minX: 0.4, minY: 0.3, maxX: 0.6, maxY: 0.7)
+    XCTAssertEqual(PoseBox.primary([edge, centre]), 1)
+  }
 }
