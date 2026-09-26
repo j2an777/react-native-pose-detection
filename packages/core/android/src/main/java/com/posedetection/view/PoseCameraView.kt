@@ -45,6 +45,7 @@ import com.posedetection.engine.PoseBox
 import com.posedetection.engine.TriggerEngine
 import com.posedetection.engine.TriggerFiring
 import com.posedetection.engine.TriggerSpec
+import com.posedetection.engine.Upright
 import com.posedetection.performance.Budgets
 import com.posedetection.performance.Calibrator
 import com.posedetection.performance.CameraGeometry
@@ -1073,11 +1074,16 @@ class PoseCameraView(
         val nowMs = SystemClock.elapsedRealtime()
         lastPoseMs = nowMs
 
+        // MediaPipe answers in the sensor buffer's frame, whatever rotation it ran the model at, and
+        // everything from here on works upright, as on iOS. See `Upright`.
+        val quarter = Upright.quarterOf(frameRotationDegrees)
         for (index in 0 until Skeleton.LANDMARK_COUNT) {
             val landmark = pose[index]
             val base = index * Skeleton.LANDMARK_STRIDE
-            landmarkBuffer[base + Skeleton.OFFSET_X] = landmark.x()
-            landmarkBuffer[base + Skeleton.OFFSET_Y] = landmark.y()
+            val x = landmark.x()
+            val y = landmark.y()
+            landmarkBuffer[base + Skeleton.OFFSET_X] = Upright.x(x, y, quarter)
+            landmarkBuffer[base + Skeleton.OFFSET_Y] = Upright.y(x, y, quarter)
             landmarkBuffer[base + Skeleton.OFFSET_Z] = landmark.z()
             // Not orElse(0f): that takes an Object, so the literal is boxed once per landmark.
             val visibility = landmark.visibility()
@@ -1105,9 +1111,9 @@ class PoseCameraView(
             previousFrameMs > 0.0 && elapsedMs > 0.0 && elapsedMs <= Continuity.maxGapMs(expectedFps)
         val elapsedSeconds = if (comparable) (elapsedMs / MILLIS_PER_SECOND).toFloat() else Float.NaN
 
-        // Landmarks are normalized to the rotated frame MediaPipe was asked to process, not to the
-        // sensor buffer, so the overlay is handed the display-upright size. The mirror flag comes
-        // from the session, which is main-thread state, and is pushed in from there.
+        // The landmarks were turned upright as they were copied, so the overlay is handed the
+        // upright size too. The mirror flag comes from the session, which is main-thread state,
+        // and is pushed in from there.
         val rotation = frameRotationDegrees
         val frameWidth = if (rotation % 180 == 0) image.width else image.height
         val frameHeight = if (rotation % 180 == 0) image.height else image.width
@@ -1406,11 +1412,15 @@ class PoseCameraView(
             return
         }
 
+        // Turned with the screen landmarks, so a world x still points the way screen x does.
+        val quarter = Upright.quarterOf(frameRotationDegrees)
         for (index in 0 until Skeleton.LANDMARK_COUNT) {
             val landmark = points[index]
             val base = index * Skeleton.LANDMARK_STRIDE
-            worldBuffer[base + Skeleton.OFFSET_X] = landmark.x()
-            worldBuffer[base + Skeleton.OFFSET_Y] = landmark.y()
+            val x = landmark.x()
+            val y = landmark.y()
+            worldBuffer[base + Skeleton.OFFSET_X] = Upright.worldX(x, y, quarter)
+            worldBuffer[base + Skeleton.OFFSET_Y] = Upright.worldY(x, y, quarter)
             worldBuffer[base + Skeleton.OFFSET_Z] = landmark.z()
             val visibility = landmark.visibility()
             worldBuffer[base + Skeleton.OFFSET_VISIBILITY] = if (visibility.isPresent) visibility.get() else 0f

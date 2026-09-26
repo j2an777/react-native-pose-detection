@@ -230,3 +230,70 @@ internal data class PoseBox(
         }
     }
 }
+
+/**
+ * From the frame MediaPipe answers in to the upright one everything else works in.
+ *
+ * Android hands MediaPipe the sensor buffer as it is and asks for a rotation, which is only how
+ * the model looks at it: the landmarks come back in the unrotated buffer's frame. They are turned
+ * here, once, as they are copied out, so the overlay, the geometry, the triggers and the wire all
+ * see what iOS sees, where the capture connection turns the buffers themselves. [quarter] is the
+ * number of clockwise quarter turns that make the buffer upright, CameraX's `rotationDegrees / 90`.
+ */
+internal object Upright {
+    /** A point normalized to the buffer, to the upright frame. */
+    fun x(
+        x: Float,
+        y: Float,
+        quarter: Int,
+    ): Float =
+        when (quarter and 3) {
+            1 -> 1f - y
+            2 -> 1f - x
+            3 -> y
+            else -> x
+        }
+
+    fun y(
+        x: Float,
+        y: Float,
+        quarter: Int,
+    ): Float =
+        when (quarter and 3) {
+            1 -> x
+            2 -> 1f - y
+            3 -> 1f - x
+            else -> y
+        }
+
+    /** A vector about the hips, which is what world landmarks are, turned the same way. */
+    fun worldX(
+        x: Float,
+        y: Float,
+        quarter: Int,
+    ): Float =
+        when (quarter and 3) {
+            1 -> -y
+            2 -> -x
+            3 -> y
+            else -> x
+        }
+
+    fun worldY(
+        x: Float,
+        y: Float,
+        quarter: Int,
+    ): Float =
+        when (quarter and 3) {
+            1 -> x
+            2 -> -y
+            3 -> -x
+            else -> y
+        }
+
+    /** CameraX's clockwise degrees as quarter turns, whatever multiple of 90 it arrives as. */
+    fun quarterOf(rotationDegrees: Int): Int = Math.floorMod(rotationDegrees / DEGREES_PER_QUARTER, QUARTERS)
+
+    private const val DEGREES_PER_QUARTER = 90
+    private const val QUARTERS = 4
+}

@@ -229,6 +229,11 @@ internal class CameraSource(
                 .setResolutionSelector(previewSelector(previewSize))
                 .setTargetRotation(rotation)
                 .build()
+        // Before the bind, so the session opens once with both streams. Attached after, it opened
+        // with the analysis stream alone and was rebuilt at once to add the preview; that second
+        // open raced the camera still closing from the session before it, CameraX reported the
+        // camera unavailable and did not retry, and a remount sat with a preview and no frames.
+        preview.surfaceProvider = previewView.surfaceProvider
 
         // RGBA_8888 is converted by CameraX in native code (libyuv), which is far cheaper than a
         // YUV to RGB pass in Kotlin and hands MediaPipe the one layout it takes without a copy.
@@ -263,7 +268,6 @@ internal class CameraSource(
         boundConfig = null
         provider.bindToLifecycle(owner, selector, config)
         boundConfig = config
-        preview.surfaceProvider = previewView.surfaceProvider
         val delivered = range?.upper ?: PINNED_FPS
         onFrameRate?.invoke(delivered)
 

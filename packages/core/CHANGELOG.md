@@ -63,11 +63,17 @@ the first list is what to check when upgrading.
 - Videos are decoded once, in order, scaled down inside the decoder, and only sampled frames are
   converted. Photos are decoded straight to 1920 pixels.
 - A video job slows to half speed when the device is `serious` and waits out `critical`.
+- Android: a camera session opens once with the preview and the analysis stream together. It used
+  to open with the analysis stream alone and rebuild at once to add the preview, on every start,
+  switch and resume.
 - Photo and video detection run on a thread of their own below the camera's. They used to run on
   the thread Expo shares between every module, which a long video held up for the whole app.
 
 ### Fixed
 
+- Android: the live skeleton was drawn a quarter turn out, and the model saw the camera's picture
+  upside down. The frame's rotation reached MediaPipe with its sign inverted, and the landmarks came
+  back in the sensor's frame but were used as if upright. Photos and videos were not affected.
 - iOS: a portrait video, which a phone stores sideways with a rotation, lost the body on about a
   third of its frames in `detectOnVideo` and in exports. Frames are now turned upright before
   MediaPipe sees them.

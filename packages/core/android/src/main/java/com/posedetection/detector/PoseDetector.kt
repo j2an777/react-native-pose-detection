@@ -266,12 +266,16 @@ internal class PoseDetector private constructor(
          * Built once. The builder, the AutoValue instance and the boxed rotation it holds were
          * three allocations per frame for a value with four possible states that changes when the
          * device turns, not when a frame arrives.
+         *
+         * Clockwise, as CameraX's `rotationDegrees` is: MediaPipe turns the image clockwise by this
+         * much before the model sees it. The negative turned it the other way, so a phone held
+         * upright showed the model its subject upside down.
          */
         private val ROTATION_OPTIONS =
             Array(QUARTER_TURNS) { quarter ->
                 ImageProcessingOptions
                     .builder()
-                    .setRotationDegrees(-(quarter * DEGREES_PER_QUARTER))
+                    .setRotationDegrees(quarter * DEGREES_PER_QUARTER)
                     .build()
             }
 
