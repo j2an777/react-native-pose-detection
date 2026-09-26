@@ -74,6 +74,8 @@ someone actually needs the backport.
 - [ ] `guides/reference/` matches the exported types exactly
 - [ ] App-size table in `guides/performance.md` re-measured if native deps changed
 - [ ] CHANGELOG entry written for humans, not generated from commit subjects
+- [ ] After the version bump, `pod install` in `example/bare/ios`: the podspec reads its version
+      from `package.json`, and CI fails a `Podfile.lock` that moves under it
 - [ ] Verified in a clean Expo app **and** a clean bare app, not just `example/`
 
 ## Publishing
