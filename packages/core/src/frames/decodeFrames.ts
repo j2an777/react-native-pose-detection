@@ -25,6 +25,13 @@ export type DecodedBatch = {
   droppedCount: number;
   /** Set when the buffer could not be trusted. No frames are returned. */
   error?: string;
+  /**
+   * Set with `error` when the buffer is well formed but was encoded under a layout that has since
+   * changed: a `data.select` or angle change landed between native writing it and this read. The
+   * next drain is in the new layout, so dropping this one is the whole fix, and it is not a failure
+   * anyone can act on.
+   */
+  stale?: boolean;
 };
 
 const EMPTY: DecodedBatch = { frames: [], droppedCount: 0 };
@@ -96,6 +103,7 @@ export function decodeFrames(buffer: ArrayBuffer, options: DecodeOptions): Decod
       frames: [],
       droppedCount,
       error: `frame buffer holds ${jointCount} joints, expected ${expectedJoints}`,
+      stale: true,
     };
   }
   if (hasAngles && angleCount !== options.angleJoints.length) {
@@ -103,6 +111,7 @@ export function decodeFrames(buffer: ArrayBuffer, options: DecodeOptions): Decod
       frames: [],
       droppedCount,
       error: `frame buffer holds ${angleCount} angles, expected ${options.angleJoints.length}`,
+      stale: true,
     };
   }
 

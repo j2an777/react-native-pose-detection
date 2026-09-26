@@ -36,6 +36,8 @@ import com.posedetection.engine.DataSettings
 import com.posedetection.engine.FrameContext
 import com.posedetection.engine.FrameRingBuffer
 import com.posedetection.engine.FrameShape
+import com.posedetection.engine.FrameStream
+import com.posedetection.engine.FrameStreams
 import com.posedetection.engine.Geometry
 import com.posedetection.engine.OneEuroFilter
 import com.posedetection.engine.PoseBox
@@ -58,7 +60,6 @@ import com.posedetection.performance.ThermalPolicy
 import com.posedetection.performance.calibratorFor
 import com.posedetection.performance.deviceMemoryGiB
 import expo.modules.kotlin.AppContext
-import expo.modules.kotlin.jni.NativeArrayBuffer
 import expo.modules.kotlin.viewevent.EventDispatcher
 import expo.modules.kotlin.views.ExpoView
 import java.util.concurrent.Executors
@@ -176,6 +177,13 @@ class PoseCameraView(
     private val worldBuffer = FloatArray(Skeleton.LANDMARK_COUNT * Skeleton.LANDMARK_STRIDE)
 
     private val frames = FrameRingBuffer()
+
+    /**
+     * What JavaScript reads synchronously, registered under the id `<PoseCamera>` passes as a prop.
+     * Its live reading only touches volatile fields, so it is safe on the JavaScript thread.
+     */
+    private val stream = FrameStream(frames) { liveState() }
+    private var streamId: Int? = null
     private val triggers = TriggerEngine()
     private val smoothing = OneEuroFilter()
     private val calibrator = calibratorFor(context)
@@ -1590,13 +1598,24 @@ class PoseCameraView(
         frames.setLayout(next)
     }
 
-    fun drainFrames(): NativeArrayBuffer = NativeArrayBuffer.wrap(frames.drain())
+    /** The id JavaScript reads this view's frames by, on its own thread. See [FrameStreams]. */
+    fun setStreamId(id: Int?) {
+        if (id == streamId) return
+        streamId?.let { FrameStreams.unregister(stream, it) }
+        streamId = id
+        id?.let { FrameStreams.register(stream, it) }
+    }
 
-    fun snapshotFrame(): NativeArrayBuffer = NativeArrayBuffer.wrap(frames.snapshot())
-
-    /** An unknown or spent ticket is an empty buffer, which is the documented contract. */
-    fun takeTriggerSnapshot(snapshotId: Int): NativeArrayBuffer =
-        NativeArrayBuffer.wrap(frames.takeSnapshot(snapshotId))
+    /** The measured rate and the reason for the current one, for `getState()` on the JavaScript thread. */
+    private fun liveState(): Map<String, Any?> {
+        val limitedBy =
+            when {
+                !feeding -> LimitedBy.PAUSED
+                idleFps != null -> LimitedBy.IDLE
+                else -> rate.limitedBy
+            }
+        return mapOf("fps" to currentMeasuredFps(), "limitedBy" to limitedBy.forJs)
+    }
 
     fun currentState(): Map<String, Any?> =
         mapOf(
@@ -1795,6 +1814,7 @@ class PoseCameraView(
 
     /** Called from `OnViewDestroys`, where the view really is going away. */
     fun releaseEverything() {
+        streamId?.let { FrameStreams.unregister(stream, it) }
         unregisterEverything()
         releaseForDetach(keepForReattach = false)
         stopObservingLifecycle()

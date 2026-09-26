@@ -230,10 +230,15 @@ test('frames encoded under a different selection are dropped, not relabelled', (
   const buffer = encode([frame(1, 3)], { jointCount: 3, angleCount: 0 });
   const selection: readonly JointName[] = Object.freeze(['leftKnee', 'leftHip']);
 
-  const { frames, error } = decodeFrames(buffer, { angleJoints: NO_ANGLES, selection });
+  const { frames, error, stale } = decodeFrames(buffer, { angleJoints: NO_ANGLES, selection });
 
   assert.strictEqual(frames.length, 0);
   assert.match(error ?? '', /holds 3 joints, expected 2/);
+  assert.strictEqual(
+    stale,
+    true,
+    'a layout change racing a drain is dropped quietly, not reported',
+  );
 });
 
 test('frames encoded under a different angle set are dropped, not misread', () => {
@@ -242,10 +247,21 @@ test('frames encoded under a different angle set are dropped, not misread', () =
     angleCount: 2,
   });
 
-  const { frames, error } = decodeFrames(buffer, { angleJoints: ['leftKnee'] });
+  const { frames, error, stale } = decodeFrames(buffer, { angleJoints: ['leftKnee'] });
 
   assert.strictEqual(frames.length, 0);
   assert.match(error ?? '', /holds 2 angles, expected 1/);
+  assert.strictEqual(stale, true);
+});
+
+test('a malformed buffer is an error, never stale', () => {
+  const buffer = encode([frame(1, 3)], { jointCount: 3, angleCount: 0 });
+  const truncated = buffer.slice(0, buffer.byteLength - 4);
+
+  const { error, stale } = decodeFrames(truncated, { angleJoints: NO_ANGLES });
+
+  assert.ok(error);
+  assert.strictEqual(stale, undefined, 'only a layout mismatch may be dropped silently');
 });
 
 test('dropped frames are reported even when the batch is rejected', () => {

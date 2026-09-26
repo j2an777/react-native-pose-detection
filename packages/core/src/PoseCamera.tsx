@@ -2,11 +2,11 @@ import * as React from 'react';
 
 import { decodeFrames } from './frames/decodeFrames';
 import type { DecodeOptions } from './frames/decodeFrames';
-import { getNativeView } from './native';
+import { getNativeModule, getNativeView } from './native';
 import type { NativePoseCameraView, NativeTriggerEvent } from './native';
 import type { AngleJointName, JointName } from './types/joints';
 import { ANGLE_JOINT_NAMES } from './types/joints';
-import type { CameraState, ProfileState } from './types/camera';
+import type { CameraState, LimitedBy, ProfileState } from './types/camera';
 import type { PoseCameraProps, PoseCameraRef } from './types/props';
 import { resolveSmoothing } from './smoothing';
 import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from './types/events';
@@ -19,6 +19,9 @@ import { resolveAngleJoints } from './frames/wire';
 type NativeEvent<T> = { nativeEvent: T };
 
 const NO_ANGLES: readonly AngleJointName[] = Object.freeze([]);
+
+/** Every mounted camera gets its own id, which is how the frame reads find its ring buffer. */
+let nextStreamId = 1;
 
 /** Only an `angle` condition needs an angle. A joint used as a bound is a position. */
 function collectAngleJoints(condition: Condition, into: Set<string>): void {
@@ -56,6 +59,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
 ) {
   const NativeView = getNativeView();
   const nativeRef = React.useRef<NativePoseCameraView | null>(null);
+  const [streamId] = React.useState(() => nextStreamId++);
 
   const { triggers, data, overlay, active, detection } = props;
 
@@ -129,8 +133,6 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     callbacks.current.onError?.({ code: 'DETECTION_FAILED', message, fatal: false });
   }, []);
 
-  const draining = React.useRef(false);
-  const drainAgain = React.useRef(false);
   const mounted = React.useRef(true);
 
   React.useEffect(() => {
@@ -140,72 +142,57 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     };
   }, []);
 
-  // One drain at a time: overlapping drains resolve in bridge order and deliver older frames
-  // after newer ones. A tick arriving mid-drain sets the flag instead of starting a second.
-  const drain = React.useCallback(async (): Promise<void> => {
-    if (draining.current) {
-      drainAgain.current = true;
-      return;
-    }
-    draining.current = true;
+  /**
+   * Synchronous, and on this thread: the read reaches the view's ring buffer through its stream id,
+   * so two drains can never overlap or deliver out of order, and answering a tick never waits on
+   * native's main queue. A buffer from a layout that has just changed is dropped, not reported.
+   */
+  const handleFrames = React.useCallback(() => {
+    if (!mounted.current) return;
     try {
-      do {
-        drainAgain.current = false;
-        const view = nativeRef.current;
-        if (!view || !mounted.current) return;
+      const buffer = getNativeModule().drainFrames(streamId);
+      const { frames, droppedCount, error, stale } = decodeFrames(buffer, decodeOptions.current);
+      if (stale) return;
+      if (error) {
+        reportDecodeError(error);
+        return;
+      }
+      if (droppedCount > 0) callbacks.current.onFramesDropped?.(droppedCount);
+      if (frames.length === 0) return;
 
-        const buffer = await view.drainFrames();
-        if (!mounted.current) return;
-
-        const { frames, droppedCount, error } = decodeFrames(buffer, decodeOptions.current);
-        if (error) {
-          reportDecodeError(error);
-          continue;
-        }
-        if (droppedCount > 0) callbacks.current.onFramesDropped?.(droppedCount);
-        if (frames.length === 0) continue;
-
-        const { onPose, onPoseBatch } = callbacks.current;
-        if (onPoseBatch) {
-          onPoseBatch(frames);
-        } else if (onPose) {
-          // A drain can carry more than one when the JavaScript thread was busy.
-          for (const frame of frames) onPose(frame);
-        }
-      } while (drainAgain.current && mounted.current);
+      const { onPose, onPoseBatch } = callbacks.current;
+      if (onPoseBatch) {
+        onPoseBatch(frames);
+      } else if (onPose) {
+        // A drain can carry more than one when the JavaScript thread was busy.
+        for (const frame of frames) onPose(frame);
+      }
     } catch (cause) {
       reportDecodeError(cause instanceof Error ? cause.message : 'draining frames failed');
-    } finally {
-      draining.current = false;
     }
-  }, [reportDecodeError]);
+  }, [reportDecodeError, streamId]);
 
-  const handleFrames = React.useCallback(() => {
-    void drain();
-  }, [drain]);
+  const handleTrigger = React.useCallback(
+    (event: NativeEvent<NativeTriggerEvent>) => {
+      const { snapshotId, ...rest } = event.nativeEvent;
+      const deliver = (trigger: TriggerEvent): void => callbacks.current.onTrigger?.(trigger);
 
-  const handleTrigger = React.useCallback((event: NativeEvent<NativeTriggerEvent>) => {
-    const { snapshotId, ...rest } = event.nativeEvent;
-    const deliver = (trigger: TriggerEvent): void => callbacks.current.onTrigger?.(trigger);
-
-    const view = nativeRef.current;
-    if (snapshotId === undefined || !view) {
-      deliver(rest);
-      return;
-    }
-    // The frame cannot ride the event. See ADR 0009.
-    view
-      .takeTriggerSnapshot(snapshotId)
-      .then((buffer) => {
-        if (!mounted.current) return;
-        const { frames } = decodeFrames(buffer, decodeOptions.current);
-        const frame = frames[0];
-        deliver(frame ? { ...rest, snapshot: frame } : rest);
-      })
-      .catch(() => {
-        if (mounted.current) deliver(rest);
-      });
-  }, []);
+      if (snapshotId === undefined) {
+        deliver(rest);
+        return;
+      }
+      // The frame cannot ride the event, so it is claimed here, on this thread. See ADR 0009.
+      let frame;
+      try {
+        const buffer = getNativeModule().takeTriggerSnapshot(streamId, snapshotId);
+        frame = decodeFrames(buffer, decodeOptions.current).frames[0];
+      } catch {
+        frame = undefined;
+      }
+      deliver(frame ? { ...rest, snapshot: frame } : rest);
+    },
+    [streamId],
+  );
 
   React.useImperativeHandle(
     ref,
@@ -243,17 +230,24 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
         if (!view) throw new Error('The camera is not mounted yet.');
         return view.getProfile() as Promise<ProfileState>;
       },
-      getState: () => state.current,
+      // The mirror of the events, with the two values that move between them read live.
+      getState: () => {
+        const live = getNativeModule().readLiveState(streamId);
+        return {
+          ...state.current,
+          ...(typeof live.fps === 'number' ? { fps: live.fps } : {}),
+          ...(typeof live.limitedBy === 'string' ? { limitedBy: live.limitedBy as LimitedBy } : {}),
+        };
+      },
       snapshot: async () => {
-        const view = nativeRef.current;
-        if (!view) return null;
-        const buffer = await view.snapshotFrame();
-        const { frames, error } = decodeFrames(buffer, decodeOptions.current);
+        const buffer = getNativeModule().snapshotFrame(streamId);
+        const { frames, error, stale } = decodeFrames(buffer, decodeOptions.current);
+        if (stale) return null;
         if (error) throw new Error(error);
         return frames[0] ?? null;
       },
     }),
-    [],
+    [streamId],
   );
 
   const handleReady = React.useCallback((event: NativeEvent<ReadyEvent>) => {
@@ -308,6 +302,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       // Both native props are integers: the string would fail to convert and leave the previous
       // explicit rate in force. Absent is what native reads as `auto`.
       targetFps={props.targetFps === 'auto' ? undefined : props.targetFps}
+      streamId={streamId}
       resolution={props.resolution}
       analysisResolution={props.analysisResolution}
       thermalPolicy={props.thermalPolicy}

@@ -150,6 +150,22 @@ public class PoseCameraView: ExpoView {
   var previousBox: PoseBox?
 
   let frames = FrameRingBuffer()
+
+  /**
+   What JavaScript reads synchronously, registered under the id `<PoseCamera>` passes as a prop. Its
+   live reading is built from thread-safe values only, never from the view, so it can run on the
+   JavaScript thread. See `FrameStreams`.
+   */
+  private(set) lazy var stream = FrameStream(frames: frames) { [measuredFps, lastResultMs, rate, idleFps, feeding] in
+    PoseCameraView.liveState(
+      measuredFps: measuredFps,
+      lastResultMs: lastResultMs,
+      rate: rate,
+      idleFps: idleFps,
+      feeding: feeding
+    )
+  }
+  var streamId: Int?
   let triggers = TriggerEngine()
   let smoothing = OneEuroFilter()
   let calibrator = Calibrator()
@@ -286,6 +302,9 @@ public class PoseCameraView: ExpoView {
     // ARC gives what Android needed `OnViewDestroys` for. The observers, the timers and the
     // session all go here, so a view that is released without ever being detached still lets go.
     removeObservers()
+    if let id = streamId {
+      FrameStreams.shared.unregister(stream, id: id)
+    }
     logTimer?.invalidate()
     heatTimer?.invalidate()
     releaseTimer?.invalidate()

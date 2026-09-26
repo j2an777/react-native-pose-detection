@@ -7,6 +7,7 @@ import androidx.core.content.ContextCompat
 import com.posedetection.camera.Facing
 import com.posedetection.detector.StaticDetection
 import com.posedetection.detector.StaticOptions
+import com.posedetection.engine.FrameStreams
 import com.posedetection.engine.OneEuroFilter
 import com.posedetection.engine.parseData
 import com.posedetection.engine.parseSelection
@@ -119,6 +120,17 @@ class PoseDetectionModule : Module() {
 
             Function("cancelExportPose") { taskId: Int -> PoseExport.cancel(taskId) }
 
+            // Synchronous and on the JavaScript thread that calls them, the same shape as iOS, where
+            // a view function would run on main. Each reads a view's frames through the id
+            // `<PoseCamera>` gave it, and an id with no view behind it reads as an empty buffer.
+            Function("drainFrames") { streamId: Int -> NativeArrayBuffer.wrap(FrameStreams.drain(streamId)) }
+            Function("snapshotFrame") { streamId: Int -> NativeArrayBuffer.wrap(FrameStreams.snapshot(streamId)) }
+            // An unknown or spent ticket is an empty buffer, which is the documented contract.
+            Function("takeTriggerSnapshot") { streamId: Int, snapshotId: Int ->
+                NativeArrayBuffer.wrap(FrameStreams.takeSnapshot(streamId, snapshotId))
+            }
+            Function("readLiveState") { streamId: Int -> FrameStreams.live(streamId) }
+
             AsyncFunction("getCameraPermission") { promise: expo.modules.kotlin.Promise ->
                 val permissions = appContext.permissions
                 if (permissions == null) {
@@ -204,6 +216,9 @@ class PoseDetectionModule : Module() {
                 }
                 Prop("profile") { view: PoseCameraView, value: String? ->
                     view.setProfile(Profile.from(value))
+                }
+                Prop("streamId") { view: PoseCameraView, value: Int? ->
+                    view.setStreamId(value)
                 }
                 Prop("targetFps") { view: PoseCameraView, value: Int? ->
                     view.setTargetFps(value)
@@ -308,12 +323,6 @@ class PoseDetectionModule : Module() {
                 AsyncFunction("setProfile") { view: PoseCameraView, profile: String ->
                     view.applyProfile(Profile.from(profile))
                 }.runOnQueue(Queues.MAIN)
-
-                AsyncFunction("drainFrames") { view: PoseCameraView -> view.drainFrames() }
-                AsyncFunction("snapshotFrame") { view: PoseCameraView -> view.snapshotFrame() }
-                AsyncFunction("takeTriggerSnapshot") { view: PoseCameraView, snapshotId: Int ->
-                    view.takeTriggerSnapshot(snapshotId)
-                }
             }
         }
 }

@@ -78,6 +78,23 @@ public class PoseDetectionModule: Module {
       PoseExport.cancel(taskId: taskId)
     }
 
+    // Synchronous and on the JavaScript thread that calls them: a view function would run on main,
+    // behind layout and the overlay, twice per tick. Each reads a view's frames through the id
+    // `<PoseCamera>` gave it, and an id with no view behind it reads as an empty buffer. See ADR 0008.
+    Function("drainFrames") { (streamId: Int) -> NativeArrayBuffer in
+      NativeArrayBuffer.wrap(dataWithoutCopy: FrameStreams.shared.drain(streamId))
+    }
+    Function("snapshotFrame") { (streamId: Int) -> NativeArrayBuffer in
+      NativeArrayBuffer.wrap(dataWithoutCopy: FrameStreams.shared.snapshot(streamId))
+    }
+    /// An unknown or spent ticket is an empty buffer, which is the documented contract.
+    Function("takeTriggerSnapshot") { (streamId: Int, snapshotId: Int) -> NativeArrayBuffer in
+      NativeArrayBuffer.wrap(dataWithoutCopy: FrameStreams.shared.takeSnapshot(streamId, ticket: snapshotId))
+    }
+    Function("readLiveState") { (streamId: Int) -> [String: Any] in
+      FrameStreams.shared.live(streamId)
+    }
+
     AsyncFunction("getCameraPermission") { () -> [String: Any] in
       return currentCameraPermission()
     }
@@ -138,6 +155,7 @@ extension PoseDetectionModule {
       }
       Prop("profile") { (view: PoseCameraView, value: String?) in view.setProfile(Profile.from(value)) }
       Prop("targetFps") { (view: PoseCameraView, value: Int?) in view.setTargetFps(value) }
+      Prop("streamId") { (view: PoseCameraView, value: Int?) in view.setStreamId(value) }
       Prop("thermalPolicy") { (view: PoseCameraView, value: String?) in
         view.setThermalPolicy(ThermalPolicy.from(value))
       }
@@ -163,9 +181,8 @@ extension PoseDetectionModule {
         view.onPropsUpdated()
       }
 
-      // Every one of these runs on the main queue: ExpoModulesCore puts view functions there, and
-      // unlike Android there is no way to opt a drain out of it. A drain is a memcpy under a lock
-      // the inference thread also takes, so it is short, but it is on the UI thread.
+      // Every one of these runs on the main queue: ExpoModulesCore puts view functions there. None
+      // is on the frame path; the frame reads are module functions above, on the JavaScript thread.
       AsyncFunction("switchCamera") { (view: PoseCameraView, promise: Promise) in
         view.switchCamera(
           onDone: { _ in promise.resolve(nil) },
@@ -194,17 +211,6 @@ extension PoseDetectionModule {
         view.applyProfile(Profile.from(profile))
       }
 
-      // These three warn that `PoseCameraView`'s main-actor-isolated `AnyArgument` conformance is
-      // used from a nonisolated context, and that it is an error under the Swift 6 language mode.
-      // The conformance comes from `ExpoView` and the closure's isolation from `AsyncFunction`, so
-      // neither side is ours: annotating the closure `@MainActor` adds a second warning about
-      // losing that isolation on the way in rather than removing the first. Left as it is, and
-      // recorded here so the next person does not repeat the experiment. See docs/native-modules.md.
-      AsyncFunction("drainFrames") { (view: PoseCameraView) -> NativeArrayBuffer in view.drainFrames() }
-      AsyncFunction("snapshotFrame") { (view: PoseCameraView) -> NativeArrayBuffer in view.snapshotFrame() }
-      AsyncFunction("takeTriggerSnapshot") { (view: PoseCameraView, snapshotId: Int) -> NativeArrayBuffer in
-        view.takeTriggerSnapshot(snapshotId)
-      }
     }
   }
 }

@@ -78,14 +78,13 @@ export type CameraState = {
   readonly active: boolean;
   readonly detecting: boolean;
   /**
-   * As of the last `onPerformanceChange`, because this object is mirrored from events rather
-   * than read across the bridge. For a reading that follows the measurement rather than the
-   * configuration, poll `getProfile().measuredFps`.
+   * Completed inferences per second over the last second, read live from native on the JavaScript
+   * thread each time `getState()` is called, and zero once results stop.
    */
   readonly fps: number;
   readonly delegate: Delegate;
   readonly deviceTier: DeviceTier;
-  /** As of the last `onReady` or `onPerformanceChange`, like `fps`. */
+  /** Why the rate is what it is, read live like `fps`. */
   readonly limitedBy: LimitedBy;
 };
 

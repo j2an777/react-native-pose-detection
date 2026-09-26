@@ -1,4 +1,5 @@
 import type { ExportResult } from '../exportPose';
+import type { LimitedBy } from '../types/camera';
 import type { LogLevelConfig } from '../types/logging';
 import type { TriggerEvent } from '../types/triggers';
 
@@ -30,6 +31,19 @@ export type NativePoseModule = {
   startLogStream(): void;
   /** Called when the last listener detaches. */
   stopLogStream(): void;
+  /**
+   * The frame reads, synchronous and on the JavaScript thread: each reaches a view's ring buffer
+   * through the `streamId` prop `<PoseCamera>` gave it, never through the view, whose functions run
+   * on native's main queue. An id with no view behind it reads as an empty buffer. See
+   * [ADR 0008](../../../../docs/adr/0008-frames-are-drained-not-pushed.md).
+   */
+  drainFrames(streamId: number): ArrayBuffer;
+  /** The current frame on demand, regardless of `data.mode`. Empty when no pose is present. */
+  snapshotFrame(streamId: number): ArrayBuffer;
+  /** Redeems a trigger's ticket. An unknown or spent ticket returns an empty buffer. */
+  takeTriggerSnapshot(streamId: number, snapshotId: number): ArrayBuffer;
+  /** The measured rate and the reason for the current one, read without a hop to main. */
+  readLiveState(streamId: number): { readonly fps?: number; readonly limitedBy?: LimitedBy };
 };
 
 /**
@@ -42,10 +56,8 @@ export type NativeTriggerEvent = Omit<TriggerEvent, 'snapshot'> & {
 };
 
 /**
- * Imperative surface behind `<PoseCamera>`'s ref. Frames are pulled rather than pushed because
- * only a function return carries an ArrayBuffer, and the `onFrames` tick that prompts a drain
- * carries no payload. See
- * [ADR 0008](../../../../docs/adr/0008-frames-are-drained-not-pushed.md).
+ * Imperative surface behind `<PoseCamera>`'s ref. The frame reads are not here: they are module
+ * functions keyed by `streamId`, see `NativePoseModule.drainFrames`.
  */
 export type NativePoseCameraView = {
   switchCamera(): Promise<void>;
@@ -58,10 +70,4 @@ export type NativePoseCameraView = {
   getState(): Promise<Record<string, unknown>>;
   getProfile(): Promise<Record<string, unknown>>;
   setProfile(profile: string): Promise<void>;
-  /** Everything buffered since the last call, in one self-describing ArrayBuffer. */
-  drainFrames(): Promise<ArrayBuffer>;
-  /** The current frame on demand, regardless of `data.mode`. Empty when no pose is present. */
-  snapshotFrame(): Promise<ArrayBuffer>;
-  /** Redeems a trigger's ticket. An unknown or spent ticket returns an empty buffer. */
-  takeTriggerSnapshot(snapshotId: number): Promise<ArrayBuffer>;
 };

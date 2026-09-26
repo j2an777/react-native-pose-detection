@@ -48,6 +48,18 @@ extension PoseCameraView {
 
   func setThermalPolicy(_ value: ThermalPolicy) { propThermalPolicy = value }
 
+  /// The id JavaScript reads this view's frames by, on its own thread. See `FrameStreams`.
+  func setStreamId(_ id: Int?) {
+    guard id != streamId else { return }
+    if let previous = streamId {
+      FrameStreams.shared.unregister(stream, id: previous)
+    }
+    streamId = id
+    if let id = id {
+      FrameStreams.shared.register(stream, id: id)
+    }
+  }
+
   func setSmoothing(enabled: Bool, minCutoff: Float, beta: Float) {
     propSmoothing = enabled
     propMinCutoff = minCutoff

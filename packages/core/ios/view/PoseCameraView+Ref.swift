@@ -103,17 +103,28 @@ extension PoseCameraView {
     restartSessionIfGeometryChanged()
   }
 
-  func drainFrames() -> NativeArrayBuffer {
-    return NativeArrayBuffer.wrap(dataWithoutCopy: frames.drain())
-  }
-
-  func snapshotFrame() -> NativeArrayBuffer {
-    return NativeArrayBuffer.wrap(dataWithoutCopy: frames.snapshot())
-  }
-
-  /// An unknown or spent ticket is an empty buffer, which is the documented contract.
-  func takeTriggerSnapshot(_ snapshotId: Int) -> NativeArrayBuffer {
-    return NativeArrayBuffer.wrap(dataWithoutCopy: frames.takeSnapshot(snapshotId))
+  /**
+   The measured rate and the reason for the current one, for `getState()` on the JavaScript thread.
+   Static and fed the thread-safe values it reads, so it can never reach main-thread state by accident.
+   */
+  static func liveState(
+    measuredFps: Guarded<Int>,
+    lastResultMs: Guarded<Int64>,
+    rate: Guarded<RateDecision>,
+    idleFps: Guarded<Int?>,
+    feeding: Guarded<Bool>
+  ) -> [String: Any] {
+    let last = lastResultMs.value
+    let fps = last != 0 && Monotonic.nowMs() - last <= PoseCameraView.fpsStaleAfterMs ? measuredFps.value : 0
+    let limitedBy: LimitedBy
+    if !feeding.value {
+      limitedBy = .paused
+    } else if idleFps.value != nil {
+      limitedBy = .idle
+    } else {
+      limitedBy = rate.value.limitedBy
+    }
+    return ["fps": fps, "limitedBy": limitedBy.rawValue]
   }
 
   /// Zero once results stop: the last live value would read as a session that is still running.
