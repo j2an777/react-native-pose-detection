@@ -105,27 +105,31 @@ export type PoseCameraRef = {
    */
   pause(): Promise<void>;
   resume(): Promise<void>;
+  /** Resumes at once while the landmarker is still parked, see `stopDetection`. */
   startDetection(): Promise<void>;
-  /** Releases GPU resources rather than gating a still-running pipeline. */
+  /**
+   * Stops frames reaching the landmarker at once, and frees it after a minute unused. A
+   * `startDetection()` inside that minute is instant rather than a rebuild.
+   */
   stopDetection(): Promise<void>;
   setOverlayEnabled(enabled: boolean): Promise<void>;
 
-  /** Not implemented yet. Both throw until calibration lands. */
+  /** Applies a profile now, rather than at the next render. See guides/performance.md. */
   setProfile(profile: Profile): void;
   /**
-   * Asynchronous because it reads native state: the phase, the source and the measured p50 are not
-   * on any event, so JavaScript has nothing to mirror them from. `getState()` stays synchronous
-   * because everything in it does arrive on an event.
+   * Asynchronous because it reads the calibration on the main thread: the phase, the source and
+   * the measured p50 are on no event, so JavaScript has nothing to mirror them from.
    */
   getProfile(): Promise<ProfileState>;
-  /** The last known state, mirrored from the events that carry it. Never a bridge call. */
+  /**
+   * The state mirrored from the events that carry it, with `fps` and `limitedBy` read live.
+   * Synchronous and never a trip across the bridge.
+   */
   getState(): CameraState;
 
   /**
-   * The current frame regardless of `data.mode`. `null` when no pose is present.
-   *
-   * Async because the landmark buffer comes back over the function-return path, which is the
-   * only one that carries an ArrayBuffer. See
+   * The current frame regardless of `data.mode`. `null` when no pose is present. Read
+   * synchronously underneath, so the promise is already settled when it is returned. See
    * [ADR 0008](../../../docs/adr/0008-frames-are-drained-not-pushed.md).
    */
   snapshot(): Promise<PoseFrame | null>;

@@ -4,6 +4,7 @@ import { decodeFrames } from './frames/decodeFrames';
 import type { DecodeOptions } from './frames/decodeFrames';
 import { getNativeModule, getNativeView } from './native';
 import type { NativePoseCameraView, NativeTriggerEvent } from './native';
+import { callView } from './native/viewCalls';
 import type { AngleJointName, JointName } from './types/joints';
 import { ANGLE_JOINT_NAMES } from './types/joints';
 import type { CameraState, LimitedBy, ProfileState } from './types/camera';
@@ -196,57 +197,66 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
 
   React.useImperativeHandle(
     ref,
-    (): PoseCameraRef => ({
-      switchCamera: async () => {
-        await nativeRef.current?.switchCamera();
-      },
-      setFacing: async (facing) => {
-        await nativeRef.current?.setFacing(facing);
-      },
-      pause: async () => {
-        await nativeRef.current?.pause();
-        state.current = { ...state.current, active: false };
-      },
-      resume: async () => {
-        await nativeRef.current?.resume();
-        state.current = { ...state.current, active: true };
-      },
-      startDetection: async () => {
-        await nativeRef.current?.startDetection();
-        state.current = { ...state.current, detecting: true };
-      },
-      stopDetection: async () => {
-        await nativeRef.current?.stopDetection();
-        state.current = { ...state.current, detecting: false };
-      },
-      setOverlayEnabled: async (enabled) => {
-        await nativeRef.current?.setOverlayEnabled(enabled);
-      },
-      setProfile: (profile) => {
-        void nativeRef.current?.setProfile(profile);
-      },
-      getProfile: () => {
-        const view = nativeRef.current;
-        if (!view) throw new Error('The camera is not mounted yet.');
-        return view.getProfile() as Promise<ProfileState>;
-      },
-      // The mirror of the events, with the two values that move between them read live.
-      getState: () => {
-        const live = getNativeModule().readLiveState(streamId);
-        return {
-          ...state.current,
-          ...(typeof live.fps === 'number' ? { fps: live.fps } : {}),
-          ...(typeof live.limitedBy === 'string' ? { limitedBy: live.limitedBy as LimitedBy } : {}),
-        };
-      },
-      snapshot: async () => {
-        const buffer = getNativeModule().snapshotFrame(streamId);
-        const { frames, error, stale } = decodeFrames(buffer, decodeOptions.current);
-        if (stale) return null;
-        if (error) throw new Error(error);
-        return frames[0] ?? null;
-      },
-    }),
+    (): PoseCameraRef => {
+      // Every command goes through `callView`, so one made in the frame or two before Fabric has
+      // mounted the native view waits for it rather than failing.
+      const view = <Result,>(invoke: (native: NativePoseCameraView) => Promise<Result>) =>
+        callView(() => nativeRef.current, invoke);
+      return {
+        switchCamera: async () => {
+          await view((native) => native.switchCamera());
+        },
+        setFacing: async (facing) => {
+          await view((native) => native.setFacing(facing));
+        },
+        pause: async () => {
+          await view((native) => native.pause());
+          state.current = { ...state.current, active: false };
+        },
+        resume: async () => {
+          await view((native) => native.resume());
+          state.current = { ...state.current, active: true };
+        },
+        startDetection: async () => {
+          await view((native) => native.startDetection());
+          state.current = { ...state.current, detecting: true };
+        },
+        stopDetection: async () => {
+          await view((native) => native.stopDetection());
+          state.current = { ...state.current, detecting: false };
+        },
+        setOverlayEnabled: async (enabled) => {
+          await view((native) => native.setOverlayEnabled(enabled));
+        },
+        setProfile: (profile) => {
+          void view((native) => native.setProfile(profile));
+        },
+        getProfile: async () => {
+          if (!nativeRef.current) throw new Error('The camera is not mounted yet.');
+          const profile = await view((native) => native.getProfile() as Promise<ProfileState>);
+          if (!profile) throw new Error('The camera was unmounted before it answered.');
+          return profile;
+        },
+        // The mirror of the events, with the two values that move between them read live.
+        getState: () => {
+          const live = getNativeModule().readLiveState(streamId);
+          return {
+            ...state.current,
+            ...(typeof live.fps === 'number' ? { fps: live.fps } : {}),
+            ...(typeof live.limitedBy === 'string'
+              ? { limitedBy: live.limitedBy as LimitedBy }
+              : {}),
+          };
+        },
+        snapshot: async () => {
+          const buffer = getNativeModule().snapshotFrame(streamId);
+          const { frames, error, stale } = decodeFrames(buffer, decodeOptions.current);
+          if (stale) return null;
+          if (error) throw new Error(error);
+          return frames[0] ?? null;
+        },
+      };
+    },
     [streamId],
   );
 

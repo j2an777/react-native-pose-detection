@@ -9,9 +9,10 @@ export type UseCameraPermission = CameraPermission & {
   /** Prompt again. Returns the outcome, and is also written to the hook's state. */
   readonly request: () => Promise<CameraPermission>;
   /**
-   * Set when the native module could not answer, which today means iOS: there is no module there
-   * yet. `status` stays `undetermined` in that case, so an app that ignores this still refuses to
-   * open the camera rather than opening one it has no permission for.
+   * Set when the native module could not answer, which means the app was built without it: an
+   * Expo Go session, or a bare app that has not run `pod install` or a Gradle sync since adding
+   * the package. `status` stays `undetermined` in that case, so an app that ignores this still
+   * refuses to open the camera rather than opening one it has no permission for.
    */
   readonly error?: Error;
 };
