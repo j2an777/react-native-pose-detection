@@ -38,6 +38,13 @@ internal class CameraSource(
 ) {
     private var provider: ProcessCameraProvider? = null
     private var analysis: ImageAnalysis? = null
+
+    /**
+     * This source's own session, which is all it ever unbinds when it stops. The provider is one per
+     * process: a view unmounting while its replacement is already bound used to `unbindAll()` on
+     * its way out and take the new view's camera with it, leaving a preview with no frames.
+     */
+    private var boundConfig: SessionConfig? = null
     private var analyzer: ImageAnalysis.Analyzer? = null
     private var lifecycleOwner: LifecycleOwner? = null
 
@@ -165,7 +172,7 @@ internal class CameraSource(
     fun pause() {
         startToken++
         if (!isBound) return
-        provider?.unbindAll()
+        unbindOwn()
         isBound = false
         PoseLog.info(LogCategory.CAMERA) { "session stopped" }
     }
@@ -192,13 +199,21 @@ internal class CameraSource(
     fun release() {
         startToken++
         analysis?.clearAnalyzer()
-        provider?.unbindAll()
+        unbindOwn()
         analysis = null
         analyzer = null
         provider = null
         lifecycleOwner = null
         onBound = null
         isBound = false
+    }
+
+    /** A session another view has since replaced is already unbound, and unbinding it again is a no-op. */
+    private fun unbindOwn() {
+        val config = boundConfig ?: return
+        boundConfig = null
+        runCatching { provider?.unbind(config) }
+            .onFailure { PoseLog.warn(LogCategory.CAMERA) { "unbinding the session threw: ${it.message}" } }
     }
 
     private fun bind(target: Facing) {
@@ -215,9 +230,10 @@ internal class CameraSource(
                 .setTargetRotation(rotation)
                 .build()
 
-        // RGBA_8888 is converted by the camera hardware, which is far cheaper than a YUV to RGB
-        // pass in our own code. KEEP_ONLY_LATEST means a slow frame is dropped rather than queued,
-        // so the pipeline degrades in latency instead of falling behind forever.
+        // RGBA_8888 is converted by CameraX in native code (libyuv), which is far cheaper than a
+        // YUV to RGB pass in Kotlin and hands MediaPipe the one layout it takes without a copy.
+        // KEEP_ONLY_LATEST means a slow frame is dropped rather than queued, so the pipeline
+        // degrades in latency instead of falling behind forever.
         val analysis =
             ImageAnalysis
                 .Builder()
@@ -241,8 +257,12 @@ internal class CameraSource(
                 SessionConfig(useCases)
             }
 
+        // All, not just this source's own: one lifecycle owner can hold one camera, so the newest
+        // session takes it, and a view still bound somewhere else would make this bind throw.
         provider.unbindAll()
+        boundConfig = null
         provider.bindToLifecycle(owner, selector, config)
+        boundConfig = config
         preview.surfaceProvider = previewView.surfaceProvider
         val delivered = range?.upper ?: PINNED_FPS
         onFrameRate?.invoke(delivered)
