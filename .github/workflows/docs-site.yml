@@ -1,0 +1,53 @@
+name: Docs site
+
+# Builds guides/ into the documentation site and publishes it to GitHub Pages. The pages are the
+# same files GitHub renders; see guides/.vitepress/config.mjs.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'guides/**'
+      - '.github/workflows/docs-site.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time, and a newer push replaces a queued one rather than both publishing.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, so every page carries the date it last changed.
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+      # Pinned and fetched here rather than added to the repository's dependencies, so the site
+      # costs the package's own installs nothing. VitePress fails the build on a dead link.
+      - run: npx --yes vitepress@1.6.4 build guides
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: guides/.vitepress/dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

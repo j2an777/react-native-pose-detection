@@ -10,6 +10,8 @@ ignorePaths:
   - 'example/*/android/**'
   - 'example/*/ios/**'
   - '.test-build/**'
+  - 'guides/.vitepress/dist/**'
+  - 'guides/.vitepress/cache/**'
 dictionaryDefinitions:
   - name: project
     path: ./.cspell-project.txt

@@ -2,6 +2,9 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignoreBinaries": ["swiftlint", "ktlint", "lychee", "swift"],
   "workspaces": {
+    ".": {
+      "entry": ["guides/.vitepress/config.mjs"]
+    },
     "packages/core": {
       "entry": ["plugin/src/index.ts", "plugin/src/cli.ts"]
     },

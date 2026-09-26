@@ -18,3 +18,7 @@ example/*/ios/
 # SwiftPM's output for the iOS engine test suite.
 packages/core/ios/.build
 packages/core/ios/.swiftpm
+
+# The documentation site VitePress builds from guides/.
+guides/.vitepress/dist
+guides/.vitepress/cache

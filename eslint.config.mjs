@@ -9,6 +9,9 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/android/**',
       '**/ios/**',
+      // The documentation site VitePress builds from guides/.
+      'guides/.vitepress/dist/**',
+      'guides/.vitepress/cache/**',
     ],
   },
   ...tseslint.configs.recommended,

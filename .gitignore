@@ -174,3 +174,7 @@ desktop.ini
 # and the tarball.
 packages/core/ios/.build/
 packages/core/ios/.swiftpm/
+
+# The documentation site VitePress builds from guides/.
+guides/.vitepress/dist
+guides/.vitepress/cache
