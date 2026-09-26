@@ -74,9 +74,10 @@ are in the same set so that one exhaustive switch covers every failure this pack
 
 `fatal: false` is normal operation, not a bug. Only `fatal: true` means the camera stopped.
 
-`detectOnImage` and `detectOnVideo` do not exist yet, so their two codes are reserved rather than
-reachable. The set is closed on purpose: adding them later would be a breaking change for anyone
-switching exhaustively.
+`IMAGE_DECODE_FAILED` and `VIDEO_DECODE_FAILED` never arrive on `onError` either: `detectOnImage`
+and `detectOnVideo` reject with them when the file cannot be read, and with `DETECTION_FAILED` when
+it was read but inference failed. The set is closed on purpose, so a new failure mode is a
+deliberate addition rather than a surprise for anyone switching exhaustively.
 
 `DETECTION_FAILED` also covers a frame buffer that could not be decoded. `decodeFrames` never
 throws, because it runs inside the drain loop and a throw there would stall the loop permanently.

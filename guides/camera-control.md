@@ -68,11 +68,11 @@ recreated:
 
 - detection on/off state
 - overlay configuration
-- once the engine lands, calibration results and trigger counters and phases
+- calibration results, trigger counters and trigger phases
 
-Rapid switching is safe by design: a switch is reported only once the new lens delivers a
-frame, a second request mid-switch is refused rather than queued, and the path rolls back to the
-previous lens on a failed bind. The 100-switch stress scenario in the example app is the way to
+Rapid switching is safe by design: a switch is reported only once the new lens delivers a frame,
+a second request made mid-switch queues behind the first so two quick switches go there and back,
+every promise settles, and the path rolls back to the previous lens on a failed bind. The 100-switch stress scenario in the example app is the way to
 hold it to that on your own hardware.
 
 If the new camera can't be opened, the previous one is restored and you get
@@ -83,9 +83,10 @@ than quietly succeeding on the lens already running.
 
 ## Lifecycle
 
-Backgrounding stops the session and releases the detector automatically. Foregrounding restores
-both. Once calibration lands it will restore the settled configuration with them, so a
-foreground is never a re-probe.
+Backgrounding stops the session automatically, and the landmarker is kept for 30 seconds, so a
+quick trip to another app comes back to a skeleton at once. Foregrounding restores both, with the
+calibration already measured, so a foreground is never a re-probe. Past 30 seconds the landmarker's
+memory is given back and it is rebuilt on return, from the cached GPU check.
 
 You don't need to wire `AppState` yourself. Do use `active` to stop the camera when the screen
 is merely out of view. A tab you've navigated away from, or a `FlatList` item scrolled offscreen:

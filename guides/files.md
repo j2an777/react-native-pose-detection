@@ -54,9 +54,10 @@ as they do live.
 clip at a high `fps` holds a lot: 10 minutes at 30 fps is 18,000 `PoseFrame`s. Prefer a low
 `fps` and trim with `startMs`/`endMs`.
 
-**No calibration.** Static input runs at full quality. There is no live frame budget to hit, so
-the profile and thermal systems don't apply. Long video jobs still respect the thermal ladder's
-`critical` state.
+**No calibration, but heat still counts.** Static input runs at full quality: there is no live
+frame budget to hit, so profiles don't apply. Heat does. A video or export slows to half speed
+when the device reaches `serious` and pauses at `critical` until it cools, reporting progress
+throughout.
 
 ## Painting a copy
 

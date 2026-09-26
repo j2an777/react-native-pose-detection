@@ -43,7 +43,7 @@ than Expo's own autolinking plugin can read. The Android build does not survive 
 packages/core/
   src/          TypeScript: API, types, validation
   tests/        Node test runner suites, mirroring src/
-  ios/          Swift: CameraSource, PoseDetector, OverlayRenderer   (not written yet)
+  ios/          Swift: CameraSource, PoseDetector, OverlayRenderer, AVFoundation-based
   android/      Kotlin: same three, CameraX-based
   plugin/       Expo config plugin
   cli/          fetch-model

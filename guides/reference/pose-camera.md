@@ -18,8 +18,10 @@ fails the build if one of them goes missing from this page.
 | `style` | `StyleProp<ViewStyle>` | An ordinary React Native view style. The preview fills the view and the overlay is drawn inside it, so `{ flex: 1 }` is the usual answer and a fixed height is the other one. |
 
 The preview's aspect ratio comes from the camera rather than from this style, so a view whose
-shape does not match it letterboxes rather than stretching the picture. Landmarks are normalized
-against the analysis frame either way, so nothing about the layout moves them.
+shape does not match it is filled edge to edge and the camera frame is cropped evenly on the long
+side, never stretched. The skeleton is projected the same way, so it stays on the body whatever the
+view's shape. Landmarks are normalized against the analysis frame either way, so nothing about the
+layout moves them.
 
 ## Configuration
 

@@ -20,8 +20,8 @@ npm run check:all   # adds Swift/Kotlin lint, audit, licenses
 `--max-warnings=0`, warnings are errors. A warning nobody fixes is noise that hides real ones.
 
 `npm test` compiles `packages/core/tests/` and runs it on Node's built-in runner. No
-test framework is installed. See [testing](./testing.md) for what the 60 tests cover and, more
-importantly, what they do not.
+test framework is installed. See [testing](./testing.md) for what the suite covers and, more
+importantly, what it does not.
 
 ## Docs
 

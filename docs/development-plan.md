@@ -254,8 +254,8 @@ against a view which is not doing the work yet.
 - [x] Camera switch, same rules as Android, including the stale-frame guard and the timeout that
       settles a switch the new camera never confirms
 - [x] Memory warnings, thermal state, low power mode
-- [x] Engine bindings identical to Android, verified by 85 XCTests over the same behavior the
-      76 JUnit tests cover, and by the wire parity guard now reading both native sides
+- [x] Engine bindings identical to Android, verified by an XCTest suite over the same behavior the
+      JUnit suite covers, and by the wire parity guard now reading both native sides
 - [x] Consumer ProGuard rules have no iOS counterpart, but the Swift equivalent is
       `-ObjC`-safe symbol handling; check the archive, not the debug build. The `ios-bare` CI cell
       is the only one that builds Release, and it asserts `PoseDetectionModule` is still in the
@@ -300,7 +300,7 @@ test passes. Both wait on a device, which is Phase 6. Zero jump-detection code p
       one physical device so far (iPhone 15)
 - [ ] Thermal simulation, every ladder step fires and recovers
 - [x] Unit tests on both native sides: trigger evaluator, condition evaluator, geometry, wire
-      encoding, driven by shared fixtures. 76 JUnit tests and 85 XCTests, both in CI
+      encoding, driven by shared fixtures. Both suites run in CI
 - [ ] **Measure real app size**, release archive with and without the plugin, per model, per
       platform. Replace the iOS estimates in `guides/performance.md` with actual numbers.
 - [ ] **Measure FPS** on 3–4 real devices spanning low/mid/high
@@ -340,8 +340,8 @@ test passes. Both wait on a device, which is Phase 6. Zero jump-detection code p
       [release-process](./release-process.md) rather than semantic-release
 - [x] Issue + PR templates, `CONTRIBUTING.md` (docs/contributing.md), `CODE_OF_CONDUCT.md`
 - [ ] `npm publish --tag next` → verify install in a clean Expo app **and** a clean bare app
-- [ ] Publish `0.1.0`
-- [ ] Tag `v0.1.0` on the published commit and cut the GitHub release,
+- [x] Publish `0.1.0`
+- [x] Tag `v0.1.0` on the published commit and cut the GitHub release,
       [release history in git](./release-process.md#release-history-in-git)
 - [ ] Announce: Expo Discord, r/reactnative, X
 

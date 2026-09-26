@@ -1,7 +1,7 @@
 # Installation
 
-**Not published to npm yet.** Both platforms are complete, and the steps below are what
-installing it looks like once it is.
+Published to npm as [`react-native-pose-detection`](https://www.npmjs.com/package/react-native-pose-detection).
+Both platforms are complete.
 
 ## Requirements
 

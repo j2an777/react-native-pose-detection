@@ -76,7 +76,7 @@ a time would recreate exactly the bridge problem this library exists to avoid.
 
 ```text
 native ring buffer (bounded, drop-oldest + count)
-  → flush every 250 ms, or when the buffer is half full
+  → flush every 250 ms
   → single event carrying an array
 ```
 

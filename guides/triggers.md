@@ -154,8 +154,9 @@ subject moves toward or away from the camera; ratios against `bodySpan` don't.
 **`count` resets on unmount**, not on camera switch. Switching cameras preserves trigger state.
 
 **Multi-person:** with `maxPoses > 1`, triggers evaluate against the primary pose, largest
-bounding box, ties broken by distance from frame center. Primary-pose selection ships with the
-evaluator; the current Android build takes the first pose MediaPipe returns.
+bounding box, ties broken by distance from frame center, on both platforms. When a different
+person becomes the largest, velocity and smoothing start over for them rather than measuring a
+jump between two people.
 
 ## When triggers aren't enough
 
