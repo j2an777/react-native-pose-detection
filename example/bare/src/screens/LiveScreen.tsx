@@ -31,7 +31,7 @@ const CATEGORIES: { id: Category; icon: IconName; label: string }[] = [
 const RESOLUTIONS = ['auto', '480p', '720p', '1080p'] as const;
 const ANALYSIS = ['auto', '360p', '480p', '720p'] as const;
 const LOG_LEVELS = ['off', 'warn', 'info', 'debug'] as const;
-const TARGET_FPS = ['auto', '15', '24', '30', '60'] as const;
+const TARGET_FPS = ['auto', '10', '15', '24', '30'] as const;
 const FACING = ['auto', 'front', 'back'] as const;
 const DELEGATES = ['auto', 'gpu', 'cpu'] as const;
 const PROFILES = ['auto', 'efficient', 'balanced', 'quality', 'unrestricted'] as const;
@@ -224,6 +224,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
         delegate={delegate}
         profile={profile}
         thermalPolicy={thermalPolicy}
+        targetFps={targetFps === 'auto' ? undefined : Number(targetFps)}
         maxPoses={Number(maxPoses)}
         minConfidence={confidence === 'auto' ? undefined : Number(confidence)}
         smoothing={smoothing ? { minCutoff: Number(minCutoff), beta: Number(beta) } : false}
