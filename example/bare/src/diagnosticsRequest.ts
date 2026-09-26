@@ -19,10 +19,11 @@ export type DiagnosticsRequest = {
  * Which diagnostics a launch asked for, so a whole sweep can run on a device with nobody tapping.
  * `scripts/device-diagnostics.sh` builds these launches for both platforms.
  *
- * iOS reads launch arguments, which the system turns into user defaults:
+ * iOS reads launch arguments, which the system turns into user defaults. The `--` keeps devicectl
+ * from reading them as its own options:
  *
  *   xcrun devicectl device process launch --device <id> com.posedetection.example \
- *     -poseDiagnostics all -poseDiagnosticsPhoto pose-photo.jpg
+ *     -- -poseDiagnostics all -poseDiagnosticsPhoto pose-photo.jpg
  *
  * Android reads the launching intent's data, which needs no intent filter when the activity is
  * named explicitly. The action has to be `VIEW`: React Native hands back no initial URL for any

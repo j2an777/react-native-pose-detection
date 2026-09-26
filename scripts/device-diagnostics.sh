@@ -114,9 +114,27 @@ run_ios() {
   if [ -z "${DEVELOPER_DIR:-}" ] && [ -d /Applications/Xcode.app ]; then
     export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
   fi
-  device=${DEVICE:-$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ && /available/ { print $3; exit }')}
+  device=${DEVICE:-}
   if [ -z "$device" ]; then
-    echo "No paired, available iPhone. Connect one and unlock it, or set DEVICE." >&2
+    # The JSON rather than the table: a name can hold spaces, and a phone in reach shows as
+    # "available" or, while a tunnel to it is up, "connected", where one out of reach is
+    # "unavailable".
+    xcrun devicectl list devices --quiet --json-output "$media/devices.json" >/dev/null 2>&1 || true
+    device=$(node -e '
+      const devices = require(process.argv[1]).result?.devices ?? [];
+      const phone = devices.find(
+        (d) =>
+          d.hardwareProperties?.platform === "iOS" &&
+          d.hardwareProperties?.reality === "physical" &&
+          d.connectionProperties?.pairingState === "paired" &&
+          d.connectionProperties?.tunnelState !== "unavailable",
+      );
+      if (phone) console.log(phone.identifier);
+    ' "$media/devices.json" 2>/dev/null || true)
+    rm -f "$media/devices.json"
+  fi
+  if [ -z "$device" ]; then
+    echo "No paired iPhone or iPad in reach. Connect one and unlock it, or set DEVICE." >&2
     exit 1
   fi
   container="--device $device --domain-type appDataContainer --domain-identifier $app"
@@ -137,10 +155,19 @@ run_ios() {
       -poseDiagnosticsClip pose-clip.mp4
   fi
 
-  xcrun devicectl device process launch --device "$device" --terminate-existing "$app" "$@" >/dev/null
+  # `--`, or devicectl reads `-poseDiagnostics` as a cluster of its own short options.
+  xcrun devicectl device process launch --device "$device" --terminate-existing "$app" -- "$@" >/dev/null
   echo "Running on $device. The report is read back when the sweep finishes."
+  # The whole sweep with the soak takes under 20 minutes. A report that has not come in an hour
+  # is not coming: the app crashed, or the phone locked and stopped it.
+  waited=0
   while :; do
     sleep 10
+    waited=$((waited + 10))
+    if [ "$waited" -gt 3600 ]; then
+      echo "No report after an hour. Is the app still open on the phone?" >&2
+      exit 1
+    fi
     # shellcheck disable=SC2086
     xcrun devicectl device copy from $container --source Documents/diagnostics.json \
       --destination diagnostics-ios.json >/dev/null 2>&1 || continue
