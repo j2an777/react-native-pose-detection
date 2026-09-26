@@ -14,7 +14,7 @@ projects alike. Nothing crosses the bridge until you ask.
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/khalid999devs/react-native-pose-detection/blob/main/LICENSE)
 ![platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-black)
 
-[Installation](#installation) · [Quick start](#quick-start) · [Do more](#do-more) · [Full surface](#the-whole-surface-at-a-glance) · [Example](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example) · [Docs](#documentation)
+[Installation](#installation) · [Quick start](#quick-start) · [Do more](#do-more) · [Full surface](#the-whole-surface-at-a-glance) · [Example](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example) · [Docs site](https://khalid999devs.github.io/react-native-pose-detection/)
 
 ![A frame of an exported video with the skeleton painted in](https://raw.githubusercontent.com/khalid999devs/react-native-pose-detection/main/ss/export-frame.png)
 
@@ -292,6 +292,9 @@ Expo Go cannot run native code, so use a development build. The JavaScript itsel
 70 KB with zero runtime dependencies.
 
 ## Documentation
+
+Everything below is also on the **[documentation site](https://khalid999devs.github.io/react-native-pose-detection/)**,
+searchable, with a page per guide.
 
 | Guide | Covers |
 | --- | --- |

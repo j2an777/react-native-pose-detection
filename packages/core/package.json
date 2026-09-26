@@ -48,11 +48,21 @@
     "expo",
     "pose-detection",
     "pose-estimation",
+    "human-pose-estimation",
+    "pose-tracking",
+    "body-tracking",
+    "skeleton-tracking",
+    "motion-tracking",
     "mediapipe",
+    "mediapipe-pose",
     "blazepose",
     "landmarks",
     "computer-vision",
     "fitness",
+    "fitness-app",
+    "rep-counter",
+    "expo-module",
+    "react-native-camera",
     "on-device",
     "ios",
     "android"
@@ -64,7 +74,7 @@
   "bugs": {
     "url": "https://github.com/khalid999devs/react-native-pose-detection/issues"
   },
-  "homepage": "https://github.com/khalid999devs/react-native-pose-detection#readme",
+  "homepage": "https://khalid999devs.github.io/react-native-pose-detection/",
   "author": "khalid999devs <khalidahammeduzzal@gmail.com>",
   "license": "MIT",
   "publishConfig": {
