@@ -41,8 +41,8 @@ func parseTriggers(_ raw: [Any]?) -> [TriggerSpec] {
  and minDuration are genuinely allowed to be zero, which means "no delay".
  */
 func duration(_ value: Any?, _ fallback: Int64, floor: Int64 = 0) -> Int64 {
-  guard let number = JS.number(value) else { return fallback }
-  return max(Int64(number), floor)
+  guard let number = JS.int64(value) else { return fallback }
+  return max(number, floor)
 }
 
 func parseCondition(_ raw: Any?) -> any PoseCondition {

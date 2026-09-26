@@ -114,14 +114,13 @@ struct ExportOptions {
   }
 
   private static func maxSize(_ value: Any?) -> Int {
-    guard let number = JS.number(value) else { return defaultMaxSize }
-    let size = Int(number)
+    guard let size = JS.int(value) else { return defaultMaxSize }
     return size <= 0 ? 0 : max(120, size)
   }
 
   private static func clampedCount(_ value: Any?, fallback: Int, limit: Int) -> Int {
-    guard let number = JS.number(value) else { return fallback }
-    return min(max(1, Int(number)), limit)
+    guard let number = JS.int(value) else { return fallback }
+    return min(max(1, number), limit)
   }
 }
 

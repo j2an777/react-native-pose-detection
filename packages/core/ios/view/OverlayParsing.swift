@@ -97,7 +97,7 @@ func parseAngle(_ raw: [String: Any]) -> AngleOverlaySpec? {
     radius: CGFloat(JS.number(raw["radius"]).map { clamped($0, 1, .greatestFiniteMagnitude, 40) } ?? 40),
     color: parseColor(raw["color"]),
     // Capped because a large value would build a long string on the draw path every frame.
-    decimals: min(max(Int(JS.number(raw["decimals"]) ?? 0), 0), maxLabelDecimals),
+    decimals: min(max(JS.int(raw["decimals"]) ?? 0, 0), maxLabelDecimals),
     minVisibility: Float(JS.number(raw["minVisibility"]).map { clamped($0, 0, 1, 0.5) } ?? 0.5)
   )
 }

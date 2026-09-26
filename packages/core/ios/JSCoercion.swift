@@ -24,6 +24,32 @@ enum JS {
     return nil
   }
 
+  /// A number that arithmetic can use. NaN and both infinities are refused: no caller means to
+  /// send one, and converting either to an integer traps.
+  static func finite(_ value: Any?) -> Double? {
+    guard let number = number(value), number.isFinite else { return nil }
+    return number
+  }
+
+  /**
+   A whole number, truncated toward zero the way `Int64(_:)` truncates, but saturating at the ends
+   of the range instead of trapping, and nil for anything `finite` refuses. Every integer read out
+   of a JavaScript value goes through here: `Int64(Double.infinity)` takes the app down, where
+   Kotlin's `toLong()` quietly saturates.
+   */
+  static func int64(_ value: Any?) -> Int64? {
+    guard let number = finite(value) else { return nil }
+    // 2^63. Int64.max has no exact double, and this is the first one past it.
+    let limit = 9_223_372_036_854_775_808.0
+    if number >= limit { return .max }
+    if number <= -limit { return .min }
+    return Int64(number)
+  }
+
+  static func int(_ value: Any?) -> Int? {
+    return int64(value).map { Int(clamping: $0) }
+  }
+
   static func bool(_ value: Any?) -> Bool? {
     return value as? Bool
   }

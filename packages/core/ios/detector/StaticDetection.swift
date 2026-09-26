@@ -33,14 +33,14 @@ struct StaticOptions {
       worldLandmarks: JS.bool(raw?["worldLandmarks"]) ?? false,
       smoothing: JS.bool(raw?["smoothing"]) ?? true,
       fps: count(raw?["fps"], 10),
-      startMs: max(0, Int64(JS.number(raw?["startMs"]) ?? 0)),
-      endMs: JS.number(raw?["endMs"]).map { Int64($0) } ?? -1
+      startMs: max(0, JS.int64(raw?["startMs"]) ?? 0),
+      endMs: JS.int64(raw?["endMs"]) ?? -1
     )
   }
 
   private static func count(_ value: Any?, _ fallback: Int) -> Int {
-    guard let number = JS.number(value) else { return fallback }
-    return max(1, Int(number))
+    guard let number = JS.int(value) else { return fallback }
+    return max(1, number)
   }
 }
 

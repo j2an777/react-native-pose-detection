@@ -20,6 +20,15 @@ final class TriggerParsingTests: XCTestCase {
     XCTAssertEqual(duration(0, 0), 0)
   }
 
+  func testANonFiniteDurationFallsBackInsteadOfTrapping() {
+    // `Int64(.nan)` and `Int64(.infinity)` trap. `data.throttleMs: 1000 / 0` used to crash the app.
+    XCTAssertEqual(duration(Double.nan, 250), 250)
+    XCTAssertEqual(duration(Double.infinity, 250, floor: 1), 250)
+    XCTAssertEqual(duration(-Double.infinity, 100), 100)
+    XCTAssertEqual(parseData(["throttleMs": Double.infinity, "flushMs": Double.nan]).throttleMs, defaultThrottleMs)
+    XCTAssertEqual(parseData(["flushMs": Double.nan]).flushMs, defaultFlushMs)
+  }
+
   func testABooleanIsNotANumberSoSmoothingTrueIsNotAMinCutoffOfOne() {
     // Bool bridges to NSNumber as 1, which would read `{ snapshot: true }` as a duration.
     XCTAssertEqual(duration(true, 250), 250)
