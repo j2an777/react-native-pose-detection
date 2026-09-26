@@ -63,7 +63,7 @@ extension PoseCameraView {
   /// Runs once per prop batch. Only a resolution change takes the rebind path.
   func onPropsUpdated() {
     overlayView.config = pendingOverlayConfig
-    overlayView.isHidden = !overlayEnabled
+    applyOverlayEnabled()
 
     applyFrameLayout()
     smoothing.configure(minCutoff: propMinCutoff, beta: propBeta)
@@ -105,6 +105,14 @@ extension PoseCameraView {
     } else {
       camera.setPendingFacing(target)
     }
+  }
+
+  /// Hidden is also idle: no result is copied over or rendered while nobody can see it.
+  func applyOverlayEnabled() {
+    overlayView.isHidden = !overlayEnabled
+    guard overlayEnabled != overlayOn.value else { return }
+    overlayOn.value = overlayEnabled
+    if !overlayEnabled { overlayView.clearPose() }
   }
 
   func resolveFacing() -> Facing {

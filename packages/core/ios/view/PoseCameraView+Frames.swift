@@ -122,7 +122,9 @@ extension PoseCameraView: PoseDetectorObserver {
       smoothing.reset()
     }
 
-    overlayView.submit(landmarkBuffer, width: size.width, height: size.height)
+    if overlayOn.value {
+      overlayView.submit(landmarkBuffer, width: size.width, height: size.height)
+    }
 
     buildFrame(result: result, pose: primaryIndex, poseSize: primary.count, timing: FrameTiming(
       size: size,

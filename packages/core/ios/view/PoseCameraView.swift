@@ -236,6 +236,8 @@ public class PoseCameraView: ExpoView {
   var propPreview = "auto"
   var propAnalysis = "auto"
   var overlayEnabled = true
+  /// `overlayEnabled` for the callback queue: while it is off, results are not handed to the overlay.
+  let overlayOn = Guarded(true)
   var pendingOverlayConfig = OverlayConfig()
   var propMode = DataMode.off
   let propThrottleMs = Guarded<Int64>(defaultThrottleMs)

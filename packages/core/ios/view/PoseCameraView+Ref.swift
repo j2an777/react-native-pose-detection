@@ -90,7 +90,7 @@ extension PoseCameraView {
 
   func setOverlayEnabled(_ enabled: Bool) {
     overlayEnabled = enabled
-    overlayView.isHidden = !enabled
+    applyOverlayEnabled()
   }
 
   /**

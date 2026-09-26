@@ -332,6 +332,10 @@ class PoseCameraView(
     private var propPreview: String = "auto"
     private var propAnalysis: String = "auto"
     private var overlayEnabled: Boolean = true
+
+    /** [overlayEnabled] for the result thread: while it is off, results are not handed to the overlay. */
+    @Volatile
+    private var overlayOn = true
     private var pendingOverlayConfig: OverlayConfig = OverlayConfig()
     private var propMode: DataMode = DataMode.OFF
 
@@ -486,7 +490,7 @@ class PoseCameraView(
     /** Runs once per prop batch. Only a resolution change takes the rebind path. */
     fun onPropsUpdated() {
         overlayView.config = pendingOverlayConfig
-        overlayView.visibility = if (overlayEnabled) VISIBLE else GONE
+        applyOverlayEnabled()
 
         applyFrameLayout()
         smoothing.configure(propMinCutoff, propBeta)
@@ -532,6 +536,14 @@ class PoseCameraView(
     // endregion
 
     // region session
+
+    /** Hidden is also idle: no result is copied over or drawn while nobody can see it. */
+    private fun applyOverlayEnabled() {
+        overlayView.visibility = if (overlayEnabled) VISIBLE else GONE
+        if (overlayEnabled == overlayOn) return
+        overlayOn = overlayEnabled
+        if (!overlayEnabled) overlayView.clearPose()
+    }
 
     private fun resolveFacing(): Facing =
         when (propFacing) {
@@ -1100,7 +1112,7 @@ class PoseCameraView(
             smoothing.reset()
         }
 
-        overlayView.submit(landmarkBuffer, frameWidth, frameHeight)
+        if (overlayOn) overlayView.submit(landmarkBuffer, frameWidth, frameHeight)
 
         buildFrame(result, primaryIndex, pose.size, frameWidth, frameHeight, nowMs, comparable, elapsedSeconds)
     }
@@ -1516,7 +1528,7 @@ class PoseCameraView(
 
     fun setOverlayEnabled(enabled: Boolean) {
         overlayEnabled = enabled
-        overlayView.visibility = if (enabled) VISIBLE else GONE
+        applyOverlayEnabled()
     }
 
     /**
