@@ -108,6 +108,27 @@ class PoseCameraView(
     /** Written on main, read on the analysis thread, so a teardown is seen on the next frame. */
     @Volatile
     private var detector: PoseDetector? = null
+
+    /**
+     * False while detection is off, the camera is paused, or the view is away: frames stop
+     * reaching the landmarker, which is kept for a while so turning it back on costs nothing.
+     */
+    @Volatile
+    private var feeding = true
+
+    /** Frees a parked landmarker once it has gone unused long enough to be worth its memory back. */
+    private val releaseParked =
+        Runnable {
+            PoseLog.info(LogCategory.DETECTOR) { "the landmarker went unused, releasing it" }
+            releaseDetector()
+            releaseConverter()
+        }
+
+    /** Set when the GPU failed at runtime, so the rebuild is reported once it has landed on the CPU. */
+    private var fellBackToCpu = false
+
+    /** Callback-thread only. When the GPU last failed, which is how a broken delegate is noticed. */
+    private val gpuFailureTimes = ArrayDeque<Long>(GPU_FAILURE_LIMIT)
     private var modelFileName: String? = null
 
     /**
@@ -570,7 +591,9 @@ class PoseCameraView(
         if (!started) return
         camera.setAnalyzer(null)
         camera.pause()
-        releaseDetector()
+        // Parked rather than released: a camera switched back on soon, or a restart for new
+        // geometry, finds the landmarker still built. It is released if it stays unused.
+        parkDetector(PARKED_RELEASE_MS)
         releaseConverter()
         overlayView.clearPose()
         completeSwitch()
@@ -583,10 +606,13 @@ class PoseCameraView(
         startSession()
     }
 
-    /** `detection = false` tears the landmarker down so its GPU memory is actually returned. */
+    /**
+     * `detection = false` stops frames reaching the landmarker at once and returns its memory after
+     * a minute unused. Turning detection back on inside that minute is instant rather than a rebuild.
+     */
     private fun applyDetectionState() {
         if (!propDetection) {
-            releaseDetector()
+            parkDetector(PARKED_RELEASE_MS)
             overlayView.clearPose()
             // Nothing else will emit ready once the pending build is discarded, and a camera that
             // is running with detection off is still a camera that came up.
@@ -607,6 +633,20 @@ class PoseCameraView(
             releaseDetector()
         }
         ensureDetector()
+        resumeFeeding()
+    }
+
+    /** Stops frames reaching the landmarker now, and frees it after [delayMs] if nothing wanted it back. */
+    private fun parkDetector(delayMs: Long) {
+        feeding = false
+        mainHandler.removeCallbacks(releaseParked)
+        if (detector == null && !detectorPending) return
+        mainHandler.postDelayed(releaseParked, delayMs)
+    }
+
+    private fun resumeFeeding() {
+        mainHandler.removeCallbacks(releaseParked)
+        feeding = true
     }
 
     private fun delegateRequest(): DelegateRequest =
@@ -627,6 +667,7 @@ class PoseCameraView(
         val request = delegateRequest()
         val maxPoses = propMaxPoses
         val minConfidence = resolvedMinConfidence()
+        val knownGpu = calibrator.gpuVerdict
         val generation = detectorGeneration
         detectorPending = true
         detectorRequest = request
@@ -645,6 +686,7 @@ class PoseCameraView(
                             minConfidence = minConfidence,
                             onResult = ::onLandmarks,
                             onError = ::onDetectionError,
+                            knownGpu = knownGpu,
                         )
                     mainHandler.post { adoptDetector(created, request, generation) }
                 } catch (error: Throwable) {
@@ -668,9 +710,15 @@ class PoseCameraView(
         detectorPending = false
         detector = created
         resolvedDelegate = created.delegate.name
+        // The probe runs once per device and model; every later build takes this answer instead.
+        created.probedGpu?.let(calibrator::recordGpuVerdict)
         // Idle search counts from here: a camera opened on an empty room is idle too.
         lastPoseMs = SystemClock.elapsedRealtime()
         preWarm(created)
+        if (fellBackToCpu) {
+            fellBackToCpu = false
+            emitPerformanceChange("gpu_fallback")
+        }
 
         // The one path that actually downgrades is 'auto'. An explicit 'gpu' is pinned and never
         // falls back, so comparing the resolved delegate against the request is the whole test.
@@ -748,7 +796,9 @@ class PoseCameraView(
 
     /** Why the rate is what it is. `paused` whenever nothing is running to be limited. */
     private fun currentLimitedBy(): LimitedBy {
-        if (!propDetection || !camera.isBound || (detector == null && !detectorPending)) return LimitedBy.PAUSED
+        if (!propDetection || !feeding || !camera.isBound || (detector == null && !detectorPending)) {
+            return LimitedBy.PAUSED
+        }
         if (idleFps != null) return LimitedBy.IDLE
         return rate.limitedBy
     }
@@ -803,6 +853,7 @@ class PoseCameraView(
      * stopping the next frame, and the close is queued behind the frame already running.
      */
     private fun releaseDetector() {
+        mainHandler.removeCallbacks(releaseParked)
         detectorGeneration++
         detectorPending = false
         detectorRequest = null
@@ -840,6 +891,7 @@ class PoseCameraView(
                 // really producing, which is what a switch waits on.
                 if (awaitingFirstFrame.compareAndSet(true, false)) post { completeSwitch() }
 
+                if (!feeding) return@Analyzer
                 val detector = this.detector ?: return@Analyzer
                 val now = SystemClock.elapsedRealtime()
 
@@ -1344,11 +1396,38 @@ class PoseCameraView(
     private fun onDetectionError(error: RuntimeException) {
         PoseLog.warn(LogCategory.DETECTOR) { "inference failed: ${error.message}" }
         val now = SystemClock.elapsedRealtime()
+        if (detector?.delegate == Delegate.GPU && noteGpuFailure(now)) mainHandler.post { fallBackToCpu() }
         val previous = lastDetectionErrorMs.get()
         if (now - previous < DETECTION_ERROR_INTERVAL_MS) return
         if (!lastDetectionErrorMs.compareAndSet(previous, now)) return
         val message = error.message ?: "inference failed"
         post { emitError(ErrorCode.DETECTION_FAILED, message) }
+    }
+
+    /** Three failures inside a second on the GPU is a delegate that does not work here. Callback thread. */
+    private fun noteGpuFailure(now: Long): Boolean {
+        while (gpuFailureTimes.isNotEmpty() && now - gpuFailureTimes.first() > GPU_FAILURE_WINDOW_MS) {
+            gpuFailureTimes.removeFirst()
+        }
+        gpuFailureTimes.addLast(now)
+        if (gpuFailureTimes.size < GPU_FAILURE_LIMIT) return false
+        gpuFailureTimes.clear()
+        return true
+    }
+
+    /**
+     * A GPU delegate that keeps failing on this device is rebuilt on the CPU, and the cached probe
+     * answer flips so the next launch does not try the GPU again. Only `auto`: an explicit `'gpu'`
+     * is a decision, and it keeps reporting its failures instead of being overruled.
+     */
+    private fun fallBackToCpu() {
+        if (delegateRequest() != DelegateRequest.AUTO || detector?.delegate != Delegate.GPU) return
+        PoseLog.warn(LogCategory.DETECTOR) { "the GPU delegate keeps failing on this device, rebuilding on the CPU" }
+        calibrator.recordGpuVerdict(false)
+        fellBackToCpu = true
+        releaseDetector()
+        ensureDetector()
+        emitError(ErrorCode.GPU_UNAVAILABLE, "The GPU delegate failed on this device, running on CPU.")
     }
 
     // endregion
@@ -1415,6 +1494,7 @@ class PoseCameraView(
     fun pauseCamera() {
         camera.setAnalyzer(null)
         camera.pause()
+        parkDetector(PARKED_RELEASE_MS)
         overlayView.clearPose()
     }
 
@@ -1510,7 +1590,7 @@ class PoseCameraView(
         mapOf(
             "facing" to camera.facing.nameForJs(),
             "active" to camera.isBound,
-            "detecting" to (detector != null || detectorPending),
+            "detecting" to (feeding && (detector != null || detectorPending)),
             "fps" to currentMeasuredFps(),
             "delegate" to (resolvedDelegate ?: "CPU"),
             "deviceTier" to calibrator.tier.nameForJs(),
@@ -1590,7 +1670,7 @@ class PoseCameraView(
     override fun onDetachedFromWindow() {
         unregisterEverything()
         stopObservingLifecycle()
-        releaseForDetach()
+        releaseForDetach(keepForReattach = true)
         super.onDetachedFromWindow()
     }
 
@@ -1623,14 +1703,15 @@ class PoseCameraView(
         }
 
     /**
-     * Backgrounding gives up the landmarker rather than holding its GPU memory. CameraX releases
-     * the capture session itself; this is the half it does not know about.
+     * CameraX releases the capture session itself when the app stops; this is the half it does not
+     * know about. The landmarker is parked rather than released, so a quick trip to another app
+     * comes back to a skeleton at once, and its memory is given back if the trip is not quick.
      */
     private val lifecycleObserver =
         object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
-                PoseLog.info(LogCategory.CAMERA) { "backgrounded, releasing the detector" }
-                releaseDetector()
+                PoseLog.info(LogCategory.CAMERA) { "backgrounded, parking the detector" }
+                parkDetector(AWAY_RELEASE_MS)
                 releaseConverter()
                 overlayView.clearPose()
             }
@@ -1686,13 +1767,14 @@ class PoseCameraView(
         context as? LifecycleOwner ?: appContext.currentActivity as? LifecycleOwner
 
     /**
-     * Detaching is not destruction: a view scrolled out of a list comes back. Releases the session
-     * but keeps the analysis thread, which a reattached view still needs.
+     * Detaching is not destruction: a view scrolled out of a list, or pushed under another screen,
+     * comes back. Releases the session but keeps the analysis thread, which a reattached view still
+     * needs, and parks the landmarker for a reattach unless the view really is going away.
      */
-    private fun releaseForDetach() {
+    private fun releaseForDetach(keepForReattach: Boolean) {
         camera.setAnalyzer(null)
         camera.release()
-        releaseDetector()
+        if (keepForReattach) parkDetector(AWAY_RELEASE_MS) else releaseDetector()
         releaseConverter()
         completeSwitch()
         started = false
@@ -1702,7 +1784,7 @@ class PoseCameraView(
     /** Called from `OnViewDestroys`, where the view really is going away. */
     fun releaseEverything() {
         unregisterEverything()
-        releaseForDetach()
+        releaseForDetach(keepForReattach = false)
         stopObservingLifecycle()
         // Shutdown, not shutdownNow: the queued close of the landmarker has to run before the
         // thread goes away.
@@ -1757,6 +1839,19 @@ class PoseCameraView(
         const val AREA_TIE_EPSILON = 1e-4f
 
         const val PRE_WARM_SIZE = 256
+
+        /**
+         * How long a landmarker nobody is using is kept before its memory is given back: long
+         * enough that toggling detection or the camera, or a restart for new geometry, skips the build.
+         */
+        const val PARKED_RELEASE_MS = 60_000L
+
+        /** The same for a view that has gone away: the app in the background, or the view off screen. */
+        const val AWAY_RELEASE_MS = 30_000L
+
+        /** Three GPU failures inside a second is a delegate that does not work on this device. */
+        const val GPU_FAILURE_LIMIT = 3
+        const val GPU_FAILURE_WINDOW_MS = 1_000L
         const val LOG_FLUSH_MS = 250L
         val EMPTY_PAYLOAD = emptyMap<String, Any?>()
         val EMPTY_NAMES = emptyArray<String>()

@@ -55,7 +55,8 @@ extension PoseCameraView {
 
     camera.setAnalyzerEnabled(false)
     camera.release()
-    releaseDetector()
+    // A view pushed under another screen usually comes back, and finds its landmarker still built.
+    parkDetector(for: PoseCameraView.awayReleaseSeconds)
     completeSwitch()
     started = false
     readySent = false
@@ -84,12 +85,13 @@ extension PoseCameraView {
   }
 
   /**
-   Backgrounding gives up the landmarker rather than holding its GPU memory. AVFoundation stops the
-   session itself when the app loses the camera; this is the half it does not know about.
+   AVFoundation stops the session itself when the app loses the camera; this is the half it does not
+   know about. The landmarker is parked rather than released, so a quick trip to another app comes
+   back to a skeleton at once, and its memory is given back if the trip is not quick.
    */
   private func handleBackground() {
-    PoseLog.info(.camera, "backgrounded, releasing the detector")
-    releaseDetector()
+    PoseLog.info(.camera, "backgrounded, parking the detector")
+    parkDetector(for: PoseCameraView.awayReleaseSeconds)
     overlayView.clearPose()
   }
 

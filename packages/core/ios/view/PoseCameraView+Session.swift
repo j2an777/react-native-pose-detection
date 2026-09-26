@@ -49,7 +49,9 @@ extension PoseCameraView {
     guard started else { return }
     camera.setAnalyzerEnabled(false)
     camera.pause()
-    releaseDetector()
+    // Parked rather than released: a camera switched back on soon, or a restart for new geometry,
+    // finds the landmarker still built. It is released if it stays unused.
+    parkDetector(for: PoseCameraView.parkedReleaseSeconds)
     overlayView.clearPose()
     completeSwitch()
     started = false
@@ -69,10 +71,13 @@ extension PoseCameraView {
     if started { restartSession() }
   }
 
-  /// `detection = false` tears the landmarker down so its GPU memory is actually returned.
+  /**
+   `detection = false` stops frames reaching the landmarker at once and returns its memory after a
+   minute unused. Turning detection back on inside that minute is instant rather than a rebuild.
+   */
   func applyDetectionState() {
     guard propDetection else {
-      releaseDetector()
+      parkDetector(for: PoseCameraView.parkedReleaseSeconds)
       overlayView.clearPose()
       // Nothing else will emit ready once the pending build is discarded, and a camera that is
       // running with detection off is still a camera that came up.
@@ -92,6 +97,25 @@ extension PoseCameraView {
       releaseDetector()
     }
     ensureDetector()
+    resumeFeeding()
+  }
+
+  /// Stops frames reaching the landmarker now, and frees it after `seconds` if nothing wanted it back.
+  func parkDetector(for seconds: TimeInterval) {
+    feeding.value = false
+    releaseTimer?.invalidate()
+    releaseTimer = nil
+    guard detector.value != nil || detectorPending else { return }
+    releaseTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+      PoseLog.info(.detector, "the landmarker went unused, releasing it")
+      self?.releaseDetector()
+    }
+  }
+
+  func resumeFeeding() {
+    releaseTimer?.invalidate()
+    releaseTimer = nil
+    feeding.value = true
   }
 
   func delegateRequest() -> DelegateRequest {
@@ -112,6 +136,7 @@ extension PoseCameraView {
     let request = delegateRequest()
     let maxPoses = propMaxPoses
     let minConfidence = resolvedMinConfidence()
+    let knownGpu = calibrator.gpuVerdict
     let generation = detectorGeneration
     detectorPending = true
     detectorRequest = request
@@ -125,7 +150,8 @@ extension PoseCameraView {
           modelPath: model,
           request: request,
           maxPoses: maxPoses,
-          minConfidence: minConfidence
+          minConfidence: minConfidence,
+          knownGpu: knownGpu
         )
         DispatchQueue.main.async { self.adoptDetector(created, request: request, generation: generation) }
       } catch {
@@ -145,9 +171,17 @@ extension PoseCameraView {
     created.observer = self
     detector.value = created
     resolvedDelegate = created.delegateKind == .GPU ? "GPU" : "CPU"
+    // The probe runs once per device and model; every later build takes this answer instead.
+    if let probed = created.probedGpu {
+      calibrator.recordGpuVerdict(probed)
+    }
     // Idle search counts from here: a camera opened on an empty room is idle too.
     lastPoseMs.value = Monotonic.nowMs()
     preWarm(created)
+    if fellBackToCpu {
+      fellBackToCpu = false
+      emitPerformanceChange(reason: "gpu_fallback")
+    }
 
     // The one path that actually downgrades is 'auto'. An explicit 'gpu' is pinned and never falls
     // back, so comparing the resolved delegate against the request is the whole test.
@@ -200,6 +234,8 @@ extension PoseCameraView {
    stopping the next result, and the reference is dropped behind the frame already running.
    */
   func releaseDetector() {
+    releaseTimer?.invalidate()
+    releaseTimer = nil
     detectorGeneration += 1
     detectorPending = false
     detectorRequest = nil
@@ -208,6 +244,21 @@ extension PoseCameraView {
     detector.value = nil
     // Released on the queue that hands it frames, so the deallocation cannot overlap a detect call.
     analysisQueue.async { _ = doomed }
+  }
+
+  /**
+   A GPU delegate that keeps failing on this device is rebuilt on the CPU, and the cached probe
+   answer flips so the next launch does not try the GPU again. Only `auto`: an explicit `'gpu'` is a
+   decision, and it keeps reporting its failures instead of being overruled.
+   */
+  func fallBackToCpu() {
+    guard delegateRequest() == .auto, detector.value?.delegateKind == .GPU else { return }
+    PoseLog.warn(.detector, "the GPU delegate keeps failing on this device, rebuilding on the CPU")
+    calibrator.recordGpuVerdict(false)
+    fellBackToCpu = true
+    releaseDetector()
+    ensureDetector()
+    emitError(.gpuUnavailable, "The GPU delegate failed on this device, running on CPU.")
   }
 
   func syncOverlayMirroring() {

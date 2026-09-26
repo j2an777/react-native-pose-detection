@@ -19,6 +19,12 @@ internal class PoseDetector private constructor(
     private val landmarker: PoseLandmarker,
     val delegate: Delegate,
     val modelFileName: String,
+    /**
+     * What the GPU probe found, when this build ran one: null when the request was explicit or a
+     * cached answer was used instead. The caller persists it, which is what makes the probe run
+     * once per device and model rather than once per build.
+     */
+    val probedGpu: Boolean? = null,
 ) {
     /**
      * LIVE_STREAM rejects a timestamp that does not strictly increase, and one rejection takes the
@@ -128,6 +134,13 @@ internal class PoseDetector private constructor(
                 .list("")
                 ?.firstOrNull { it.startsWith("pose_landmarker_") && it.endsWith(".task") }
 
+        /**
+         * [knownGpu] is the GPU probe's answer from an earlier build on this device and model, or
+         * null when the probe has never run here. With it, `auto` skips the probe, which builds and
+         * throws away a whole second landmarker, and on Android compiles the GPU delegate's shaders
+         * twice: most of the time between a mount and the first skeleton.
+         */
+        @Suppress("LongParameterList")
         fun create(
             context: Context,
             modelFileName: String,
@@ -136,7 +149,9 @@ internal class PoseDetector private constructor(
             minConfidence: Float,
             onResult: (PoseLandmarkerResult, MPImage) -> Unit,
             onError: (RuntimeException) -> Unit,
+            knownGpu: Boolean? = null,
         ): PoseDetector {
+            var probed: Boolean? = null
             val delegate =
                 when (request) {
                     DelegateRequest.CPU -> {
@@ -148,11 +163,8 @@ internal class PoseDetector private constructor(
                     }
 
                     DelegateRequest.AUTO -> {
-                        if (gpuProducesAnInference(context, modelFileName)) {
-                            Delegate.GPU
-                        } else {
-                            Delegate.CPU
-                        }
+                        val usable = knownGpu ?: gpuProducesAnInference(context, modelFileName).also { probed = it }
+                        if (usable) Delegate.GPU else Delegate.CPU
                     }
                 }
 
@@ -168,8 +180,18 @@ internal class PoseDetector private constructor(
                     onError = onError,
                 )
 
-            PoseLog.info(LogCategory.DETECTOR) { "landmarker ready on $delegate with $modelFileName" }
-            return PoseDetector(landmarker, delegate, modelFileName)
+            val how =
+                if (probed !=
+                    null
+                ) {
+                    ", after a probe"
+                } else if (request == DelegateRequest.AUTO) {
+                    ", from the cached probe"
+                } else {
+                    ""
+                }
+            PoseLog.info(LogCategory.DETECTOR) { "landmarker ready on $delegate with $modelFileName$how" }
+            return PoseDetector(landmarker, delegate, modelFileName, probed)
         }
 
         /**

@@ -51,6 +51,16 @@ public class PoseCameraView: ExpoView {
   /// Two boxes within this much area are the same size, and the centre breaks the tie.
   static let areaTieEpsilon: Float = 1e-4
 
+  /// How long a landmarker nobody is using is kept before its memory is given back: long enough
+  /// that toggling detection or the camera, or a restart for new geometry, skips the build.
+  static let parkedReleaseSeconds: TimeInterval = 60
+  /// The same for a view that has gone away: the app in the background, or the view off screen.
+  static let awayReleaseSeconds: TimeInterval = 30
+
+  /// Three GPU failures inside a second is a delegate that does not work on this device.
+  static let gpuFailureLimit = 3
+  static let gpuFailureWindowMs: Int64 = 1_000
+
   static let preWarmSize: CGFloat = 256
   static let logFlushSeconds = 0.25
   static let detectionErrorIntervalMs: Int64 = 1_000
@@ -83,6 +93,21 @@ public class PoseCameraView: ExpoView {
 
   /// Written on main, read on the analysis queue, so a teardown is seen on the next frame.
   let detector = Guarded<PoseDetector?>(nil)
+
+  /**
+   False while detection is off, the camera is paused, or the view is away: frames stop reaching
+   the landmarker, which is kept for a while so turning it back on costs nothing. Read per frame.
+   */
+  let feeding = Guarded(true)
+
+  /// Frees a parked landmarker once it has gone unused long enough to be worth its memory back.
+  var releaseTimer: Timer?
+
+  /// Set when the GPU failed at runtime, so the rebuild is reported once it has landed on the CPU.
+  var fellBackToCpu = false
+
+  /// Callback-queue only. When the GPU last failed, which is how a broken delegate is noticed.
+  var gpuFailureTimes = [Int64]()
 
   var modelPath: String?
 
@@ -261,6 +286,7 @@ public class PoseCameraView: ExpoView {
     removeObservers()
     logTimer?.invalidate()
     heatTimer?.invalidate()
+    releaseTimer?.invalidate()
     switchTimer?.invalidate()
     PoseLog.releaseStream(self)
   }

@@ -68,6 +68,13 @@ final class PoseDetector {
   let delegateKind: Delegate
   let modelFileName: String
 
+  /**
+   What the GPU probe found, when this build ran one: nil when the request was explicit or a cached
+   answer was used instead. The caller persists it, which is what makes the probe run once per
+   device and model rather than once per build.
+   */
+  let probedGpu: Bool?
+
   weak var observer: PoseDetectorObserver?
 
   /**
@@ -96,12 +103,14 @@ final class PoseDetector {
     landmarker: PoseLandmarker,
     relay: LiveStreamRelay?,
     delegateKind: Delegate,
-    modelFileName: String
+    modelFileName: String,
+    probedGpu: Bool? = nil
   ) {
     self.landmarker = landmarker
     self.relay = relay
     self.delegateKind = delegateKind
     self.modelFileName = modelFileName
+    self.probedGpu = probedGpu
   }
 
   var lastTimestampMs: Int {
@@ -208,13 +217,26 @@ extension PoseDetector {
     )
   }
 
+  /**
+   `knownGpu` is the GPU probe's answer from an earlier build on this device and model, or nil when
+   the probe has never run here. With it, `auto` skips the probe, which builds and throws away a whole
+   second landmarker and was half the time between a mount and the first skeleton.
+   */
   static func create(
     modelPath: String,
     request: DelegateRequest,
     maxPoses: Int,
-    minConfidence: Float
+    minConfidence: Float,
+    knownGpu: Bool? = nil
   ) throws -> PoseDetector {
-    let delegateKind = resolveDelegate(request, modelPath: modelPath)
+    var probed: Bool?
+    let delegateKind: Delegate
+    if request == .auto, let knownGpu = knownGpu {
+      delegateKind = knownGpu && !isSimulator ? .GPU : .CPU
+    } else {
+      delegateKind = resolveDelegate(request, modelPath: modelPath)
+      if request == .auto && !isSimulator { probed = delegateKind == .GPU }
+    }
 
     let relay = LiveStreamRelay()
     let landmarker = try build(LandmarkerSpec(
@@ -228,13 +250,23 @@ extension PoseDetector {
       landmarker: landmarker,
       relay: relay,
       delegateKind: delegateKind,
-      modelFileName: fileName(from: modelPath)
+      modelFileName: fileName(from: modelPath),
+      probedGpu: probed
     )
     relay.detector = detector
 
     let kind = delegateKind == .GPU ? "GPU" : "CPU"
-    PoseLog.info(.detector, "landmarker ready on \(kind) with \(detector.modelFileName)")
+    let how = probed == nil ? (request == .auto ? ", from the cached probe" : "") : ", after a probe"
+    PoseLog.info(.detector, "landmarker ready on \(kind) with \(detector.modelFileName)\(how)")
     return detector
+  }
+
+  private static var isSimulator: Bool {
+    #if targetEnvironment(simulator)
+    return true
+    #else
+    return false
+    #endif
   }
 
   /**

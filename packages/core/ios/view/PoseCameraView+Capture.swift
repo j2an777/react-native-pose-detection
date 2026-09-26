@@ -26,7 +26,7 @@ extension PoseCameraView: AVCaptureVideoDataOutputSampleBufferDelegate {
         DispatchQueue.main.async { [weak self] in self?.completeSwitch() }
       }
 
-      guard let detector = detector.value else { return }
+      guard feeding.value, let detector = detector.value else { return }
       let now = Monotonic.nowMs()
 
       let decision = rate.value

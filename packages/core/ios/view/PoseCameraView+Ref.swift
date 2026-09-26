@@ -66,6 +66,7 @@ extension PoseCameraView {
   func pauseCamera() {
     camera.setAnalyzerEnabled(false)
     camera.pause()
+    parkDetector(for: PoseCameraView.parkedReleaseSeconds)
     overlayView.clearPose()
   }
 
@@ -126,7 +127,7 @@ extension PoseCameraView {
     return [
       "facing": camera.facing.nameForJs,
       "active": camera.isBound,
-      "detecting": detector.value != nil || detectorPending,
+      "detecting": feeding.value && (detector.value != nil || detectorPending),
       "fps": currentMeasuredFps(),
       "delegate": resolvedDelegate ?? "CPU",
       "deviceTier": calibrator.tier.rawValue,
@@ -164,7 +165,9 @@ extension PoseCameraView {
 
   /// Why the rate is what it is. `paused` whenever nothing is running to be limited.
   func currentLimitedBy() -> LimitedBy {
-    guard propDetection, camera.isBound, detector.value != nil || detectorPending else { return .paused }
+    guard propDetection, feeding.value, camera.isBound, detector.value != nil || detectorPending else {
+      return .paused
+    }
     if idleFps.value != nil { return .idle }
     return rate.value.limitedBy
   }

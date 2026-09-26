@@ -136,6 +136,9 @@ extension PoseCameraView: PoseDetectorObserver {
   func poseDetector(_ detector: PoseDetector, didFail error: Error) {
     PoseLog.warn(.detector, "inference failed: \(error.localizedDescription)")
     let now = Monotonic.nowMs()
+    if detector.delegateKind == .GPU && noteGpuFailure(now) {
+      DispatchQueue.main.async { [weak self] in self?.fallBackToCpu() }
+    }
     let shouldReport = lastDetectionErrorMs.mutate { last -> Bool in
       guard now - last >= PoseCameraView.detectionErrorIntervalMs else { return false }
       last = now
@@ -145,6 +148,15 @@ extension PoseCameraView: PoseDetectorObserver {
 
     let message = error.localizedDescription
     DispatchQueue.main.async { [weak self] in self?.emitError(.detectionFailed, message) }
+  }
+
+  /// Three failures inside a second on the GPU is a delegate that does not work here. Callback queue.
+  private func noteGpuFailure(_ now: Int64) -> Bool {
+    gpuFailureTimes.removeAll { now - $0 > PoseCameraView.gpuFailureWindowMs }
+    gpuFailureTimes.append(now)
+    guard gpuFailureTimes.count >= PoseCameraView.gpuFailureLimit else { return false }
+    gpuFailureTimes.removeAll()
+    return true
   }
 
   private func onPoseLost() {
