@@ -52,7 +52,6 @@ export const theme = {
     tiny: 11,
   },
 
-  /** One soft shadow, used only where an element genuinely floats. */
   /**
    * One soft shadow, used only where an element genuinely floats.
    *

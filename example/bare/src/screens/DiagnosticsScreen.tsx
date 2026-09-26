@@ -122,6 +122,7 @@ export function DiagnosticsScreen({
           cameraChanges: () => cameraChanges.current,
           cover,
           toggleProps: () => setVariant((value) => !value),
+          media: autoRun?.media ?? {},
           log,
         });
         setReports((value) => ({ ...value, [id]: report }));
@@ -133,7 +134,7 @@ export function DiagnosticsScreen({
         setRunning(null);
       }
     },
-    [cover, log, remount, remountNow],
+    [autoRun, cover, log, remount, remountNow],
   );
 
   React.useEffect(() => {
@@ -143,9 +144,9 @@ export function DiagnosticsScreen({
       // Let the first mount come up before anything is timed against it.
       await sleep(2_500);
       const ids =
-        autoRun === 'all'
+        autoRun.scenarios === 'all'
           ? SCENARIOS.filter((item) => !item.slow).map((item) => item.id)
-          : autoRun.filter((id) => SCENARIOS.some((item) => item.id === id));
+          : autoRun.scenarios.filter((id) => SCENARIOS.some((item) => item.id === id));
       const collected: ScenarioReport[] = [];
       for (const id of ids) {
         if (cancelled) return;

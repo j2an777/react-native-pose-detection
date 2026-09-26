@@ -1,41 +1,53 @@
-import UIKit
+// `internal`, to match the module provider Expo's autolinking generates, which imports it so.
+internal import Expo
 import React
-import React_RCTAppDelegate
 import ReactAppDependencyProvider
 
+// Expo's delegate and factory, not React Native's: this package is an Expo module, and the plain
+// factory never registers them, so every Expo module is missing at runtime. `npx expo prebuild`
+// writes the same thing; a bare app writes it by hand. The Android side is `MainApplication.kt`.
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: ExpoAppDelegate {
   var window: UIWindow?
 
-  var reactNativeDelegate: ReactNativeDelegate?
+  var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
   var reactNativeFactory: RCTReactNativeFactory?
 
-  func application(
+  override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     let delegate = ReactNativeDelegate()
-    let factory = RCTReactNativeFactory(delegate: delegate)
+    let factory = ExpoReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
 
     reactNativeDelegate = delegate
     reactNativeFactory = factory
 
     window = UIWindow(frame: UIScreen.main.bounds)
-
     factory.startReactNative(
       withModuleName: "PoseExampleBare",
       in: window,
       launchOptions: launchOptions
     )
 
-    return true
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // Deep links, including the diagnostics launch, reach React Native's Linking through here.
+  override func application(
+    _ app: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    return super.application(app, open: url, options: options)
+      || RCTLinkingManager.application(app, open: url, options: options)
   }
 }
 
-class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
+class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
   override func sourceURL(for bridge: RCTBridge) -> URL? {
-    self.bundleURL()
+    bridge.bundleURL ?? bundleURL()
   }
 
   override func bundleURL() -> URL? {

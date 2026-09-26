@@ -3,6 +3,7 @@ CERT
 CISA
 CoreML
 Diátaxis
+EXIF
 IPHONEOS
 Landmarker
 Logcat
@@ -51,6 +52,7 @@ hysteresis
 isometrics
 jank
 janky
+jsbundle
 knip
 kotlin
 ktlint
@@ -95,14 +97,17 @@ remount
 remounts
 rseidelsohn
 screenshotting
+sdcard
 showsdks
 swiftformat
 swiftlint
 swiftpm
 tarball
 tarballs
+tfjs
 tflite
 thermalservice
+thinksys
 toolkits
 transcode
 transcoders

@@ -1,5 +1,7 @@
 import type { PoseCameraRef } from 'react-native-pose-detection';
 
+import type { DiagnosticsMedia } from '../diagnosticsRequest';
+
 export type ScenarioReport = {
   readonly id: string;
   readonly passed: boolean;
@@ -35,6 +37,8 @@ export type ScenarioContext = {
   readonly cover: (ms: number) => Promise<void>;
   /** Flips a set of props that must never restart the camera: overlay, smoothing, data mode. */
   readonly toggleProps: () => void;
+  /** Files the launch pointed at, for the scenarios that need a real photo or clip. */
+  readonly media: DiagnosticsMedia;
   /** A line in the scenario's own log, shown under the report. */
   readonly log: (line: string) => void;
 };

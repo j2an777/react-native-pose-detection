@@ -1,4 +1,13 @@
-import type { PoseCameraRef, ProfileState } from 'react-native-pose-detection';
+import {
+  detectOnImage,
+  detectOnVideo,
+  exportPose,
+  landmark,
+  setLogLevel,
+  type PoseCameraRef,
+  type PoseFrame,
+  type ProfileState,
+} from 'react-native-pose-detection';
 
 import { formatBytes, jsHeapBytes } from '../memory';
 import type { Scenario, ScenarioContext, ScenarioReport } from './types';
@@ -70,11 +79,20 @@ async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: numbe
   return false;
 }
 
-/** Frames are reaching the model again: the measured rate counts empty results too. */
+/**
+ * Frames are reaching the model: the measured rate counts empty results too. The rate stays up for
+ * two seconds after the last result, so right after a stop this passes on the old frames. A check
+ * that frames came back has to see them stop first, see `framesStopped`.
+ */
 async function framesFlow(context: ScenarioContext, timeoutMs = 5_000): Promise<number | null> {
   const started = Date.now();
   const flowing = await waitFor(async () => (await profile(context)).measuredFps > 0, timeoutMs);
   return flowing ? Date.now() - started : null;
+}
+
+/** The measured rate has gone to zero, which it does two seconds after the last result. */
+async function framesStopped(context: ScenarioContext, timeoutMs = 4_000): Promise<boolean> {
+  return waitFor(async () => (await profile(context)).measuredFps === 0, timeoutMs);
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
@@ -84,6 +102,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
       setTimeout(() => reject(new Error(`${what} did not settle within ${ms} ms`)), ms),
     ),
   ]);
+}
+
+/** The nose above both ankles, which is what a person the right way up looks like. */
+function headAboveFeet(frame: PoseFrame): boolean {
+  const nose = landmark(frame, 'nose').y;
+  return nose < landmark(frame, 'leftAnkle').y && nose < landmark(frame, 'rightAnkle').y;
+}
+
+/** Rejects with exactly this code, or the check fails. */
+async function expectCode(promise: Promise<unknown>, code: string): Promise<void> {
+  try {
+    await promise;
+  } catch (problem) {
+    const actual = (problem as { code?: unknown }).code;
+    if (actual === code) return;
+    throw new Error(`expected ${code}, got ${String(actual)}`);
+  }
+  throw new Error(`expected ${code}, but it resolved`);
 }
 
 function median(values: number[]): number {
@@ -137,6 +173,9 @@ export const SCENARIOS: readonly Scenario[] = [
             if ((index + 1) % 25 === 0) log(`${index + 1} switches`);
           }
 
+          // The event and the promise travel separately, so the last event can land just after the
+          // last promise resolves. Missing for longer than that, it is lost.
+          await waitFor(() => context.cameraChanges() - changesBefore >= 100, 1_000);
           const reported = context.cameraChanges() - changesBefore;
           if (reported !== 100) throw new Error(`100 switches reported ${reported} camera changes`);
           if (initial && context.facing() !== initial) {
@@ -220,7 +259,9 @@ export const SCENARIOS: readonly Scenario[] = [
         3,
         async (log) => {
           for (let index = 0; index < 3; index += 1) {
-            await context.cover(1_500);
+            // Longer than the two seconds the rate outlives the last result, so the check below
+            // sees frames that came back rather than ones from before the cover.
+            await context.cover(2_500);
             const flowing = await framesFlow(context, 6_000);
             if (flowing === null)
               throw new Error(`no frames reached the model after uncover ${index + 1}`);
@@ -263,17 +304,25 @@ export const SCENARIOS: readonly Scenario[] = [
         'detection-toggle',
         20,
         async (log) => {
-          const times: number[] = [];
+          // Back to back first: the stress half, with nothing waited on between cycles.
           for (let index = 0; index < 20; index += 1) {
             const camera = requireCamera(context);
             await camera.stopDetection();
             await camera.startDetection();
+          }
+          // Then measured: each stop is seen to stop, so the frames after the start are new ones.
+          const times: number[] = [];
+          for (let index = 0; index < 3; index += 1) {
+            await requireCamera(context).stopDetection();
+            if (!(await framesStopped(context)))
+              throw new Error(`frames kept coming after stop ${index + 1}`);
+            await requireCamera(context).startDetection();
             const flowing = await framesFlow(context);
             if (flowing === null) throw new Error(`no frames after start ${index + 1}`);
             times.push(flowing);
-            if ((index + 1) % 5 === 0) log(`${index + 1} cycles`);
+            log(`start ${index + 1}: frames in ${flowing} ms`);
           }
-          return `20 stop and start cycles, median ${median(times)} ms to frames`;
+          return `20 back-to-back cycles, then median ${median(times)} ms from start to frames`;
         },
         context,
       ),
@@ -306,15 +355,20 @@ export const SCENARIOS: readonly Scenario[] = [
       measure(
         'pause-resume',
         30,
-        async () => {
+        async (log) => {
           for (let index = 0; index < 30; index += 1) {
             const camera = requireCamera(context);
             await camera.pause();
             await camera.resume();
           }
-          if ((await framesFlow(context)) === null)
-            throw new Error('no frames after the last resume');
-          return '30 pause and resume cycles';
+          // One measured cycle, seen to stop before the resume, so the frames after it are new.
+          await requireCamera(context).pause();
+          if (!(await framesStopped(context))) throw new Error('frames kept coming while paused');
+          await requireCamera(context).resume();
+          const flowing = await framesFlow(context);
+          if (flowing === null) throw new Error('no frames after the last resume');
+          log(`resume: frames in ${flowing} ms`);
+          return `30 back-to-back cycles, then frames ${flowing} ms after a resume`;
         },
         context,
       ),
@@ -367,6 +421,109 @@ export const SCENARIOS: readonly Scenario[] = [
             if ((index + 1) % 10 === 0) log(`${index + 1} remounts`);
           }
           return '50 mount and unmount cycles, each awaited to onReady';
+        },
+        context,
+      ),
+  },
+  {
+    id: 'files',
+    title: 'Photos and videos',
+    verifies:
+      'An EXIF-rotated photo and a clip stored sideways come out upright; the clip is sampled in ' +
+      'order at real timestamps, trims, cancels and exports; unreadable files reject with their codes.',
+    run: (context) =>
+      measure(
+        'files',
+        1,
+        async (log) => {
+          const { photo, rotatedPhoto, clip } = context.media;
+          if (!photo || !rotatedPhoto || !clip) {
+            throw new Skip('no media given: scripts/device-diagnostics.sh pushes and passes them');
+          }
+          // Which delegate each job took and every sample that found nobody, in the device log.
+          setLogLevel({ detector: 'info', engine: 'trace' });
+
+          // A photo stored sideways with EXIF 6 is the same picture once it is turned upright.
+          const upright = (await detectOnImage(photo))[0];
+          const turned = (await detectOnImage(rotatedPhoto))[0];
+          if (!upright || !turned) throw new Error('no pose in the photo or in its rotated copy');
+          const drift = Math.max(
+            Math.abs(landmark(upright, 'nose').x - landmark(turned, 'nose').x),
+            Math.abs(landmark(upright, 'nose').y - landmark(turned, 'nose').y),
+          );
+          if (drift > 0.03)
+            throw new Error(`the EXIF photo lands ${drift.toFixed(3)} away from the upright one`);
+          if (!headAboveFeet(turned)) throw new Error('the EXIF photo was detected sideways');
+          log(`photo: EXIF copy within ${drift.toFixed(3)} of the upright one`);
+
+          // The clip: sampled in order at real positions, upright, and moving right. Detection is
+          // stopped on the camera for this one, so the job may take the GPU; the trimmed run below
+          // keeps it on, which holds the job to the CPU. Both paths run.
+          await requireCamera(context).stopDetection();
+          let progressEvents = 0;
+          const started = Date.now();
+          const frames = await detectOnVideo(clip, {
+            fps: 10,
+            onProgress: () => {
+              progressEvents += 1;
+            },
+          }).frames;
+          const elapsed = Date.now() - started;
+          log(`clip timestamps: ${frames.map((frame) => Math.round(frame.timestamp)).join(' ')}`);
+          if (frames.length < 25)
+            throw new Error(`the clip gave ${frames.length} frames, expected about 30`);
+          const times = frames.map((frame) => frame.timestamp);
+          if (times.some((time, index) => index > 0 && time <= (times[index - 1] ?? 0)))
+            throw new Error('frame timestamps do not increase');
+          if ((times[times.length - 1] ?? 0) > 3_000)
+            throw new Error('timestamps run past the clip');
+          if (!frames.every(headAboveFeet))
+            throw new Error('some clip frames were detected sideways');
+          const moving = frames.slice(1).filter((frame) => frame.velocity.x > 0).length;
+          if (moving < (frames.length - 1) / 2)
+            throw new Error(
+              `only ${moving} of ${frames.length - 1} frames measured the rightward movement`,
+            );
+          log(
+            `clip: ${frames.length} frames in ${elapsed} ms, ${progressEvents} progress events, ` +
+              `${moving} moving right`,
+          );
+
+          await requireCamera(context).startDetection();
+          const trimmed = await detectOnVideo(clip, { fps: 10, startMs: 1_000, endMs: 2_000 })
+            .frames;
+          if (
+            trimmed.length === 0 ||
+            trimmed.some((frame) => frame.timestamp < 960 || frame.timestamp > 2_000)
+          )
+            throw new Error('the trimmed range returned frames outside it');
+
+          const cancelled = detectOnVideo(clip, { fps: 30 });
+          setTimeout(() => cancelled.cancel(), 250);
+          const partial = await cancelled.frames;
+          if (partial.length >= 85) throw new Error('cancel did not stop the job');
+          log(`trim: ${trimmed.length} frames; cancel kept ${partial.length}`);
+
+          await expectCode(detectOnImage(`${photo}.missing`), 'IMAGE_DECODE_FAILED');
+          await expectCode(detectOnVideo(`${clip}.missing`).frames, 'VIDEO_DECODE_FAILED');
+
+          const still = await exportPose(rotatedPhoto).result;
+          if (still.width <= still.height) throw new Error('the EXIF photo exported sideways');
+          if (still.posesFound < 1) throw new Error('the photo export painted nobody');
+          const exported = await exportPose(clip).result;
+          if (exported.width <= exported.height) throw new Error('the clip exported sideways');
+          if (exported.posesFound < 25)
+            throw new Error(`the clip export found ${exported.posesFound} poses`);
+          log(
+            `exports: photo ${still.width}x${still.height}, clip ${exported.width}x${exported.height} ` +
+              `with ${exported.frameCount} frames`,
+          );
+
+          setLogLevel('off');
+          return (
+            `upright photos, ${frames.length} clip frames in ${elapsed} ms, trim, cancel, ` +
+            'error codes and exports all as documented'
+          );
         },
         context,
       ),
