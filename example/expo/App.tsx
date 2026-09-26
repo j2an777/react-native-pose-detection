@@ -3,6 +3,7 @@ import { Modal, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { NavBar, type TabId } from './src/components/NavBar';
+import { diagnosticsRequest, type DiagnosticsRequest } from './src/diagnosticsRequest';
 import { AboutScreen } from './src/screens/AboutScreen';
 import { DiagnosticsScreen } from './src/screens/DiagnosticsScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
@@ -27,7 +28,17 @@ export default function App() {
   const [tab, setTab] = React.useState<TabId>('home');
   const [diagnostics, setDiagnostics] = React.useState(false);
   const [about, setAbout] = React.useState(false);
+  const [autoRun, setAutoRun] = React.useState<DiagnosticsRequest | null>(null);
   const live = tab === 'live';
+
+  // A launch that asks for a diagnostics sweep opens the harness and runs it with nobody tapping.
+  React.useEffect(() => {
+    void diagnosticsRequest().then((request) => {
+      if (!request) return;
+      setAutoRun(request);
+      setDiagnostics(true);
+    });
+  }, []);
 
   return (
     <SafeAreaProvider>
@@ -60,7 +71,7 @@ export default function App() {
         <Modal visible={diagnostics} animationType="slide" presentationStyle="fullScreen">
           <SafeAreaProvider>
             <View style={styles.root}>
-              <DiagnosticsScreen onClose={() => setDiagnostics(false)} />
+              <DiagnosticsScreen onClose={() => setDiagnostics(false)} autoRun={autoRun} />
             </View>
           </SafeAreaProvider>
         </Modal>

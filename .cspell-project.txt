@@ -37,6 +37,7 @@ deadband
 deadcode
 deinit
 detekt
+devicectl
 diataxis
 dimezis
 downscaled
@@ -78,6 +79,7 @@ podfile
 podspec
 podspecs
 posedetection
+posediag
 posenet
 prebuild
 prebuilding
@@ -85,6 +87,7 @@ prebuilds
 proguard
 proprioception
 publint
+rasterizing
 reactnative
 reanimated
 relayout
@@ -116,5 +119,6 @@ xcbeautify
 xcframework
 xcframeworks
 xcodeproj
+xcrun
 xcworkspace
 yolo
