@@ -2,11 +2,12 @@
 
 ## Supported versions
 
-Pre-release. Once `0.1.0` ships, the latest minor receives security fixes.
+The latest minor release receives security fixes. Upgrade to it to get them.
 
 | Version | Supported |
 | ------- | --------- |
-| `0.1.x` | pending release |
+| `0.2.x` | yes |
+| `0.1.x` | no, upgrade to `0.2.x` |
 
 ## Reporting a vulnerability
 

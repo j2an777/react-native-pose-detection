@@ -14,6 +14,9 @@ Semantic versioning. The public surface is whatever `src/index.ts` exports, noth
 | Default behavior change users can observe | major |
 | Bug fix, internal refactor, docs | patch |
 
+Before 1.0, what would be a major is a minor, and what would be a minor or a patch is a patch. `^0.1.0` does not match `0.2.0`, so a 0.x minor is already the bump that tells an app
+to read the changelog before taking it.
+
 Dropping an ABI (`armeabi-v7a`, `x86`, `x86_64`) is a **major**. It silently breaks devices and
 emulators that previously worked, which is the failure the current pin exists to avoid. The ABI
 policy lives in [ADR 0007](./adr/0007-pin-mediapipe-0-10-35.md).
@@ -65,9 +68,9 @@ someone actually needs the backport.
 
 ## Before a release
 
-- [ ] CI green on all matrix cells, iOS + Android × Expo + bare × old + new arch (Phase 6 builds
-      that matrix; it does not run today)
-- [ ] Device regression suite passes: camera-switch stress, leak, memory budget, calibration, thermal
+- [ ] CI green on all four cells: iOS and Android, each through Expo prebuild and bare
+- [ ] The device sweep passes on a phone of each platform: `scripts/device-diagnostics.sh android`
+      and `scripts/device-diagnostics.sh ios`, then the soak by name. See [testing](./testing.md)
 - [ ] `guides/reference/` matches the exported types exactly
 - [ ] App-size table in `guides/performance.md` re-measured if native deps changed
 - [ ] CHANGELOG entry written for humans, not generated from commit subjects
