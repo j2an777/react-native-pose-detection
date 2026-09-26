@@ -3,6 +3,7 @@ language: en
 ignorePaths:
   - '**/node_modules/**'
   - 'ideation/**'
+  - 'docs/development/**'
   - '**/build/**'
   - '**/package-lock.json'
   - '**/*.lock'
