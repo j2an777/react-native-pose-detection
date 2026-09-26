@@ -2,11 +2,11 @@ import XCTest
 @testable import PoseEngine
 
 /**
- The governor: the loop that turns measured inference cost into a rate and a tier. The numbers
- here are the contract `guides/performance.md` describes, so a change that moves them should have
- to come here and say so.
+ The measured half of the governor: what this device's inference costs, how soon it is known, and
+ what survives a restart and a relaunch. The numbers are the ones `guides/performance.md` promises.
  */
 final class CalibratorTests: XCTestCase {
+  private let model = "pose_landmarker_full.task"
   private var suiteName = ""
   private var defaults = UserDefaults.standard
 
@@ -19,6 +19,10 @@ final class CalibratorTests: XCTestCase {
   override func tearDown() {
     defaults.removePersistentDomain(forName: suiteName)
     super.tearDown()
+  }
+
+  private func make(memoryGiB: Float = 6) -> Calibrator {
+    return Calibrator(defaults: defaults, memoryGiB: { memoryGiB })
   }
 
   /// Feeds a steady inference cost at a camera-like cadence, returning whether anything moved.
@@ -39,77 +43,113 @@ final class CalibratorTests: XCTestCase {
     return (moved, now)
   }
 
-  func testTheRateIsTheDevicesOwnNumberNotATierStep() {
-    XCTAssertEqual(AutoTuner.targetFps(p50Ms: 14), 39)
-    XCTAssertEqual(AutoTuner.targetFps(p50Ms: 16), 34)
-    XCTAssertEqual(AutoTuner.targetFps(p50Ms: 20), 28)
-    XCTAssertEqual(AutoTuner.targetFps(p50Ms: 33), 17)
+  func testNothingMeasuredMeansAMemoryTierAndNoMedian() {
+    let calibrator = make(memoryGiB: 7.5)
+    calibrator.start(modelFileName: model)
+    XCTAssertEqual(calibrator.tier, .high)
+    XCTAssertEqual(calibrator.p50InferenceMs, 0, "an unknown device, which the governor runs at the camera's rate")
+    XCTAssertEqual(calibrator.phase, .calibrating)
+
+    let middling = make(memoryGiB: 3.6)
+    middling.start(modelFileName: model)
+    XCTAssertEqual(middling.tier, .medium, "no step down on top of a guess")
   }
 
-  func testTheRateIsClampedToTheBandTheSkeletonIsUsableIn() {
-    XCTAssertEqual(AutoTuner.targetFps(p50Ms: 5), AutoTuner.maxFps, "no rate buys anything past the cap")
-    XCTAssertEqual(AutoTuner.targetFps(p50Ms: 100), AutoTuner.minFps, "below the floor heat should pause instead")
-  }
+  func testTheFirstEstimateLandsAfterFifteenFrames() {
+    let calibrator = make()
+    calibrator.start(modelFileName: model)
 
-  func testTheTierFollowsTheSiliconNotTheRate() {
-    XCTAssertEqual(AutoTuner.tier(p50Ms: 14), .high)
-    XCTAssertEqual(AutoTuner.tier(p50Ms: 22), .high)
-    XCTAssertEqual(AutoTuner.tier(p50Ms: 23), .medium)
-    XCTAssertEqual(AutoTuner.tier(p50Ms: 45), .medium)
-    XCTAssertEqual(AutoTuner.tier(p50Ms: 46), .low)
-  }
-
-  func testAFullWindowOfFastFramesMovesTheTierUpAndSetsTheRate() {
-    let calibrator = Calibrator(defaults: defaults)
-    calibrator.start(modelFileName: "pose_landmarker_full.task")
-
-    let warmup = feed(calibrator, ms: 20, count: 59, from: 1_000)
-    XCTAssertFalse(warmup.moved, "59 frames is not a window")
-    XCTAssertEqual(calibrator.autoFps, 0)
+    let warmup = feed(calibrator, ms: 20, count: 14, from: 1_000)
+    XCTAssertFalse(warmup.moved, "14 frames is not an estimate")
+    XCTAssertEqual(calibrator.p50InferenceMs, 0)
 
     let (moved, _) = feed(calibrator, ms: 20, count: 1, from: warmup.endMs)
     XCTAssertTrue(moved)
+    XCTAssertEqual(calibrator.p50InferenceMs, 20)
     XCTAssertEqual(calibrator.tier, .high)
-    XCTAssertEqual(calibrator.autoFps, 28)
+  }
+
+  func testTheMedianShrugsOffOneSlowFrame() {
+    let calibrator = make()
+    calibrator.start(modelFileName: model)
+    let fast = feed(calibrator, ms: 20, count: 14, from: 1_000)
+    feed(calibrator, ms: 400, count: 1, from: fast.endMs)
+    XCTAssertEqual(calibrator.p50InferenceMs, 20)
   }
 
   func testASteadyDeviceSettlesInsteadOfTwitching() {
-    let calibrator = Calibrator(defaults: defaults)
-    calibrator.start(modelFileName: "pose_landmarker_full.task")
+    let calibrator = make()
+    calibrator.start(modelFileName: model)
 
-    let first = feed(calibrator, ms: 20, count: 60, from: 1_000)
-    // Two more windows: one waiting out the cooldown, one to observe nothing left to move.
+    let first = feed(calibrator, ms: 20, count: 15, from: 1_000)
+    // Past the cooldown and a full window: nothing left to move is what settled means.
     let second = feed(calibrator, ms: 20, count: 120, from: first.endMs)
     XCTAssertTrue(second.moved, "settling is reported once so it can be persisted")
     XCTAssertEqual(calibrator.phase, .settled)
 
     let third = feed(calibrator, ms: 21, count: 120, from: second.endMs)
     XCTAssertFalse(third.moved, "a one millisecond wobble is inside the deadband")
-    XCTAssertEqual(calibrator.autoFps, 28, "the rate did not chase it")
+    XCTAssertEqual(calibrator.p50InferenceMs, 20, "the published median did not chase it")
   }
 
-  func testALoadedDeviceIsWalkedDownToWhatItSustains() {
-    let calibrator = Calibrator(defaults: defaults)
-    calibrator.start(modelFileName: "pose_landmarker_full.task")
+  func testALoadedDeviceIsWalkedDownToWhatItCosts() {
+    let calibrator = make()
+    calibrator.start(modelFileName: model)
     let fast = feed(calibrator, ms: 20, count: 180, from: 1_000)
 
     let (moved, _) = feed(calibrator, ms: 60, count: 180, from: fast.endMs)
     XCTAssertTrue(moved)
     XCTAssertEqual(calibrator.tier, .low)
-    XCTAssertEqual(calibrator.autoFps, AutoTuner.minFps)
+    XCTAssertEqual(calibrator.p50InferenceMs, 60)
+  }
+
+  func testARestartOnTheSameModelKeepsTheMeasurement() {
+    let calibrator = make()
+    calibrator.start(modelFileName: model)
+    feed(calibrator, ms: 20, count: 15, from: 1_000)
+    XCTAssertEqual(calibrator.p50InferenceMs, 20)
+
+    calibrator.start(modelFileName: model)
+    XCTAssertEqual(calibrator.p50InferenceMs, 20, "a camera restart is not a new device")
+
+    calibrator.start(modelFileName: "pose_landmarker_lite.task")
+    XCTAssertEqual(calibrator.p50InferenceMs, 0, "a different model is a different cost")
   }
 
   func testTheSecondLaunchStartsWhereTheFirstOneFinished() {
-    let first = Calibrator(defaults: defaults)
-    first.start(modelFileName: "pose_landmarker_full.task")
+    let first = make()
+    first.start(modelFileName: model)
     feed(first, ms: 20, count: 300, from: 1_000)
     XCTAssertEqual(first.phase, .settled)
-    first.persist(modelFileName: "pose_landmarker_full.task")
+    first.persist()
 
-    let second = Calibrator(defaults: defaults)
-    second.start(modelFileName: "pose_landmarker_full.task")
+    let second = make()
+    second.start(modelFileName: model)
     XCTAssertEqual(second.phase, .cached)
     XCTAssertEqual(second.tier, .high)
-    XCTAssertEqual(second.autoFps, 28, "the measured rate rides the cache with the tier")
+    XCTAssertEqual(second.p50InferenceMs, 20)
+  }
+
+  func testAGuessIsNotPersisted() {
+    let first = make()
+    first.start(modelFileName: model)
+    feed(first, ms: 20, count: 15, from: 1_000)
+    first.persist()
+
+    let second = make()
+    second.start(modelFileName: model)
+    XCTAssertEqual(second.p50InferenceMs, 0, "one estimate is not a settled measurement")
+  }
+
+  func testTheGpuVerdictIsRememberedOnItsOwn() {
+    let first = make()
+    first.start(modelFileName: model)
+    XCTAssertNil(first.gpuVerdict)
+    first.recordGpuVerdict(false)
+
+    let second = make()
+    second.start(modelFileName: model)
+    XCTAssertEqual(second.gpuVerdict, false)
+    XCTAssertEqual(second.phase, .calibrating, "a verdict without a measurement is not a cached rate")
   }
 }

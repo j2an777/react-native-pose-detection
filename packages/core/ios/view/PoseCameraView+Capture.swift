@@ -29,15 +29,18 @@ extension PoseCameraView: AVCaptureVideoDataOutputSampleBufferDelegate {
       guard let detector = detector.value else { return }
       let now = Monotonic.nowMs()
 
-      sampleThermal(now)
-      if resolved.value.detectionPaused { return }
-      guard frameIsDue(now) else { return }
+      let decision = rate.value
+      if decision.detectionPaused { return }
+      guard frameIsDue(now, decision) else { return }
 
       guard let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-      frameSize.value = CaptureSize(
-        width: CVPixelBufferGetWidth(pixels),
-        height: CVPixelBufferGetHeight(pixels)
-      )
+      let size = CaptureSize(width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels))
+      if size != frameSize.value {
+        frameSize.value = size
+        // Logged once per size: whether the output honoured the analysis size it was asked for is
+        // something only a device can say.
+        PoseLog.info(.camera, "analysis buffers arrive at \(size.width)x\(size.height)")
+      }
 
       do {
         // Always `.up`: the capture connection has already rotated the buffer, see CaptureRotation.
@@ -67,10 +70,8 @@ extension PoseCameraView: AVCaptureVideoDataOutputSampleBufferDelegate {
    ladder's rates were unreachable on most cameras. Carrying the due time forward lets accepted
    frames alternate between sensor slots and land the asked-for rate on average.
    */
-  private func frameIsDue(_ nowMs: Int64) -> Bool {
-    let lastPose = lastPoseMs.value
-    let idle = lastPose != 0 && nowMs - lastPose > PoseCameraView.idleAfterMs
-    let fps = idle ? PerformanceResolver.idleFps : resolved.value.targetFps
+  private func frameIsDue(_ nowMs: Int64, _ decision: RateDecision) -> Bool {
+    let fps = idleAdjusted(decision.fps, nowMs)
     guard fps > 0 else { return false }
 
     let now = Double(nowMs)
@@ -83,17 +84,22 @@ extension PoseCameraView: AVCaptureVideoDataOutputSampleBufferDelegate {
     return true
   }
 
-  /// Sampled rather than subscribed, to match Android, where the callback needs API 29.
-  private func sampleThermal(_ nowMs: Int64) {
-    guard thermalMonitor.shouldSample(nowMs: nowMs, lastMs: lastThermalSampleMs) else { return }
-    lastThermalSampleMs = nowMs
+  /**
+   Idle search: nobody in frame for 2 s drops to the profile's first idle rate, 20 s to its deep
+   one, and the first frame that finds a pose ends it, because that frame already ran. The clock
+   starts when the landmarker is adopted, so a camera opened on an empty room idles too instead of
+   running at full rate until somebody walks past.
+   */
+  private func idleAdjusted(_ fps: Int, _ nowMs: Int64) -> Int {
+    let lastPose = lastPoseMs.value
+    let idle = lastPose == 0 ? nil : idleRates.value?.rate(sinceLastPoseMs: nowMs - lastPose)
+    let effective = idle.map { min($0, fps) }
 
-    let next = thermalMonitor.read()
-    guard next != thermalState.value else { return }
-
-    PoseLog.info(.engine, "thermal state is now \(next.rawValue)")
-    thermalState.value = next
-    // Reported even when the policy says not to act on it, so an app can decide for itself.
-    DispatchQueue.main.async { [weak self] in self?.applyPerformance(reason: "thermal") }
+    if effective != idleFps.value {
+      idleFps.value = effective
+      PoseLog.debug(.engine, effective.map { "idle at \($0) fps" } ?? "a pose is back, idle over")
+      DispatchQueue.main.async { [weak self] in self?.emitPerformanceChange(reason: "idle") }
+    }
+    return effective ?? fps
   }
 }

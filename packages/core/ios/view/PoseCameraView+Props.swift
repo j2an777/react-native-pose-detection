@@ -69,12 +69,11 @@ extension PoseCameraView {
     smoothing.configure(minCutoff: propMinCutoff, beta: propBeta)
     applyPerformance(reason: nil)
 
-    let current = resolved.value
-    let preview = CameraSource.previewSize(for: current.preview)
-    let analysis = CameraSource.analysisSize(for: current.analysis, preview: preview)
-    let geometryChanged = preview != camera.previewSize || analysis != camera.analysisSize
-    camera.previewSize = preview
-    camera.analysisSize = analysis
+    // Only the props move geometry. What calibration or heat learns never does, which is what keeps
+    // an unrelated prop change from restarting the camera behind somebody's back.
+    let next = resolveGeometry()
+    let geometryChanged = next != geometry
+    adopt(next)
     // Only 'auto' is documented to fall back to the other lens; a pinned one stays pinned.
     let pinnedFacing = propFacing == "front" || propFacing == "back"
     camera.facingFallbackAllowed = !pinnedFacing
@@ -127,24 +126,42 @@ extension PoseCameraView {
   }
 
   /**
-   Runs the precedence chain and adopts the result. `reason` is what `onPerformanceChange` reports;
-   nil means this is a props update rather than something the engine decided, and fires no event.
+   Runs the governor and adopts its decision. `reason` is what `onPerformanceChange` reports; nil
+   means this is a props update rather than something the engine decided, and fires no event.
    */
   func applyPerformance(reason: String?) {
-    let next = PerformanceResolver.resolve(PerformanceRequest(
+    let next = RateGovernor.decide(RateRequest(
       profile: propProfile,
-      tier: calibrator.tier,
-      autoFps: calibrator.autoFps > 0 ? calibrator.autoFps : nil,
-      requestedFps: propTargetFps,
-      requestedPreview: propPreview,
-      requestedAnalysis: propAnalysis,
-      thermal: thermalState.value,
-      policy: propThermalPolicy
+      policy: propThermalPolicy,
+      thermal: thermal.state,
+      lowPower: lowPower,
+      cameraFps: cameraFps.value,
+      p50Ms: calibrator.p50InferenceMs,
+      requestedFps: propTargetFps
     ))
+    idleRates.value = Budgets.of(propProfile).idle
 
-    let changed = next != resolved.value
-    resolved.value = next
+    let changed = next != rate.value
+    rate.value = next
     guard let reason = reason, changed else { return }
     emitPerformanceChange(reason: reason)
+  }
+
+  /// The presets the props and profile ask for, on this device. Main thread only.
+  func resolveGeometry() -> CameraGeometry {
+    return GeometryResolver.resolve(
+      profile: propProfile,
+      requestedPreview: propPreview,
+      requestedAnalysis: propAnalysis,
+      memoryGiB: memoryGiB
+    )
+  }
+
+  /// Records the presets and sizes the camera binds at next. Does not rebind on its own.
+  func adopt(_ next: CameraGeometry) {
+    geometry = next
+    let preview = CameraSource.previewSize(for: next.preview)
+    camera.previewSize = preview
+    camera.analysisSize = CameraSource.analysisSize(for: next.analysis, preview: preview)
   }
 }

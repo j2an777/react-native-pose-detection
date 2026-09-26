@@ -69,6 +69,15 @@ final class CameraSource {
   var facingFallbackAllowed = false
 
   /**
+   The rate the sensor is held at. Thirty, because inference is never run faster than frames arrive
+   and an iPhone 15 asked for 60 ran warm within minutes for a skeleton that looked identical.
+   */
+  static let pinnedFps = 30
+
+  /// Told, on main, what the bound camera actually delivers once it has been pinned.
+  var onFrameRate: ((Int) -> Void)?
+
+  /**
    Bumped by every start, pause, resume and release, and compared by whatever lands a turn later to
    learn whether it has been superseded. Behind a lock rather than main-thread state like the rest,
    because the session queue has to read it too: it is how a pause that lands while `startRunning`

@@ -94,6 +94,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     fps: 0,
     delegate: 'CPU',
     deviceTier: 'medium',
+    limitedBy: 'paused',
   });
 
   React.useEffect(() => {
@@ -262,6 +263,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       active: true,
       delegate: ready.delegate,
       deviceTier: ready.deviceTier,
+      limitedBy: ready.limitedBy,
     };
     callbacks.current.onReady?.(ready);
   }, []);
@@ -282,6 +284,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       ...state.current,
       fps: performance.actualFps,
       delegate: performance.delegate,
+      limitedBy: performance.limitedBy,
     };
     callbacks.current.onPerformanceChange?.(performance);
   }, []);

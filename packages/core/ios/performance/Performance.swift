@@ -4,14 +4,6 @@ enum DeviceTier: String {
   case low
   case medium
   case high
-
-  func stepDown() -> DeviceTier {
-    return self == .high ? .medium : .low
-  }
-
-  func stepUp() -> DeviceTier {
-    return self == .low ? .medium : .high
-  }
 }
 
 enum Profile: String {
@@ -46,6 +38,37 @@ enum ThermalState: String {
   case fair
   case serious
   case critical
+
+  /// Hotter is higher, so two readings compare without a switch at every call site.
+  var rank: Int {
+    switch self {
+    case .nominal: return 0
+    case .fair: return 1
+    case .serious: return 2
+    case .critical: return 3
+    }
+  }
+}
+
+/// Why the inference rate is what it is. Reported with every rate, so a number below what was asked
+/// for always comes with its reason.
+enum LimitedBy: String {
+  /// The camera's own frame rate: nothing faster exists to run on.
+  case camera
+  /// What this device can finish within its duty budget, as measured.
+  case device
+  /// An explicit `targetFps`.
+  case target
+  /// The ceiling a named profile sets below the camera's rate.
+  case profile
+  /// Heat, including detection paused at `critical`.
+  case thermal
+  /// Low Power Mode or Battery Saver.
+  case lowPower
+  /// Nobody has been in frame for a while.
+  case idle
+  /// Detection is off, or the camera is not running.
+  case paused
 }
 
 /// Pixel dimensions, reported to JavaScript and compared to decide whether a rebind is needed.
@@ -58,215 +81,294 @@ struct CaptureSize: Equatable {
   }
 }
 
+/// Inference rates while nobody is in frame: soon after they leave, and once they have been gone
+/// long enough that the device is probably propped up on a stand.
+struct IdleRates: Equatable {
+  let first: Int
+  let deep: Int
+
+  static let firstAfterMs: Int64 = 2_000
+  static let deepAfterMs: Int64 = 20_000
+
+  /// The idle rate for this long without a pose, or nil while a pose is recent.
+  func rate(sinceLastPoseMs: Int64) -> Int? {
+    if sinceLastPoseMs > IdleRates.deepAfterMs { return deep }
+    if sinceLastPoseMs > IdleRates.firstAfterMs { return first }
+    return nil
+  }
+}
+
 /**
- One resolved configuration. Every axis is a concrete value: whatever combination of profile,
- props, calibration and heat produced it, this is what the session runs.
+ One profile's row of the governor, the table in `guides/performance.md`.
+
+ The duty is the share of time inference may occupy. Running near capacity but not at it keeps
+ MediaPipe's one-frame queue empty, which is the lowest latency the landmarker has, and leaves the
+ thermal margin that keeps a long session cool: at 100% every frame waits for the one before it.
  */
-struct ResolvedPerformance: Equatable {
-  let targetFps: Int
+struct ProfileBudget {
+  /// A ceiling below the camera's rate, or nil for the camera's own.
+  let ceiling: Int?
+  let dutyNominal: Float
+  let dutyFair: Float
+  /// Nil turns idle search off.
+  let idle: IdleRates?
+  /// False for the one profile that opts out of every heat response short of critical.
+  let heatBelowCritical: Bool
+  /// `efficient` also scales its rate at `fair`: it is the profile that treats warmth as a reason.
+  let scaleAtFair: Bool
+  /// `nil` follows the device's memory, otherwise a preset.
+  let preview: String?
+  let analysis: String
+}
+
+enum Budgets {
+  static func of(_ profile: Profile) -> ProfileBudget {
+    switch profile {
+    case .auto:
+      return ProfileBudget(
+        ceiling: nil, dutyNominal: 0.85, dutyFair: 0.70, idle: IdleRates(first: 12, deep: 5),
+        heatBelowCritical: true, scaleAtFair: false, preview: nil, analysis: "480p"
+      )
+    case .quality:
+      return ProfileBudget(
+        ceiling: nil, dutyNominal: 0.95, dutyFair: 0.85, idle: IdleRates(first: 15, deep: 8),
+        heatBelowCritical: true, scaleAtFair: false, preview: "1080p", analysis: "480p"
+      )
+    case .balanced:
+      return ProfileBudget(
+        ceiling: 24, dutyNominal: 0.70, dutyFair: 0.60, idle: IdleRates(first: 12, deep: 5),
+        heatBelowCritical: true, scaleAtFair: false, preview: "720p", analysis: "480p"
+      )
+    case .efficient:
+      return ProfileBudget(
+        ceiling: 15, dutyNominal: 0.50, dutyFair: 0.40, idle: IdleRates(first: 8, deep: 3),
+        heatBelowCritical: true, scaleAtFair: true, preview: "720p", analysis: "360p"
+      )
+    case .unrestricted:
+      return ProfileBudget(
+        ceiling: nil, dutyNominal: 1.0, dutyFair: 1.0, idle: nil,
+        heatBelowCritical: false, scaleAtFair: false, preview: "1080p", analysis: "480p"
+      )
+    }
+  }
+}
+
+/// Preview and analysis presets. Fixed for a session: nothing the governor learns may restart the camera.
+struct CameraGeometry: Equatable {
   let preview: String
   let analysis: String
-  let detectionPaused: Bool
 }
 
-/**
- A tier's starting configuration. Calibration steps between these rather than inventing
- intermediate values, so `getProfile()` always reports something a person can reason about.
- */
-enum Tiers {
+enum GeometryResolver {
   /**
-   How often a tier runs inference. Not the preview's frame rate, which is whatever the sensor
-   delivers: this gates the model only, and between inferences the overlay holds the last pose.
-
-   For `auto` these are the starting rates a session runs before the governor has measured
-   anything; once it has, `AutoTuner` replaces them with the device's own number. A named profile
-   pins them. They are deliberately modest: an iPhone 15 asked for 60 here ran warm within minutes
-   for a skeleton that looked identical at half that, so ramping up from below is the cheap
-   direction and the governor does it within two seconds.
+   Where `auto` moves the preview to 1080p. A phone sold as 6 GB reports a little under 6 GiB, so
+   the threshold sits below the marketing number rather than on it; the old one sat on it, stepped
+   down once more on top, and opened those phones at 640x480.
    */
-  static func targetFps(_ tier: DeviceTier) -> Int {
-    switch tier {
-    case .low: return 15
-    case .medium: return 24
-    case .high: return 30
-    }
+  static let highMemoryGiB: Float = 5.5
+  static let bytesPerGiB: Float = 1_073_741_824
+
+  static func resolve(
+    profile: Profile,
+    requestedPreview: String,
+    requestedAnalysis: String,
+    memoryGiB: Float
+  ) -> CameraGeometry {
+    let budget = Budgets.of(profile)
+    let autoPreview = budget.preview ?? (memoryGiB >= highMemoryGiB ? "1080p" : "720p")
+    return CameraGeometry(
+      preview: requestedPreview == "auto" ? autoPreview : requestedPreview,
+      analysis: requestedAnalysis == "auto" ? budget.analysis : requestedAnalysis
+    )
   }
 
-  static func preview(_ tier: DeviceTier) -> String {
-    switch tier {
-    case .low: return "480p"
-    case .medium: return "720p"
-    case .high: return "1080p"
-    }
-  }
-
-  /**
-   What the model is given, which is not what the preview shows.
-
-   It stops at 480p on purpose. MediaPipe resizes whatever it is handed to 256 by 256 before the
-   detector sees it, so a 720p analysis buffer is close to a megapixel captured, converted and
-   copied every frame in order to be thrown away inside the graph. That was the single largest
-   piece of avoidable work in the live path, and it bought no accuracy at all for a body filling a
-   normal amount of the frame. A distant subject is the one case a larger buffer helps, and
-   `analysisResolution` is there to ask for it.
-   */
-  static func analysis(_ tier: DeviceTier) -> String {
-    switch tier {
-    case .low: return "360p"
-    case .medium, .high: return "480p"
-    }
-  }
-
-  /// One step down the analysis ladder, which is what `serious` heat costs.
-  static func analysisBelow(_ analysis: String) -> String {
-    switch analysis {
-    case "720p": return "480p"
-    case "480p": return "360p"
-    default: return "360p"
-    }
+  static func deviceMemoryGiB() -> Float {
+    return Float(ProcessInfo.processInfo.physicalMemory) / bytesPerGiB
   }
 }
 
-/**
- The measured half of `auto`: what rate to run and what class of device this is, both read off the
- p50 inference time, which is the one number that already contains everything that matters — the
- silicon, the delegate, the model variant, the thermal throttling, all of it.
-
- The rate is continuous rather than stepped. Two devices that both land in the high tier can still
- differ by ten milliseconds of inference, and quantizing them to one number either wastes the fast
- one or overloads the slow one. This is why a session settles at 34 or 27 rather than a round tier
- value: the number is the device's own.
- */
-enum AutoTuner {
-  /**
-   The fraction of each frame interval inference may occupy. The rest is everything downstream of
-   the model — conversion, smoothing, the overlay, the wire encode — plus the headroom that keeps
-   a sustained session from climbing the thermal ladder it would then be knocked back down.
-   */
-  static let utilization: Float = 0.55
-
-  /// Below this the skeleton reads as broken; better to hold it and let heat pause detection.
-  static let minFps = 10
-
-  /**
-   Past this the visible gain is nothing and the heat is real: a body does not move meaningfully
-   in 25 milliseconds. It is above 30 because that is where fast phones measurably sit, not to
-   leave room for a number that impresses.
-   */
-  static let maxFps = 40
-
-  /// Moves smaller than this are sensor noise, not a change in what the device can do.
-  static let deadbandFps = 2
-
-  /// A p50 that sustains ~25 fps and up is a device that can carry high-tier geometry.
-  static let highTierMaxP50Ms: Float = 22
-  static let mediumTierMaxP50Ms: Float = 45
-
-  private static let millisPerSecond: Float = 1_000
-
-  static func targetFps(p50Ms: Float) -> Int {
-    guard p50Ms > 0 else { return 0 }
-    let sustainable = (millisPerSecond * utilization / p50Ms).rounded()
-    return min(max(Int(sustainable), minFps), maxFps)
-  }
-
-  /// The tier drives geometry, so it moves on what the silicon is, not on what the rate is set to.
-  static func tier(p50Ms: Float) -> DeviceTier {
-    if p50Ms <= highTierMaxP50Ms { return .high }
-    return p50Ms <= mediumTierMaxP50Ms ? .medium : .low
-  }
-}
-
-/// Every axis the precedence chain reads, so the resolver takes one value rather than eight.
-struct PerformanceRequest {
+/// Every input the rate depends on, so the governor takes one value rather than seven.
+struct RateRequest {
   let profile: Profile
-  let tier: DeviceTier
-  /// What the governor measured, or nil before it has. Only `auto` and `unrestricted` ride it.
-  let autoFps: Int?
-  let requestedFps: Int?
-  let requestedPreview: String
-  let requestedAnalysis: String
-  let thermal: ThermalState
   let policy: ThermalPolicy
+  let thermal: ThermalState
+  let lowPower: Bool
+  /// The camera's delivered rate, after it was pinned.
+  let cameraFps: Int
+  /// Median dispatch-to-result time, or 0 before anything was measured or cached.
+  let p50Ms: Float
+  let requestedFps: Int?
+}
+
+/// What the governor decided. A rate of zero means detection is paused.
+struct RateDecision: Equatable {
+  let fps: Int
+  let limitedBy: LimitedBy
+
+  var detectionPaused: Bool {
+    return fps <= 0
+  }
 }
 
 /**
- The precedence chain from `guides/performance.md`, in one place so it cannot be applied in three
- different orders by three different callers:
+ The rate model from `guides/performance.md`, in one place so it cannot be applied in two
+ different orders by two different callers.
 
  ```text
- 1. profile        sets the baseline
- 2. explicit props override per axis
- 3. calibration    adjusts only axes still 'auto'
- 4. thermal ladder overrides everything, unless the policy says otherwise
+ nominal  min(camera, capacity(duty nominal))
+ fair     min(camera, capacity(duty fair))
+ serious  min(camera / 2, capacity(0.5))
+ critical detection paused, preview kept
  ```
+
+ where `capacity(d) = floor(d × 1000 ÷ p50)`: the rate at which inference is busy a share `d` of
+ the time. The camera is the ceiling because inferring faster than frames arrive is impossible,
+ and 30 is where it is pinned: an iPhone 15 asked for 60 ran warm within minutes for a skeleton
+ that looked identical at half that.
  */
-enum PerformanceResolver {
-  static let idleFps = 8
+enum RateGovernor {
+  /// Below this a governed skeleton reads as broken. Heat and idle may go lower; the device may not.
+  static let floorFps = 10
+  static let lowPowerCeiling = 24
+  static let fairScale: Float = 0.75
+  static let seriousDuty: Float = 0.5
 
-  private static let auto = "auto"
-  private static let fairFpsScale: Float = 0.75
-  private static let seriousFpsScale: Float = 0.5
+  /**
+   The rate at which inference is busy a share `duty` of the time. Nil before anything has been
+   measured, which is not a slow device but an unknown one: the ceiling applies until it is known.
+   */
+  static func capacity(duty: Float, p50Ms: Float) -> Int? {
+    guard p50Ms > 0, p50Ms.isFinite else { return nil }
+    return Int((duty * 1_000 / p50Ms).rounded(.down))
+  }
 
-  static func resolve(_ request: PerformanceRequest) -> ResolvedPerformance {
-    // 1. The baseline. A named profile pins the tier it names; `auto` and `unrestricted` take
-    // whatever calibration decided.
-    let baseTier: DeviceTier
-    switch request.profile {
-    case .efficient: baseTier = .low
-    case .balanced: baseTier = .medium
-    case .quality: baseTier = .high
-    case .auto, .unrestricted: baseTier = request.tier
+  /// The heat the rules act on: the policy and the profile decide which readings count at all.
+  static func effectiveHeat(_ request: RateRequest) -> ThermalState {
+    switch request.policy {
+    case .off:
+      return .nominal
+    case .criticalOnly:
+      return request.thermal == .critical ? .critical : .nominal
+    case .adaptive:
+      guard Budgets.of(request.profile).heatBelowCritical else {
+        return request.thermal == .critical ? .critical : .nominal
+      }
+      return request.thermal
     }
+  }
 
-    var fps = request.requestedFps ?? governedFps(request) ?? Tiers.targetFps(baseTier)
-    let preview = request.requestedPreview == auto ? Tiers.preview(baseTier) : request.requestedPreview
-    var analysis = request.requestedAnalysis == auto ? Tiers.analysis(baseTier) : request.requestedAnalysis
-    var paused = false
+  static func decide(_ request: RateRequest) -> RateDecision {
+    let heat = effectiveHeat(request)
+    guard heat != .critical else { return RateDecision(fps: 0, limitedBy: .thermal) }
 
-    if acts(request) {
-      switch request.thermal {
-      case .nominal:
-        break
-      case .fair:
-        fps = scaled(fps, fairFpsScale)
-      case .serious:
-        fps = scaled(fps, seriousFpsScale)
-        analysis = Tiers.analysisBelow(analysis)
-      case .critical:
-        paused = true
+    let camera = max(1, request.cameraFps)
+    var decision = request.requestedFps.map { explicit($0, camera: camera, p50Ms: request.p50Ms) }
+      ?? governed(request, camera: camera, heat: heat)
+
+    if heat == .serious {
+      var halved = max(1, camera / 2)
+      if let capacity = capacity(duty: seriousDuty, p50Ms: request.p50Ms) {
+        halved = min(halved, max(1, capacity))
+      }
+      if halved < decision.fps {
+        decision = RateDecision(fps: halved, limitedBy: .thermal)
       }
     }
 
-    return ResolvedPerformance(targetFps: fps, preview: preview, analysis: analysis, detectionPaused: paused)
+    // The person asking for less work. An explicit target and `unrestricted` are someone having
+    // already decided, so they keep their rate and the OS throttles the silicon on its own.
+    if request.lowPower, request.requestedFps == nil, request.profile != .unrestricted,
+       decision.fps > lowPowerCeiling {
+      decision = RateDecision(fps: lowPowerCeiling, limitedBy: .lowPower)
+    }
+    return decision
   }
 
   /**
-   The measured rate applies only where nobody has decided: an explicit `targetFps` outranks it
-   before this is even consulted, and a named profile is somebody saying they have already chosen
-   a tier's numbers.
+   An explicit target, capped at what the device can finish. Feeding MediaPipe faster than that
+   only queues frames behind each other, which adds a frame of latency and buys nothing.
    */
-  private static func governedFps(_ request: PerformanceRequest) -> Int? {
-    switch request.profile {
-    case .auto, .unrestricted: return request.autoFps
-    case .efficient, .balanced, .quality: return nil
+  private static func explicit(_ requested: Int, camera: Int, p50Ms: Float) -> RateDecision {
+    var fps = max(1, min(requested, camera))
+    var reason: LimitedBy = requested > camera ? .camera : .target
+    if let capacity = capacity(duty: 1, p50Ms: p50Ms), capacity < fps {
+      fps = max(1, capacity)
+      reason = .device
     }
+    return RateDecision(fps: fps, limitedBy: reason)
   }
 
-  /**
-   Heat outranks everything else. `unrestricted` opts out of all of it except critical, because a
-   device that is about to shut down is not a preference anyone can hold.
-   */
-  private static func acts(_ request: PerformanceRequest) -> Bool {
-    switch request.policy {
-    case .off: return false
-    case .criticalOnly: return request.thermal == .critical
-    case .adaptive: return request.profile == .unrestricted ? request.thermal == .critical : true
-    }
-  }
+  private static func governed(_ request: RateRequest, camera: Int, heat: ThermalState) -> RateDecision {
+    let budget = Budgets.of(request.profile)
+    let ceiling = min(camera, budget.ceiling ?? camera)
+    var fps = ceiling
+    var reason: LimitedBy = ceiling < camera ? .profile : .camera
 
-  /// Never below one: an fps of zero would read as "as fast as possible", which is the opposite.
-  private static func scaled(_ fps: Int, _ scale: Float) -> Int {
-    return max(1, Int(Float(fps) * scale))
+    if let capacity = capacity(duty: budget.dutyNominal, p50Ms: request.p50Ms), capacity < fps {
+      fps = max(capacity, min(floorFps, ceiling))
+      reason = .device
+    }
+
+    if heat == .fair {
+      if let capacity = capacity(duty: budget.dutyFair, p50Ms: request.p50Ms), capacity < fps {
+        fps = max(1, capacity)
+        reason = .thermal
+      }
+      if budget.scaleAtFair {
+        fps = max(1, Int(Float(fps) * fairScale))
+        reason = .thermal
+      }
+    }
+    return RateDecision(fps: fps, limitedBy: reason)
+  }
+}
+
+/**
+ The thermal state the governor acts on, which is not always the one the OS just reported.
+
+ Heat is adopted the moment it rises. Cooling is adopted only after it has held for thirty seconds,
+ at the warmest level seen during that time, so a device hovering on a boundary does not flap the
+ rate up and down every second, which reads as stutter and saves nothing.
+ */
+struct ThermalHysteresis {
+  static let coolDownMs: Int64 = 30_000
+
+  private(set) var state: ThermalState = .nominal
+  private var coolerSinceMs: Int64 = 0
+  private var coolerCandidate: ThermalState = .nominal
+
+  /// Feeds one reading. Returns true when the state the governor acts on changed.
+  mutating func update(_ raw: ThermalState, nowMs: Int64) -> Bool {
+    if raw.rank >= state.rank {
+      coolerSinceMs = 0
+      guard raw.rank > state.rank else { return false }
+      state = raw
+      return true
+    }
+
+    if coolerSinceMs == 0 {
+      coolerSinceMs = nowMs
+      coolerCandidate = raw
+      return false
+    }
+    if raw.rank > coolerCandidate.rank {
+      coolerCandidate = raw
+    }
+    guard nowMs - coolerSinceMs >= ThermalHysteresis.coolDownMs else { return false }
+    state = coolerCandidate
+    coolerSinceMs = 0
+    return true
+  }
+}
+
+/// The tier is a label now, reported so an app can reason about the device. It drives nothing.
+enum AutoTuner {
+  /// A p50 that sustains ~25 fps and up is a device that can carry high-tier work.
+  static let highTierMaxP50Ms: Float = 22
+  static let mediumTierMaxP50Ms: Float = 45
+
+  static func tier(p50Ms: Float) -> DeviceTier {
+    if p50Ms <= highTierMaxP50Ms { return .high }
+    return p50Ms <= mediumTierMaxP50Ms ? .medium : .low
   }
 }

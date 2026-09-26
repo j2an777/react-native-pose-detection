@@ -3,6 +3,7 @@ import type {
   DelegateRequest,
   DeviceTier,
   Facing,
+  LimitedBy,
   ModelVariant,
   Resolution,
 } from './camera';
@@ -38,6 +39,8 @@ export type ReadyEvent = {
   readonly delegate: Delegate;
   readonly delegateRequested: DelegateRequest;
   readonly targetFps: number;
+  /** Why `targetFps` is what it is. */
+  readonly limitedBy: LimitedBy;
   readonly deviceTier: DeviceTier;
   readonly resolution: Resolution;
   readonly analysisResolution: Resolution;
@@ -56,9 +59,18 @@ export type CameraChangeEvent = {
 };
 
 export type PerformanceEvent = {
-  readonly reason: 'calibration' | 'thermal' | 'load' | 'headroom' | 'gpu_fallback';
+  readonly reason:
+    | 'calibration'
+    | 'thermal'
+    | 'lowPower'
+    | 'idle'
+    | 'load'
+    | 'headroom'
+    | 'gpu_fallback';
   readonly delegate: Delegate;
   readonly targetFps: number;
+  /** Why `targetFps` is what it is. */
+  readonly limitedBy: LimitedBy;
   readonly analysisResolution: Resolution;
   readonly actualFps: number;
 };

@@ -63,6 +63,8 @@ extension CameraSource {
 
     applyOrientation(orientation)
     session.commitConfiguration()
+    // After the commit: adding an input resets the device's frame durations to its defaults.
+    pinFrameRate(resolved.device)
 
     if request.analyzerEnabled {
       videoOutput.setSampleBufferDelegate(sampleDelegate, queue: analysisQueue)
@@ -101,22 +103,62 @@ extension CameraSource {
     }
 
     session.beginConfiguration()
-    defer { session.commitConfiguration() }
+    do {
+      if let existing = input {
+        session.removeInput(existing)
+      }
+      let next = try AVCaptureDeviceInput(device: device)
+      guard session.canAddInput(next) else {
+        // Put the old one back, so a failed swap leaves the session with a camera rather than none.
+        if let existing = input, session.canAddInput(existing) { session.addInput(existing) }
+        throw CameraError("this device will not accept the \(target.nameForJs) camera")
+      }
+      session.addInput(next)
+      input = next
+      boundFacing = target
+      // Inside the configuration block, so no frame is ever delivered with the old rotation.
+      applyOrientation(orientation)
+    } catch {
+      session.commitConfiguration()
+      throw error
+    }
+    session.commitConfiguration()
+    // The new lens starts at its own default frame durations, so it is pinned the same way.
+    pinFrameRate(device)
+  }
 
-    if let existing = input {
-      session.removeInput(existing)
+  /**
+   Pins the sensor to a steady `CameraSource.pinnedFps`, and reports what the device actually runs
+   at to `onFrameRate`, which the governor takes as its ceiling.
+
+   Left alone, auto-exposure may lengthen frames in a dim room, which halves the camera's rate and
+   the skeleton's with it. Holding the minimum frame duration too trades a little exposure in the
+   dark for a rate the pipeline can count on; detection copes with a noisier frame far better than
+   with half as many. A format that cannot hold the rate keeps the fastest it has.
+   */
+  func pinFrameRate(_ device: AVCaptureDevice) {
+    let ranges = device.activeFormat.videoSupportedFrameRateRanges
+    let fastest = ranges.map(\.maxFrameRate).max() ?? Double(CameraSource.pinnedFps)
+    let fps = min(Double(CameraSource.pinnedFps), fastest).rounded(.down)
+
+    if fps >= 1 {
+      let duration = CMTime(value: 1, timescale: CMTimeScale(fps))
+      do {
+        try device.lockForConfiguration()
+        device.activeVideoMinFrameDuration = duration
+        if ranges.contains(where: { $0.minFrameRate <= fps && fps <= $0.maxFrameRate }) {
+          device.activeVideoMaxFrameDuration = duration
+        }
+        device.unlockForConfiguration()
+      } catch {
+        PoseLog.warn(.camera, "could not pin the frame rate: \(error.localizedDescription)")
+      }
     }
-    let next = try AVCaptureDeviceInput(device: device)
-    guard session.canAddInput(next) else {
-      // Put the old one back, so a failed swap leaves the session with a camera rather than none.
-      if let existing = input, session.canAddInput(existing) { session.addInput(existing) }
-      throw CameraError("this device will not accept the \(target.nameForJs) camera")
-    }
-    session.addInput(next)
-    input = next
-    boundFacing = target
-    // Inside the configuration block, so no frame is ever delivered with the old rotation.
-    applyOrientation(orientation)
+
+    let seconds = CMTimeGetSeconds(device.activeVideoMinFrameDuration)
+    let delivered = seconds.isFinite && seconds > 0 ? Int((1 / seconds).rounded()) : CameraSource.pinnedFps
+    PoseLog.info(.camera, "camera delivers \(delivered) fps")
+    DispatchQueue.main.async { [weak self] in self?.onFrameRate?(delivered) }
   }
 
   func applyOrientation(_ orientation: AVCaptureVideoOrientation) {

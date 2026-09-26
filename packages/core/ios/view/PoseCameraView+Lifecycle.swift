@@ -29,8 +29,13 @@ extension PoseCameraView {
     // The interface can turn 180 degrees without any other callback firing, which would leave the
     // capture connection on a stale rotation and every landmark arriving upside down.
     observe(UIDevice.orientationDidChangeNotification) { $0.camera.updateTargetRotation() }
+    // Heat and power apply the moment the OS says so; the timer covers cooling, which only takes
+    // effect after it has held, and needs a reading to notice it has.
+    observe(ProcessInfo.thermalStateDidChangeNotification) { $0.sampleHeat() }
+    observe(Notification.Name.NSProcessInfoPowerStateDidChange) { $0.sampleHeat() }
 
     startLogTimer()
+    startHeatTimer()
     // Reattaching after a temporary detach re-establishes whatever the props already say, rather
     // than waiting for a prop to change before the camera comes back.
     onPropsUpdated()
@@ -44,6 +49,8 @@ extension PoseCameraView {
     removeObservers()
     logTimer?.invalidate()
     logTimer = nil
+    heatTimer?.invalidate()
+    heatTimer = nil
     PoseLog.releaseStream(self)
 
     camera.setAnalyzerEnabled(false)
@@ -104,6 +111,17 @@ extension PoseCameraView {
       repeats: true
     ) { [weak self] _ in
       self?.flushLog()
+    }
+  }
+
+  private func startHeatTimer() {
+    heatTimer?.invalidate()
+    sampleHeat()
+    heatTimer = Timer.scheduledTimer(
+      withTimeInterval: ThermalMonitor.sampleIntervalSeconds,
+      repeats: true
+    ) { [weak self] _ in
+      self?.sampleHeat()
     }
   }
 

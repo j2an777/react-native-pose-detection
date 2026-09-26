@@ -92,10 +92,12 @@ extension PoseCameraView {
     overlayView.isHidden = !enabled
   }
 
-  /// Setting one explicitly is a decision, so it takes effect now rather than at the next render.
+  /**
+   Setting one explicitly is a decision, so it takes effect now rather than at the next render. The
+   measurement is kept: every profile budgets against what this device's inference costs.
+   */
   func applyProfile(_ profile: Profile) {
     propProfile = profile
-    if profile != .auto { calibrator.reset() }
     applyPerformance(reason: "calibration")
     restartSessionIfGeometryChanged()
   }
@@ -127,13 +129,13 @@ extension PoseCameraView {
       "detecting": detector.value != nil || detectorPending,
       "fps": currentMeasuredFps(),
       "delegate": resolvedDelegate ?? "CPU",
-      "deviceTier": calibrator.tier.rawValue
+      "deviceTier": calibrator.tier.rawValue,
+      "limitedBy": currentLimitedBy().rawValue
     ]
   }
 
   /// The profile as `getProfile()` reports it.
   func profileState() -> [String: Any] {
-    let current = resolved.value
     return [
       "profile": propProfile.rawValue,
       "phase": calibrator.phase.rawValue,
@@ -141,13 +143,30 @@ extension PoseCameraView {
       "tier": calibrator.tier.rawValue,
       "resolved": [
         "delegate": resolvedDelegate ?? "CPU",
-        "targetFps": current.targetFps,
-        "preview": current.preview,
-        "analysis": current.analysis
+        "targetFps": currentTargetFps(),
+        "preview": geometry.preview,
+        "analysis": geometry.analysis
       ],
       "p50InferenceMs": calibrator.p50InferenceMs,
-      "measuredFps": currentMeasuredFps()
+      "measuredFps": currentMeasuredFps(),
+      "limitedBy": currentLimitedBy().rawValue,
+      "cameraFps": cameraFps.value,
+      "thermalState": thermal.state.rawValue,
+      "lowPower": lowPower
     ]
+  }
+
+  /// The rate inference is gated at right now, idle search included.
+  func currentTargetFps() -> Int {
+    let decided = rate.value.fps
+    return idleFps.value.map { min($0, decided) } ?? decided
+  }
+
+  /// Why the rate is what it is. `paused` whenever nothing is running to be limited.
+  func currentLimitedBy() -> LimitedBy {
+    guard propDetection, camera.isBound, detector.value != nil || detectorPending else { return .paused }
+    if idleFps.value != nil { return .idle }
+    return rate.value.limitedBy
   }
 
   // MARK: - Events
@@ -168,7 +187,8 @@ extension PoseCameraView {
       "model": variant,
       "delegate": resolvedDelegate ?? "CPU",
       "delegateRequested": propDelegate,
-      "targetFps": resolved.value.targetFps,
+      "targetFps": currentTargetFps(),
+      "limitedBy": currentLimitedBy().rawValue,
       "deviceTier": calibrator.tier.rawValue,
       "resolution": camera.previewSize.forJs,
       "analysisResolution": camera.analysisSize.forJs,
@@ -177,14 +197,12 @@ extension PoseCameraView {
   }
 
   func emitPerformanceChange(reason: String) {
-    let current = resolved.value
     onPerformanceChange([
       "reason": reason,
       "delegate": resolvedDelegate ?? "CPU",
-      "targetFps": current.targetFps,
-      "analysisResolution": CameraSource
-        .analysisSize(for: current.analysis, preview: CameraSource.previewSize(for: current.preview))
-        .forJs,
+      "targetFps": currentTargetFps(),
+      "limitedBy": currentLimitedBy().rawValue,
+      "analysisResolution": camera.analysisSize.forJs,
       "actualFps": currentMeasuredFps()
     ])
   }

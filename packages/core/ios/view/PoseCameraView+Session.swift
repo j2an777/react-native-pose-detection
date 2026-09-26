@@ -23,15 +23,11 @@ extension PoseCameraView {
     }
     modelPath = model
 
-    // Before the bind, so a tier and rate remembered from the last launch shape the geometry the
-    // session opens with. Started from the detector's adoption instead, the first session of every
-    // launch ran at the default tier's sizes whatever the cache knew.
+    // A no-op for the model already measured, so a restart keeps what the device was measured to
+    // cost instead of going back to the camera's rate and measuring it all over again.
     calibrator.start(modelFileName: PoseDetector.fileName(from: model))
+    adopt(resolveGeometry())
     applyPerformance(reason: nil)
-    let current = resolved.value
-    let preview = CameraSource.previewSize(for: current.preview)
-    camera.previewSize = preview
-    camera.analysisSize = CameraSource.analysisSize(for: current.analysis, preview: preview)
 
     started = true
     camera.setAnalyzerEnabled(true)
@@ -65,14 +61,11 @@ extension PoseCameraView {
     startSession()
   }
 
+  /// For a profile set from the ref, the one geometry change that does not arrive as a prop.
   func restartSessionIfGeometryChanged() {
-    let current = resolved.value
-    let preview = CameraSource.previewSize(for: current.preview)
-    let analysis = CameraSource.analysisSize(for: current.analysis, preview: preview)
-    guard preview != camera.previewSize || analysis != camera.analysisSize else { return }
-
-    camera.previewSize = preview
-    camera.analysisSize = analysis
+    let next = resolveGeometry()
+    guard next != geometry else { return }
+    adopt(next)
     if started { restartSession() }
   }
 
@@ -152,6 +145,8 @@ extension PoseCameraView {
     created.observer = self
     detector.value = created
     resolvedDelegate = created.delegateKind == .GPU ? "GPU" : "CPU"
+    // Idle search counts from here: a camera opened on an empty room is idle too.
+    lastPoseMs.value = Monotonic.nowMs()
     preWarm(created)
 
     // The one path that actually downgrades is 'auto'. An explicit 'gpu' is pinned and never falls
@@ -221,8 +216,22 @@ extension PoseCameraView {
 
   func onCalibrationMoved() {
     applyPerformance(reason: "calibration")
-    if let model = modelPath {
-      calibrator.persist(modelFileName: PoseDetector.fileName(from: model))
-    }
+    calibrator.persist()
+  }
+
+  /**
+   Heat and power, read on a one-second timer and on the OS's own notifications, never on the frame
+   path. Heat is adopted at once and cooling only after it has held, see `ThermalHysteresis`.
+   Reported even when the policy says not to act on it, so an app can decide for itself.
+   */
+  func sampleHeat() {
+    let heatMoved = thermal.update(thermalMonitor.readThermal(), nowMs: Monotonic.nowMs())
+    let power = thermalMonitor.readLowPower()
+    let powerMoved = power != lowPower
+    lowPower = power
+    guard heatMoved || powerMoved else { return }
+
+    PoseLog.info(.engine, "heat is \(thermal.state.rawValue), low power \(lowPower ? "on" : "off")")
+    applyPerformance(reason: heatMoved ? "thermal" : "lowPower")
   }
 }

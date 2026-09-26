@@ -188,3 +188,19 @@ test('each angle is measured between the same three joints in the Swift', () => 
     }
   }
 });
+
+test('the MediaPipe version in each calibration cache key is the one the build pins', () => {
+  const gradle = readFileSync(resolve(CORE, 'android/build.gradle'), 'utf8');
+  const podspec = readFileSync(resolve(CORE, 'ios/ReactNativePoseDetection.podspec'), 'utf8');
+  const pinnedByGradle = /com\.google\.mediapipe:tasks-vision:([\d.]+)/.exec(gradle)?.[1];
+  const pinnedByPod = /'MediaPipeTasksVision', '([\d.]+)'/.exec(podspec)?.[1];
+  assert.ok(pinnedByGradle !== undefined, 'build.gradle no longer pins tasks-vision');
+  assert.equal(pinnedByPod, pinnedByGradle, 'the two platforms pin different MediaPipe releases');
+
+  // A cache key that outlives a MediaPipe upgrade would start the new version from a cost measured
+  // on the old one. The constants are what makes the key change.
+  const kotlin = /const val PINNED = "([\d.]+)"/.exec(read('kotlin', 'Calibrator.kt'))?.[1];
+  const swift = /static let pinned = "([\d.]+)"/.exec(read('swift', 'Calibrator.swift'))?.[1];
+  assert.equal(kotlin, pinnedByGradle, 'MediaPipeVersion.PINNED is stale in the Kotlin');
+  assert.equal(swift, pinnedByGradle, 'MediaPipeVersion.pinned is stale in the Swift');
+});

@@ -20,6 +20,32 @@ export type ThermalPolicy = 'adaptive' | 'critical-only' | 'off';
 
 export type Profile = 'auto' | 'efficient' | 'balanced' | 'quality' | 'unrestricted';
 
+/**
+ * Why the inference rate is what it is, reported with every rate so a number below what was asked
+ * for always comes with its reason. See [guides/performance.md](../../../../guides/performance.md).
+ *
+ * - `camera`: the camera's own frame rate, the fastest there is to run on.
+ * - `device`: what this device can finish within its duty budget, as measured.
+ * - `target`: an explicit `targetFps`.
+ * - `profile`: the ceiling a named profile sets below the camera's rate.
+ * - `thermal`: heat, including detection paused at `critical`.
+ * - `lowPower`: Low Power Mode on iOS, Battery Saver on Android.
+ * - `idle`: nobody has been in frame for a while.
+ * - `paused`: detection is off, or the camera is not running.
+ */
+export type LimitedBy =
+  | 'camera'
+  | 'device'
+  | 'target'
+  | 'profile'
+  | 'thermal'
+  | 'lowPower'
+  | 'idle'
+  | 'paused';
+
+/** The heat the governor acts on, after hysteresis: rising at once, cooling only once it has held. */
+export type ThermalState = 'nominal' | 'fair' | 'serious' | 'critical';
+
 export type ProfileState = {
   readonly profile: Profile;
   readonly phase: 'calibrating' | 'settled' | 'cached';
@@ -38,6 +64,13 @@ export type ProfileState = {
    * device cannot hold the rate it was asked for.
    */
   readonly measuredFps: number;
+  /** Why `resolved.targetFps` is what it is. */
+  readonly limitedBy: LimitedBy;
+  /** What the camera delivers once pinned: the ceiling every rate sits under. Normally 30. */
+  readonly cameraFps: number;
+  readonly thermalState: ThermalState;
+  /** Low Power Mode on iOS, Battery Saver on Android. */
+  readonly lowPower: boolean;
 };
 
 export type CameraState = {
@@ -52,6 +85,8 @@ export type CameraState = {
   readonly fps: number;
   readonly delegate: Delegate;
   readonly deviceTier: DeviceTier;
+  /** As of the last `onReady` or `onPerformanceChange`, like `fps`. */
+  readonly limitedBy: LimitedBy;
 };
 
 /** One-Euro filter parameters. Lower `minCutoff` smooths more; higher `beta` tracks fast motion. */

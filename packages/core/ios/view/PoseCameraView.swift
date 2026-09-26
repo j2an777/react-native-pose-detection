@@ -34,8 +34,6 @@ public class PoseCameraView: ExpoView {
   static let minTargetFps = 1
   static let maxTargetFps = 60
 
-  /// No pose for this long drops the analyzer to `PerformanceResolver.idleFps`.
-  static let idleAfterMs: Int64 = 2_000
   static let fpsWindowMs: Int64 = 1_000
 
   /// No result for this long means `getState().fps` reports zero rather than the last live value.
@@ -130,13 +128,23 @@ public class PoseCameraView: ExpoView {
   let calibrator = Calibrator()
   let thermalMonitor = ThermalMonitor()
 
-  /// What the precedence chain last produced. Read on the analysis queue, written on main.
-  let resolved = Guarded(ResolvedPerformance(
-    targetFps: Tiers.targetFps(.medium),
-    preview: Tiers.preview(.medium),
-    analysis: Tiers.analysis(.medium),
-    detectionPaused: false
-  ))
+  /// What the governor last decided. Read on the analysis queue, written on main.
+  let rate = Guarded(RateDecision(fps: 30, limitedBy: .camera))
+
+  /// The current profile's idle rates, read on the analysis queue for every frame.
+  let idleRates = Guarded<IdleRates?>(Budgets.of(.auto).idle)
+
+  /// The idle rate in force right now, or nil while a pose is recent. Written on the analysis queue.
+  let idleFps = Guarded<Int?>(nil)
+
+  /// What the camera delivers once pinned. Written from the session queue, read everywhere.
+  let cameraFps = Guarded(30)
+
+  /// Preview and analysis presets for this session. Main thread only, and fixed while it runs.
+  var geometry = CameraGeometry(preview: "720p", analysis: "480p")
+
+  /// Read once: installed memory does not change while the app runs.
+  let memoryGiB = GeometryResolver.deviceMemoryGiB()
 
   /**
    The size of the buffer the last dispatched frame carried, in display orientation. The result
@@ -146,8 +154,11 @@ public class PoseCameraView: ExpoView {
    */
   let frameSize = Guarded(CaptureSize(width: 0, height: 0))
 
-  let thermalState = Guarded<ThermalState>(.nominal)
-  var lastThermalSampleMs: Int64 = 0
+  /// Heat and power, main thread only. Sampled on a timer and on the OS's notifications, never on
+  /// the frame path.
+  var thermal = ThermalHysteresis()
+  var lowPower = false
+  var heatTimer: Timer?
 
   /// Frame pacing: when the next inference is due. Analysis queue only, unlike `lastPoseMs`.
   var nextDetectDueMs = 0.0
@@ -224,6 +235,13 @@ public class PoseCameraView: ExpoView {
     addSubview(previewView)
     addSubview(overlayView)
 
+    // The camera's delivered rate is the governor's ceiling, known only once a lens is bound.
+    camera.onFrameRate = { [weak self] fps in
+      guard let self = self, fps != self.cameraFps.value else { return }
+      self.cameraFps.value = fps
+      self.applyPerformance(reason: nil)
+    }
+
     // Props have not arrived yet. Without this a frame landing first would find no layout and be
     // dropped, and `snapshotFrame()` would answer empty for reasons nobody could see.
     applyFrameLayout()
@@ -240,6 +258,7 @@ public class PoseCameraView: ExpoView {
     // session all go here, so a view that is released without ever being detached still lets go.
     removeObservers()
     logTimer?.invalidate()
+    heatTimer?.invalidate()
     switchTimer?.invalidate()
     PoseLog.releaseStream(self)
   }

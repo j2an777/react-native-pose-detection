@@ -230,8 +230,9 @@ extension PoseCameraView: PoseDetectorObserver {
       size: size
     ))
 
-    // Only `auto` is calibrated. A named profile is somebody saying they have already decided.
-    if propProfile == .auto && processingMs > 0 {
+    // Every profile is measured: each one budgets its rate against what this device's inference
+    // costs, and only its duty and ceiling differ.
+    if processingMs > 0 {
       let moved = calibrator.record(inferenceMs: Float(processingMs), nowMs: nowMs)
       if moved {
         DispatchQueue.main.async { [weak self] in self?.onCalibrationMoved() }
