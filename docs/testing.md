@@ -114,12 +114,14 @@ the device as `diagnostics.json` in the app's documents directory.
 A check that frames came back always waits to see them stop first, because the measured rate
 stays up for two seconds after the last result and would otherwise pass on the frames from before.
 
-**Where it has run.** The full sweep passes on the Android emulator (Pixel 8a, Android 16 image).
-The emulator is where it found three of the bugs 0.2.0 fixes: a view unmounting after its
-replacement had bound took the new camera with it, `onCameraChange` could reach JavaScript a
-moment after `switchCamera()` resolved, and the emulator's decoder hands frames back in decode
-order, which the sampler now reorders. On iOS the same sweep runs through the same script on a
-paired iPhone.
+**Where it has run.** The full sweep passes on an iPhone 15 (iOS 26.5, Release build) and on the
+Android emulator (Pixel 8a, Android 16 image). The emulator is where it found three of the bugs
+0.2.0 fixes: a view unmounting after its replacement had bound took the new camera with it,
+`onCameraChange` could reach JavaScript a moment after `switchCamera()` resolved, and the
+emulator's decoder hands frames back in decode order, which the sampler now reorders. On the
+iPhone a mount reached `onReady` in about a second, a restarted detector had frames back in about
+120 ms, and the three-second test clip was sampled in about one second. `idle` skips itself when
+anybody is in frame, so it needs the phone pointed at an empty room.
 
 The emulator proves lifecycle and correctness, not speed or heat: its camera is a rendered scene,
 it runs MediaPipe on emulated hardware, and its timings move with whatever else the host is doing.
