@@ -5,8 +5,9 @@
 **Real-time human pose detection for React Native and Expo.**
 
 33 body landmarks per frame, detected and drawn entirely in the native layer, powered by
-MediaPipe. Works in Expo and bare React Native projects alike. Nothing crosses the bridge
-until you ask.
+MediaPipe. Pose estimation, body tracking, joint angles and rep counting for fitness, physio and
+sports apps, on the device, with a native skeleton overlay. Works in Expo and bare React Native
+projects alike. Nothing crosses the bridge until you ask.
 
 [![CI](https://github.com/khalid999devs/react-native-pose-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/khalid999devs/react-native-pose-detection/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/react-native-pose-detection)](https://www.npmjs.com/package/react-native-pose-detection)
@@ -31,8 +32,9 @@ until you ask.
   do the same job; both are built and tested in CI on every commit.
 - **Zero bridge traffic by default.** Detection, smoothing, drawing and trigger logic run
   natively. Landmarks cross to JavaScript only when you opt in, as one zero-copy buffer.
-- **Tunes itself to the phone.** Measures inference cost, converges on the fastest sustainable
-  frame rate, backs off with heat, remembers the answer for the next launch.
+- **Tunes itself to the phone.** Measures what inference costs on each phone and runs at the
+  camera's 30 fps whenever the phone can with room to spare, slows with heat, idles when nobody is
+  in frame, and remembers the answer for the next launch.
 - **Native triggers.** Declare "knee bent past 90 degrees for 300 ms", get one event when it
   happens. Thirty reps is thirty bridge crossings, not nine hundred.
 - **Files too.** Landmarks from any photo or video on disk, or a full-quality painted copy,
@@ -176,14 +178,16 @@ const { uri } = await exportPose(videoUri, { directory: 'documents' }).result;
 
 ## It tunes itself
 
-No frame-rate table to maintain. The package measures what inference costs on each phone,
-converges on the fastest rate that phone sustains, steps down with heat, and caches the answer:
+No frame-rate table to maintain. The package measures what inference costs on each phone and
+runs as fast as the camera delivers whenever the phone can keep that up with 15% to spare, which
+is 30 fps on any recent phone. Heat halves it and then pauses it, Low Power Mode caps it, and
+nobody in frame drops it to an idle search. Every rate says why it is what it is:
 
 ```ts
 await cam.current.getProfile();
 // { phase: 'settled', tier: 'high',
-//   resolved: { delegate: 'GPU', targetFps: 34, preview: '1080p', analysis: '480p' },
-//   p50InferenceMs: 16.2, measuredFps: 33 }
+//   resolved: { delegate: 'GPU', targetFps: 30, preview: '1080p', analysis: '480p' },
+//   p50InferenceMs: 16.2, measuredFps: 30, limitedBy: 'camera', thermalState: 'nominal' }
 ```
 
 Every axis is still yours: `profile`, `targetFps`, `resolution`, `analysisResolution`,
@@ -201,15 +205,15 @@ rest stay automatic.
   // camera
   facing="front"                    // 'auto' | 'front' | 'back'
   active={isFocused}                // the whole session on/off
-  detection={true}                  // inference on/off; false frees the model
+  detection={true}                  // inference on/off; off parks the model
   resolution="auto"                 // preview: '480p' | '720p' | '1080p'
   // detection
   maxPoses={1}                      // 1 to 5
   minConfidence={0.6}               // what counts as a body
-  smoothing={{ minCutoff: 1, beta: 4 }}
+  smoothing="auto"                  // off for one pose, which MediaPipe smooths already
   // performance
   profile="auto"                    // 'efficient' | 'balanced' | 'quality' | 'unrestricted'
-  targetFps="auto"                  // a number pins the rate
+  targetFps="auto"                  // a number replaces the governed rate
   analysisResolution="auto"         // what the model sees: '360p' | '480p' | '720p'
   delegate="auto"                   // 'gpu' | 'cpu'
   thermalPolicy="adaptive"          // 'critical-only' | 'off'
@@ -240,13 +244,13 @@ rest stay automatic.
 | `style` | none | View style; `{ flex: 1 }` is the usual answer |
 | `facing` | `'auto'` | Which lens, `'front'` or `'back'`; auto prefers front |
 | `active` | `true` | Camera session on/off |
-| `detection` | `true` | Inference on/off; `false` frees GPU memory |
+| `detection` | `true` | Inference on/off; `false` stops it at once and frees the model after a minute |
 | `overlay` | `true` | The skeleton; boolean or a config object |
-| `smoothing` | `true` | One-Euro filter; boolean or `{ minCutoff, beta }` |
+| `smoothing` | `'auto'` | One Euro filter: off for one pose, on for several; boolean or `{ minCutoff, beta }` |
 | `maxPoses` | `1` | Detection ceiling, `1` to `5` |
 | `minConfidence` | unset = auto | What counts as a body, `0.1` to `1`; unset follows `maxPoses`: 0.6 for one person, 0.3 above |
 | `profile` | `'auto'` | Performance envelope: `'efficient'` `'balanced'` `'quality'` `'unrestricted'` |
-| `targetFps` | `'auto'` | Inference rate; a number pins it |
+| `targetFps` | `'auto'` | Inference rate; a number replaces the governed rate, capped by the camera |
 | `resolution` | `'auto'` | Preview: `'480p'` `'720p'` `'1080p'` |
 | `analysisResolution` | `'auto'` | What the model sees: `'360p'` `'480p'` `'720p'` |
 | `delegate` | `'auto'` | Inference engine, `'gpu'` or `'cpu'`; auto probes and falls back |
@@ -258,6 +262,23 @@ rest stay automatic.
 
 Exact types, clamping rules and edge behavior: [`<PoseCamera>` reference](https://github.com/khalid999devs/react-native-pose-detection/blob/main/guides/reference/pose-camera.md).
 
+## Alternatives, honestly
+
+- **VisionCamera with an ML Kit pose plugin**, such as `react-native-vision-camera-v3-pose-detection`:
+  the natural choice for an app already built on VisionCamera frame processors. You add VisionCamera
+  and a worklets runtime, and draw the skeleton yourself. The pose plugins were last published in
+  2024.
+- **`@thinksys/react-native-mediapipe`**: the closest in approach to this one, MediaPipe in a native
+  view, MIT licensed.
+- **TensorFlow.js** with `@tensorflow/tfjs-react-native`: runs MoveNet or BlazePose from JavaScript
+  over WebGL, with `expo-gl` and `expo-camera`. Its React Native adapter has not had a release
+  since November 2023.
+- **QuickPose**: a commercial SDK with ready-made exercises and rep counting. Free for up to 10
+  monthly active devices, and from $25 a month above that.
+
+This package is MIT licensed, adds no camera library, keeps detection and drawing native, lets you
+declare your own exercises as triggers, and does photos and videos, painted copies included.
+
 ## Requirements
 
 | | Minimum |
@@ -267,8 +288,8 @@ Exact types, clamping rules and edge behavior: [`<PoseCamera>` reference](https:
 | iOS | 15.1 |
 | Android | API 24 |
 
-Expo Go cannot run native code, so use a development build. The JavaScript itself is 62.5 KB
-with zero runtime dependencies.
+Expo Go cannot run native code, so use a development build. The JavaScript itself is about
+70 KB with zero runtime dependencies.
 
 ## Documentation
 

@@ -32,3 +32,6 @@ What this costs us, and what it rules out.
 | [0007](./0007-pin-mediapipe-0-10-35.md) | Pin MediaPipe to 0.10.35, superseding 0003 |
 | [0008](./0008-frames-are-drained-not-pushed.md) | Frames are drained, not pushed |
 | [0009](./0009-trigger-snapshots-are-claimed.md) | Trigger snapshots are claimed, not carried |
+| [0010](./0010-frames-are-read-on-the-javascript-thread.md) | Frames are read on the JavaScript thread, amending 0008 |
+| [0011](./0011-the-rate-is-a-duty-cycle.md) | The rate is a duty cycle, the geometry is fixed, and one pose is not smoothed twice |
+| [0012](./0012-files-decode-once-and-stay-off-the-camera.md) | Files are decoded once, and stay off the camera's GPU and thread |

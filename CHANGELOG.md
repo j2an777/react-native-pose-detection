@@ -1,14 +1,14 @@
 # Changelog
 
-Notable changes, written for humans. Follows [Keep a Changelog](https://keepachangelog.com/)
-and [Semantic Versioning](https://semver.org/).
+**Release notes live in [packages/core/CHANGELOG.md](packages/core/CHANGELOG.md)**, which ships
+inside the npm package, so there is one list of what changed in each version rather than two
+drifting apart. Versions follow [Semantic Versioning](https://semver.org/), and each published
+version is a `v*` tag on the commit that was published.
 
-## [Unreleased]
+This file keeps the development log from before the first release, as history. Its counts and
+statements describe the repository as it was then.
 
-Nothing has been published yet. The version in `package.json` is `0.0.0` and stays there until
-`0.1.0` ships, so everything below is work in progress rather than a release anyone can install.
-The camera and the export path have run on an Android emulator and an iOS simulator; nothing here
-has run on a physical device or a real camera sensor.
+## Before 0.1.0
 
 ### Added
 - Repository scaffold, tooling, and quality gates
@@ -65,7 +65,7 @@ has run on a physical device or a real camera sensor.
   once the writer fails, so a disk filling mid-export left the export queue spinning for the life
   of the process. Both wait loops now check the writer's status and the cancel flag
 
-### Notes for anyone tracking this before 0.1.0
+### Notes from before 0.1.0
 
 - Frames are pulled rather than pushed, which costs two bridge crossings per emission instead of
   one. See [ADR 0008](docs/adr/0008-frames-are-drained-not-pushed.md)

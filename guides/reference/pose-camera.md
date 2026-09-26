@@ -30,13 +30,13 @@ layout moves them.
 | `profile` | `'auto' \| 'efficient' \| 'balanced' \| 'quality' \| 'unrestricted'` | `'auto'` | [performance](../performance.md) |
 | `facing` | `'auto' \| 'front' \| 'back'` | `'auto'` | auto prefers front, falls back to the other lens on the first bind |
 | `delegate` | `'auto' \| 'gpu' \| 'cpu'` | `'auto'` | auto verifies GPU, falls back to CPU |
-| `targetFps` | `'auto' \| number` | `'auto'` | pinning it means calibration will not move it |
+| `targetFps` | `'auto' \| number` | `'auto'` | a number replaces the governed rate, capped by the camera and by what the device can finish. [performance](../performance.md) |
 | `resolution` | `'auto' \| '480p' \| '720p' \| '1080p'` | `'auto'` | preview |
 | `analysisResolution` | `'auto' \| '360p' \| '480p' \| '720p'` | `'auto'` | what the model sees |
 | `thermalPolicy` | `'adaptive' \| 'critical-only' \| 'off'` | `'adaptive'` | `off` stops the response, not the reporting |
 | `maxPoses` | `number` (1 to 5) | `1` | above 1, triggers and frames use the primary pose: largest box, ties by distance from center. A ceiling, not a promise: pair it with `minConfidence` |
 | `minConfidence` | `number` (0.1 to 1) | from `maxPoses` | how sure the model has to be before it calls something a body. Rebuilds the landmarker when it changes |
-| `smoothing` | `boolean \| { minCutoff, beta }` | `true` | One-Euro filter over x, y and z. Visibility is never smoothed |
+| `smoothing` | `'auto' \| boolean \| { minCutoff, beta }` | `'auto'` | One Euro filter over x, y and z. `'auto'` is off for one pose, which MediaPipe already smooths, and on for several. See [below](#smoothing) |
 
 Any explicit value pins that axis. The rest stay automatic.
 
@@ -158,6 +158,30 @@ registered twice needs two `remove()` calls. See [troubleshooting](../troublesho
 ## Callbacks
 
 See [events](./events.md).
+
+### Smoothing
+
+Landmarks jitter a little from frame to frame, even on a body that is standing still. A One Euro
+filter trades that jitter against lag by moving its cutoff with speed: a still body is filtered
+hard, where jitter shows and lag does not, and a fast one is barely filtered, where lag shows and
+jitter does not.
+
+With `maxPoses: 1`, MediaPipe already runs exactly this filter inside the landmarker, so a
+second one on top would only add lag. It skips its own filter when it tracks more than one body.
+That is what `'auto'` follows: off for one pose, on for several, so the two feel the same.
+
+| Value | Means |
+| --- | --- |
+| `'auto'` (default) | Off at `maxPoses: 1`, on above it |
+| `true` / `false` | On or off whatever `maxPoses` is |
+| `{ minCutoff, beta }` | On, with your constants |
+
+The defaults are MediaPipe's own for pose landmarks, `minCutoff: 0.05` and `beta: 80`, with speed
+measured in body spans per second rather than in frame widths, so a distant subject is smoothed
+like a near one. Lower `minCutoff` smooths a still body harder; higher `beta` gets out of the way
+of fast movement sooner. The filter starts over when the pose is lost, the camera switches, a
+different person becomes the largest body, or frames stop for longer than two and a half
+intervals at the current rate. Visibility is never smoothed: it is a confidence, not a position.
 
 ### maxPoses and minConfidence
 

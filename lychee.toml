@@ -1,12 +1,8 @@
 # Markdown link checking
 exclude_path = ["node_modules", "ideation", "docs/development", "build", ".test-build"]
 exclude = [
-  # repository is new; some links point at pages that do not exist yet
-  "^https://github\\.com/khalid999devs/react-native-pose-detection",
-  "^https://raw\\.githubusercontent\\.com/khalid999devs/react-native-pose-detection",
-  # resolves only after the first publish
-  "^https://www\\.npmjs\\.com/package/react-native-pose-detection",
-  "^https://img\\.shields\\.io/npm/",
+  # npm answers automated requests with 403 whatever the page, so a check there proves nothing.
+  "^https://www\\.npmjs\\.com/",
 ]
 accept = [200, 206, 429]
 max_retries = 2

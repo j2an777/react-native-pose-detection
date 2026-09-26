@@ -1,6 +1,6 @@
 # 0008: Frames are drained, not pushed
 
-**Status:** accepted
+**Status:** accepted, amended by [0010](./0010-frames-are-read-on-the-javascript-thread.md)
 **Date:** 2026-08-12
 
 ## Context

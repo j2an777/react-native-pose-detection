@@ -60,8 +60,13 @@ await cam.current.setFacing('back');
 ```
 
 **Await it.** The promise resolves only after the capture session has been reconfigured and the
-first frame from the new camera has been processed. `onCameraChange` fires at the same point. A
-failed switch rejects the promise as well as raising `onError`.
+first frame from the new camera has been processed. `onCameraChange` is raised at the same point,
+but it is an event rather than a return value, so it can reach JavaScript a moment after the
+promise resolves: sequence on the promise, and use the event to keep state in step. A failed
+switch rejects the promise as well as raising `onError`.
+
+A ref method called in the frame or two after `<PoseCamera>` mounts, before the native view
+exists, waits for it rather than failing, for up to a second.
 
 Preserved across a switch, because only the camera input is swapped and the detector is never
 recreated:
@@ -89,12 +94,22 @@ calibration already measured, so a foreground is never a re-probe. Past 30 secon
 memory is given back and it is rebuilt on return, from the cached GPU check.
 
 You don't need to wire `AppState` yourself. Do use `active` to stop the camera when the screen
-is merely out of view. A tab you've navigated away from, or a `FlatList` item scrolled offscreen:
+is merely out of view. A screen pushed on top of the camera's, a tab you've navigated away from,
+or a `FlatList` item scrolled offscreen all leave `<PoseCamera>` mounted, and a mounted camera
+keeps capturing, running inference and warming the phone behind whatever is in front of it:
 
 ```tsx
-const isFocused = useIsFocused();
-<PoseCamera active={isFocused} />
+import { useIsFocused } from '@react-navigation/native'; // expo-router re-exports it too
+
+function WorkoutScreen() {
+  const isFocused = useIsFocused();
+  return <PoseCamera active={isFocused} style={{ flex: 1 }} />;
+}
 ```
+
+`active={false}` stops the capture session and parks the landmarker, so coming back within a
+minute detects at once. `detection={false}` is the lighter switch: the preview keeps running and
+only inference stops, which is the one to use while a paused workout still shows the camera.
 
 ## Mirroring
 

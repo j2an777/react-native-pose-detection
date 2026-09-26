@@ -57,7 +57,7 @@ the Expo Modules API, and that API's autolinking is what finds the native module
 
 The documented tool for this is `npx install-expo-modules@latest`, and on a recent React Native
 it will not run: version 0.16.0 knows Expo SDK 53 and React Native 0.78 at the newest, and stops
-with `Unable to find compatible Expo SDK version`. Until it catches up, the four edits are below.
+with `Unable to find compatible Expo SDK version`. Until it catches up, the edits are below.
 A working copy of all of them is [`example/bare`](../example/bare), which CI builds on every push.
 
 `android/settings.gradle`, above `include ':app'`:
@@ -144,6 +144,56 @@ target 'YourApp' do
   # ...
 end
 ```
+
+And `AppDelegate.swift`, so the modules that autolinking found are registered when React Native
+starts, the counterpart of `ExpoReactHostFactory` on Android. With React Native's own factory the
+app builds and links, then fails at launch with `Cannot find native module`:
+
+```swift
+internal import Expo
+import React
+import ReactAppDependencyProvider
+
+@main
+class AppDelegate: ExpoAppDelegate {
+  var window: UIWindow?
+  var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
+  var reactNativeFactory: RCTReactNativeFactory?
+
+  override func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    let delegate = ReactNativeDelegate()
+    let factory = ExpoReactNativeFactory(delegate: delegate)
+    delegate.dependencyProvider = RCTAppDependencyProvider()
+    reactNativeDelegate = delegate
+    reactNativeFactory = factory
+
+    window = UIWindow(frame: UIScreen.main.bounds)
+    factory.startReactNative(withModuleName: "YourApp", in: window, launchOptions: launchOptions)
+    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+}
+
+class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
+  override func sourceURL(for bridge: RCTBridge) -> URL? {
+    bridge.bundleURL ?? bundleURL()
+  }
+
+  override func bundleURL() -> URL? {
+#if DEBUG
+    RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
+#else
+    Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+#endif
+  }
+}
+```
+
+`internal import` matches how Expo's generated module provider imports it; a plain `import Expo`
+fails to compile against it. [`example/bare`](../example/bare/ios/PoseExampleBare/AppDelegate.swift)
+has the full file.
 
 ### Android
 

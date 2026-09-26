@@ -24,20 +24,21 @@ type PoseCameraRef = {
 };
 ```
 
-Everything except `getState`, `setProfile` and `getProfile` returns a promise, because it reaches
-native over the same asynchronous path every other call takes. Ignoring the promise is fine and
-common. Awaiting it is how you see a failure instead of losing it.
+Everything except `getState` and `setProfile` returns a promise, because it reaches native over
+the same asynchronous path every other call takes. Ignoring the promise is fine and common.
+Awaiting it is how you see a failure instead of losing it.
 
-`getState()` is the exception that stays synchronous: it reads a local mirror of the events that
-carry camera state, so it is never a bridge call.
+`getState()` stays synchronous: it merges a local mirror of the events that carry camera state
+with the two values that move between events, `fps` and `limitedBy`, which it reads from native
+directly on the JavaScript thread. None of it is a trip across the bridge.
 
 ## Camera
 
 | Method | Notes |
 | --- | --- |
-| `switchCamera()` | Toggles front/back. **Resolves only when the session is stable again**, meaning the new camera has delivered a frame, not when the rebind returns. Detection state and trigger counters are preserved. |
+| `switchCamera()` | Toggles front/back. **Resolves only when the session is stable again**, meaning the new camera has delivered a frame, not when the rebind returns. Detection state and trigger counters are preserved. `onCameraChange` is raised at the same moment, but as an event it can reach JavaScript just after the promise resolves, so sequence on the promise. |
 | `setFacing(f)` | Same guarantees, explicit target. No-op if already there. |
-| `pause()` / `resume()` | Stops the capture session entirely. Lowest power state short of unmounting. |
+| `pause()` / `resume()` | Stops the capture session entirely and parks the landmarker, so a resume within a minute detects at once. Lowest power state short of unmounting. |
 
 A switch to a lens the device does not have fails with `CAMERA_SWITCH_FAILED` and rolls back to
 the camera you were on. That is deliberately different from `facing: 'auto'`, which falls back to
@@ -48,19 +49,23 @@ success.
 
 | Method | Notes |
 | --- | --- |
-| `startDetection()` / `stopDetection()` | Preview keeps running. `stopDetection()` **releases GPU resources**, not just a flag. |
-| `setOverlayEnabled(b)` | Drawing only. Inference continues: use when you draw your own UI. |
-| `snapshot()` | Current `PoseFrame` on demand, regardless of `data.mode`. Resolves to `null` if no pose is present. **Async**: the landmark buffer comes back over the function-return path, the only one that carries an ArrayBuffer, see [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md). |
+| `startDetection()` / `stopDetection()` | Preview keeps running. `stopDetection()` stops inference at once and **frees the landmarker's memory after a minute unused**, so a `startDetection()` inside that minute is instant rather than a rebuild. |
+| `setOverlayEnabled(b)` | Drawing only. Inference continues: use when you draw your own UI. Off, the overlay does no work at all. |
+| `snapshot()` | Current `PoseFrame` on demand, regardless of `data.mode`. Resolves to `null` if no pose is present. Read synchronously on the JavaScript thread, so the promise is already settled when it is returned, see [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md). |
 
 ## Introspection
 
 ```ts
 cam.current?.getState();
 // { facing: 'front', active: true, detecting: true, fps: 24,
-//   delegate: 'GPU', deviceTier: 'medium' }
+//   delegate: 'GPU', deviceTier: 'medium', limitedBy: 'device' }
 ```
 
-`fps` counts completed inferences, so it is what actually ran rather than what was asked for.
+`fps` counts completed inferences over the last second, so it is what actually ran rather than
+what was asked for, and it reads 0 two seconds after results stop. `limitedBy` says why the rate
+is what it is: `camera`, `device`, `target`, `profile`, `thermal`, `lowPower`, `idle` or
+`paused`. Both are read live on every call, so polling `getState()` for a readout is cheap and
+current.
 
 ### `getProfile` is async, `getState` is not
 
@@ -68,11 +73,7 @@ cam.current?.getState();
 await cam.current?.getProfile();
 ```
 
-`getProfile()` reads native state. The phase, the source, the measured p50 and the live
-`measuredFps` are on no event, so JavaScript has nothing to mirror them from, and a synchronous
-version would have to invent them. `getState()` stays synchronous because everything in it does
-arrive on an event, which also means its `fps` is a snapshot from the last `onPerformanceChange`;
-a readout that follows the measurement itself should poll `getProfile().measuredFps`.
-
-`getProfile()`'s output belongs in any performance bug report: it says what tier was chosen, how
-it was chosen, and what the inference actually cost.
+`getProfile()` reads the calibration, whose phase, source and measured p50 are on no event, so
+JavaScript has nothing to mirror them from. Its output belongs in any performance bug report: it
+says what tier was chosen, how it was chosen, what the inference actually cost, and what the
+camera, the heat and Low Power Mode allowed.
