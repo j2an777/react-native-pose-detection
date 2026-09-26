@@ -7,6 +7,7 @@ import {
   PoseCamera,
   type CameraChangeEvent,
   type PoseCameraRef,
+  type ProfileState,
   type ReadyEvent,
 } from 'react-native-pose-detection';
 
@@ -20,6 +21,33 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 /** Printed before every line an automated run logs, so a device log can be filtered to them. */
 const LOG_TAG = 'POSE_DIAG';
+
+/**
+ * What the camera settled on before the scenarios start working it, so a report says what its
+ * numbers came from. Waits out calibration for up to ten seconds; null if it never settled.
+ */
+async function settledProfile(camera: React.RefObject<PoseCameraRef | null>) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const profile = await camera.current?.getProfile().catch(() => null);
+    if (profile && profile.phase !== 'calibrating' && profile.measuredFps > 0) return profile;
+    await sleep(250);
+  }
+  return null;
+}
+
+function describeDevice(profile: ProfileState, ready: ReadyEvent | null): string {
+  const analysis = ready
+    ? `, analysis ${ready.analysisResolution.width}x${ready.analysisResolution.height}`
+    : '';
+  return (
+    `${ready?.model ?? 'unknown'} model on ${profile.resolved.delegate}, ` +
+    `p50 ${profile.p50InferenceMs.toFixed(1)} ms (${profile.source}), ` +
+    `${profile.measuredFps}/${profile.resolved.targetFps} fps (${profile.limitedBy}), ` +
+    `camera ${profile.cameraFps} fps, ${profile.tier} tier, heat ${profile.thermalState}` +
+    `${profile.lowPower ? ', low power' : ''}${analysis}`
+  );
+}
 
 /**
  * The device regression harness.
@@ -52,6 +80,7 @@ export function DiagnosticsScreen({
   const readyCount = React.useRef(0);
   const facing = React.useRef<'front' | 'back' | null>(null);
   const cameraChanges = React.useRef(0);
+  const lastReady = React.useRef<ReadyEvent | null>(null);
   const insets = useSafeAreaInsets();
   // A sweep runs for minutes with nobody touching the phone, and a locked screen would stop the
   // camera partway through it.
@@ -60,6 +89,7 @@ export function DiagnosticsScreen({
   const onReady = React.useCallback((event: ReadyEvent) => {
     readyCount.current += 1;
     facing.current = event.facing;
+    lastReady.current = event;
     ready.current?.();
     ready.current = null;
   }, []);
@@ -147,6 +177,11 @@ export function DiagnosticsScreen({
     void (async () => {
       // Let the first mount come up before anything is timed against it.
       await sleep(2_500);
+      const profile = await settledProfile(camera);
+      const device = profile
+        ? { summary: describeDevice(profile, lastReady.current), profile, ready: lastReady.current }
+        : null;
+      if (device) log(`device ${device.summary}`);
       const ids =
         autoRun.scenarios === 'all'
           ? SCENARIOS.filter((item) => !item.slow).map((item) => item.id)
@@ -168,6 +203,7 @@ export function DiagnosticsScreen({
         platform: Platform.OS,
         version: Platform.Version,
         finishedAt: new Date().toISOString(),
+        device,
         reports: collected,
       };
       try {

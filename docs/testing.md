@@ -90,8 +90,9 @@ scripts/device-diagnostics.sh android files    # one scenario, by id
 ```
 
 The script makes a photo and a clip for the file scenario (see
-`scripts/diagnostics-media.swift`), copies them onto the device, launches the sweep, prints each
-result as it lands and saves the whole report as `diagnostics-<platform>.json`. The app has to be
+`scripts/diagnostics-media.swift`), copies them onto the device, and launches the sweep. It prints
+what the camera settled on first (model, delegate, inference p50, rate, heat), then each result
+as it lands, and saves the whole report as `diagnostics-<platform>.json`. The app has to be
 installed first; `APP_ID` picks the bare example over the Expo one. Every run is also saved on
 the device as `diagnostics.json` in the app's documents directory.
 

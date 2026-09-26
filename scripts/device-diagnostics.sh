@@ -175,6 +175,7 @@ run_ios() {
   done
   node -e '
     const report = require(process.argv[1]);
+    if (report.device) console.log(`device ${report.device.summary}`);
     for (const r of report.reports) {
       const verdict = r.skipped ? "SKIP" : r.passed ? "PASS" : "FAIL";
       console.log(`${verdict} ${r.id} ${Math.round(r.elapsedMs)} ms · ${r.detail}`);
