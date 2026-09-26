@@ -8,7 +8,10 @@
 # `scenarios` is `all` (the default, every scenario except the ten-minute soak) or a
 # comma-separated list of ids, such as `files` or `soak`. The example app must already be
 # installed. APP_ID picks which one: com.posedetection.example (the default) or
-# com.posedetection.bare. On iOS, DEVICE picks the phone when more than one is paired.
+# com.posedetection.bare. With more than one device attached, ANDROID_SERIAL picks the Android one
+# (adb reads it) and DEVICE the iPhone. Android is granted the camera here; an iPhone asks on the
+# first run, so somebody has to allow it once. DELEGATE=gpu or DELEGATE=cpu holds the sweep to one
+# delegate, to compare the two on a device.
 #
 # The `files` scenario needs a photo and a clip on the device. This script makes them from
 # ss/export-frame.png with scripts/diagnostics-media.swift, which needs macOS, and copies them
@@ -63,16 +66,19 @@ run_android() {
   have_media=0
   if make_media; then
     # Root on an emulator writes straight into the app's files; a debug build copies through
-    # run-as. A release build on a real phone can do neither, and the files scenario skips.
+    # run-as. A release build on a real phone can do neither, and the files scenario skips. An app
+    # that has never run has no files directory yet, so both make it first.
     if adb root 2>/dev/null | grep -q -e 'restarting' -e 'already running'; then
       adb wait-for-device
       owner=$(adb shell stat -c %u "/data/data/$app")
+      adb shell mkdir -p "/data/data/$app/files"
       for file in "$media"/*; do
-        adb push "$file" "/data/data/$app/files/" >/dev/null
+        adb push "$file" "/data/data/$app/files/$(basename "$file")" >/dev/null
       done
       adb shell "chown -R $owner:$owner /data/data/$app/files && restorecon -R /data/data/$app/files" >/dev/null 2>&1
       have_media=1
     elif adb shell run-as "$app" true 2>/dev/null; then
+      adb shell run-as "$app" mkdir -p files
       for file in "$media"/*; do
         name=$(basename "$file")
         adb push "$file" "/data/local/tmp/$name" >/dev/null
@@ -88,8 +94,16 @@ run_android() {
   if [ "$have_media" -eq 1 ]; then
     query="$query&photo=pose-photo.jpg&rotatedPhoto=pose-photo-exif6.jpg&clip=pose-clip.mp4"
   fi
+  if [ -n "${DELEGATE:-}" ]; then
+    query="$query&delegate=$DELEGATE"
+  fi
 
   adb shell am force-stop "$app"
+  # A fresh install has never been asked, and without the camera the whole sweep fails. Some
+  # phones refuse the grant over adb (MIUI, until "USB debugging (Security settings)" is on); the
+  # app then asks on screen.
+  adb shell pm grant "$app" android.permission.CAMERA 2>/dev/null ||
+    echo "Could not grant the camera over adb: allow it on the phone when the app asks." >&2
   adb logcat -c
   # Captured to a file and stopped by hand: a filtered logcat piped into something that has
   # finished only notices at its next write, which may never come.
@@ -146,6 +160,9 @@ run_ios() {
   rm "$media/diagnostics.json"
 
   set -- -poseDiagnostics "$scenarios"
+  if [ -n "${DELEGATE:-}" ]; then
+    set -- "$@" -poseDiagnosticsDelegate "$DELEGATE"
+  fi
   if make_media; then
     for file in "$media"/*; do
       # shellcheck disable=SC2086

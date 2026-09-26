@@ -13,6 +13,8 @@ export type DiagnosticsMedia = {
 export type DiagnosticsRequest = {
   readonly scenarios: readonly string[] | 'all';
   readonly media: DiagnosticsMedia;
+  /** Runs the sweep on one delegate, to compare the two on a device. Absent is `auto`. */
+  readonly delegate?: 'gpu' | 'cpu';
 };
 
 /**
@@ -34,7 +36,8 @@ export type DiagnosticsRequest = {
  *
  * Scenarios are `all` or a comma-separated list of ids. A media value with a scheme is used as it
  * is; a bare file name is looked for in the app's documents directory, which is where
- * `xcrun devicectl device copy to` puts a file on iOS.
+ * `xcrun devicectl device copy to` puts a file on iOS. `delegate` is `gpu` or `cpu` to hold the
+ * sweep to one of them.
  */
 export async function diagnosticsRequest(): Promise<DiagnosticsRequest | null> {
   const read = Platform.OS === 'ios' ? readLaunchArguments() : await readIntent();
@@ -53,12 +56,17 @@ export async function diagnosticsRequest(): Promise<DiagnosticsRequest | null> {
       rotatedPhoto: resolveMedia(read('rotatedPhoto')),
       clip: resolveMedia(read('clip')),
     },
+    delegate: delegateOf(read('delegate')),
   };
+}
+
+function delegateOf(value: string | undefined): 'gpu' | 'cpu' | undefined {
+  return value === 'gpu' || value === 'cpu' ? value : undefined;
 }
 
 type Reader = (name: string) => string | undefined;
 
-/** `-poseDiagnostics` for the scenarios, `-poseDiagnosticsPhoto` and so on for the media. */
+/** `-poseDiagnostics` for the scenarios, `-poseDiagnosticsPhoto` and so on for the rest. */
 function readLaunchArguments(): Reader {
   return (name) => {
     const suffix = name === 'scenarios' ? '' : `${name.charAt(0).toUpperCase()}${name.slice(1)}`;

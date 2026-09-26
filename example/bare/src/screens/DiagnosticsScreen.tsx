@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   addLogListener,
   PoseCamera,
+  requestCameraPermission,
   setLogLevel,
   type CameraChangeEvent,
   type PoseCameraRef,
@@ -26,16 +27,18 @@ const LOG_TAG = 'POSE_DIAG';
 
 /**
  * What the camera settled on before the scenarios start working it, so a report says what its
- * numbers came from. Waits out calibration for up to ten seconds; null if it never settled.
+ * numbers came from. Waits out calibration for up to ten seconds, then takes what it has: the
+ * first run after an install can still be measuring. Null only if the camera never answered.
  */
 async function settledProfile(camera: React.RefObject<PoseCameraRef | null>) {
   const deadline = Date.now() + 10_000;
+  let latest: ProfileState | null = null;
   while (Date.now() < deadline) {
-    const profile = await camera.current?.getProfile().catch(() => null);
-    if (profile && profile.phase !== 'calibrating' && profile.measuredFps > 0) return profile;
+    latest = (await camera.current?.getProfile().catch(() => null)) ?? latest;
+    if (latest && latest.phase !== 'calibrating' && latest.measuredFps > 0) return latest;
     await sleep(250);
   }
-  return null;
+  return latest;
 }
 
 /**
@@ -53,7 +56,8 @@ function describeDevice(
   const analysis = `${asked}${buffers ? `, buffers ${buffers}` : ''}`;
   return (
     `${ready?.model ?? 'unknown'} model on ${profile.resolved.delegate}, ` +
-    `p50 ${profile.p50InferenceMs.toFixed(1)} ms (${profile.source}), ` +
+    `p50 ${profile.p50InferenceMs.toFixed(1)} ms (${profile.source}` +
+    `${profile.phase === 'calibrating' ? ', still calibrating' : ''}), ` +
     `${profile.measuredFps}/${profile.resolved.targetFps} fps (${profile.limitedBy}), ` +
     `camera ${profile.cameraFps} fps, ${profile.tier} tier, heat ${profile.thermalState}` +
     `${profile.lowPower ? ', low power' : ''}${analysis}`
@@ -112,8 +116,17 @@ export function DiagnosticsScreen({
 
   const remount = React.useCallback(
     () =>
-      new Promise<void>((resolve) => {
-        ready.current = resolve;
+      new Promise<void>((resolve, reject) => {
+        // A camera that never comes up fails the scenario that asked for it, rather than leaving
+        // the sweep waiting forever.
+        const timer = setTimeout(() => {
+          ready.current = null;
+          reject(new Error('the camera did not report ready within 10 s'));
+        }, 10_000);
+        ready.current = () => {
+          clearTimeout(timer);
+          resolve();
+        };
         setGeneration((value) => value + 1);
       }),
     [],
@@ -196,25 +209,44 @@ export function DiagnosticsScreen({
       }
     });
     void (async () => {
-      // Let the first mount come up before anything is timed against it.
-      await sleep(2_500);
-      const profile = await settledProfile(camera);
+      const collected: ScenarioReport[] = [];
+      let ids: string[] = [];
+      let device = null;
+      // Asks only if nobody has answered yet. Without the camera no scenario can pass, so a sweep
+      // without it reports that once instead of every scenario timing out.
+      const permission = await requestCameraPermission();
+      if (permission.status !== 'granted') {
+        const detail = `the camera permission is ${permission.status}: grant it, then run again`;
+        collected.push({
+          id: 'permission',
+          passed: false,
+          iterations: 0,
+          elapsedMs: 0,
+          detail,
+          heapBefore: null,
+          heapAfter: null,
+        });
+        log(`FAIL permission 0 ms · ${detail}`);
+      } else {
+        // Let the first mount come up before anything is timed against it.
+        await sleep(2_500);
+        const profile = await settledProfile(camera);
+        device = profile
+          ? {
+              summary: describeDevice(profile, lastReady.current, buffers),
+              profile,
+              ready: lastReady.current,
+              buffers,
+            }
+          : null;
+        if (device) log(`device ${device.summary}`);
+        ids =
+          autoRun.scenarios === 'all'
+            ? SCENARIOS.filter((item) => !item.slow).map((item) => item.id)
+            : autoRun.scenarios.filter((id) => SCENARIOS.some((item) => item.id === id));
+      }
       subscription.remove();
       setLogLevel('off');
-      const device = profile
-        ? {
-            summary: describeDevice(profile, lastReady.current, buffers),
-            profile,
-            ready: lastReady.current,
-            buffers,
-          }
-        : null;
-      if (device) log(`device ${device.summary}`);
-      const ids =
-        autoRun.scenarios === 'all'
-          ? SCENARIOS.filter((item) => !item.slow).map((item) => item.id)
-          : autoRun.scenarios.filter((id) => SCENARIOS.some((item) => item.id === id));
-      const collected: ScenarioReport[] = [];
       for (const id of ids) {
         if (cancelled) return;
         log(`start ${id}`);
@@ -264,6 +296,7 @@ export function DiagnosticsScreen({
           key={generation}
           ref={camera}
           style={StyleSheet.absoluteFill}
+          delegate={autoRun?.delegate ?? 'auto'}
           // Flipped by the prop-toggle scenario: every one of these must be applied in place.
           overlay={{ color: theme.color.accent, angles: variant ? [{ joint: 'leftKnee' }] : [] }}
           smoothing={variant ? { minCutoff: 0.05, beta: 80 } : 'auto'}

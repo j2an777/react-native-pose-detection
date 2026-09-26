@@ -90,6 +90,24 @@ async function framesFlow(context: ScenarioContext, timeoutMs = 5_000): Promise<
   return flowing ? Date.now() - started : null;
 }
 
+/**
+ * A failure that says what the camera reported about itself when frames did not come, which is
+ * where to start: stopped, not detecting, paused by heat, or running and simply getting nothing.
+ */
+async function noFrames(context: ScenarioContext, what: string): Promise<Error> {
+  try {
+    const camera = requireCamera(context);
+    const state = camera.getState();
+    const now = await camera.getProfile();
+    return new Error(
+      `${what} (active ${state.active}, detecting ${state.detecting}, ` +
+        `${now.measuredFps}/${now.resolved.targetFps} fps, ${now.limitedBy}, ${now.phase})`,
+    );
+  } catch (problem) {
+    return new Error(`${what} (and the camera did not answer: ${String(problem)})`);
+  }
+}
+
 /** The measured rate has gone to zero, which it does two seconds after the last result. */
 async function framesStopped(context: ScenarioContext, timeoutMs = 4_000): Promise<boolean> {
   return waitFor(async () => (await profile(context)).measuredFps === 0, timeoutMs);
@@ -144,7 +162,8 @@ export const SCENARIOS: readonly Scenario[] = [
             await context.remount();
             ready.push(Date.now() - started);
             const first = await framesFlow(context);
-            if (first === null) throw new Error('no frame reached the model within 5 s of onReady');
+            if (first === null)
+              throw await noFrames(context, 'no frame reached the model within 5 s of onReady');
             flowing.push(Date.now() - started);
             log(`mount ${index + 1}: ready ${ready[index]} ms, rate ${flowing[index]} ms`);
           }
@@ -185,7 +204,7 @@ export const SCENARIOS: readonly Scenario[] = [
           }
           const flowing = await framesFlow(context);
           if (flowing === null)
-            throw new Error('frames stopped reaching the model after the switches');
+            throw await noFrames(context, 'frames stopped reaching the model after the switches');
           return `100 switches, all reported, back on ${context.facing()}`;
         },
         context,
@@ -239,7 +258,8 @@ export const SCENARIOS: readonly Scenario[] = [
             await requireCamera(context).resume();
             await withTimeout(ready, 6_000, `onReady after resume ${index + 1}`);
             const flowing = await framesFlow(context);
-            if (flowing === null) throw new Error(`no frames after resume ${index + 1}`);
+            if (flowing === null)
+              throw await noFrames(context, `no frames after resume ${index + 1}`);
             if (!requireCamera(context).getState().active)
               throw new Error('getState says inactive');
             log(`cycle ${index + 1}: frames ${flowing} ms after onReady`);
@@ -264,7 +284,10 @@ export const SCENARIOS: readonly Scenario[] = [
             await context.cover(2_500);
             const flowing = await framesFlow(context, 6_000);
             if (flowing === null)
-              throw new Error(`no frames reached the model after uncover ${index + 1}`);
+              throw await noFrames(
+                context,
+                `no frames reached the model after uncover ${index + 1}`,
+              );
             log(`uncover ${index + 1}: frames back in ${flowing} ms`);
           }
           return '3 covers, frames back after each';
@@ -289,7 +312,7 @@ export const SCENARIOS: readonly Scenario[] = [
           const restarts = context.readyCount() - before;
           if (restarts > 0) throw new Error(`${restarts} restarts during 20 prop changes`);
           if ((await framesFlow(context)) === null)
-            throw new Error('frames stopped after the toggles');
+            throw await noFrames(context, 'frames stopped after the toggles');
           return '20 prop changes, no restart, frames still flowing';
         },
         context,
@@ -318,7 +341,8 @@ export const SCENARIOS: readonly Scenario[] = [
               throw new Error(`frames kept coming after stop ${index + 1}`);
             await requireCamera(context).startDetection();
             const flowing = await framesFlow(context);
-            if (flowing === null) throw new Error(`no frames after start ${index + 1}`);
+            if (flowing === null)
+              throw await noFrames(context, `no frames after start ${index + 1}`);
             times.push(flowing);
             log(`start ${index + 1}: frames in ${flowing} ms`);
           }
@@ -366,7 +390,7 @@ export const SCENARIOS: readonly Scenario[] = [
           if (!(await framesStopped(context))) throw new Error('frames kept coming while paused');
           await requireCamera(context).resume();
           const flowing = await framesFlow(context);
-          if (flowing === null) throw new Error('no frames after the last resume');
+          if (flowing === null) throw await noFrames(context, 'no frames after the last resume');
           log(`resume: frames in ${flowing} ms`);
           return `30 back-to-back cycles, then frames ${flowing} ms after a resume`;
         },
