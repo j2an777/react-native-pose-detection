@@ -258,9 +258,10 @@ class PoseDetectionModule : Module() {
                         }
                     }
                 }
-                Prop("logLevel") { _: PoseCameraView, value: Any? ->
-                    // The level is global, and the prop is a convenience for setting it per camera.
-                    applyLogLevel(value)
+                Prop("logLevel") { view: PoseCameraView, value: Any? ->
+                    // Raises the global level while this camera exists, see PoseLog.raise. Absent
+                    // withdraws it.
+                    PoseLog.raise(view, PoseLog.levelMask(value))
                 }
                 Prop("triggers") { view: PoseCameraView, value: Any? ->
                     view.setTriggers(parseTriggers(value as? List<*>))
@@ -365,13 +366,7 @@ internal fun applyLogLevel(config: Any?) {
         }
 
         is Map<*, *> -> {
-            PoseLog.setLevels(
-                config.entries
-                    .mapNotNull { (key, value) ->
-                        val category = LogCategory.from(key as? String) ?: return@mapNotNull null
-                        category to LogLevel.from(value as? String)
-                    }.toMap(),
-            )
+            PoseLog.setLevels(PoseLog.levelsFrom(config))
         }
 
         else -> {

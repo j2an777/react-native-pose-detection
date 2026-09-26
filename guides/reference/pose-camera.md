@@ -147,12 +147,15 @@ logLevel?: LogLevel | Readonly<Partial<Record<LogCategory, LogLevel>>>;   // def
 onLog?: (entries: readonly LogEntry[]) => void;
 ```
 
-Scoped to this camera. `setLogLevel()` sets it globally instead, and throws `PoseConfigError` on
-an unknown level or category rather than doing nothing, because a silently ignored level looks
+`logLevel` raises the level on top of `setLogLevel()` while this camera is mounted, and gives it
+back when the camera unmounts or the prop is removed. The level itself is global, so the raise
+covers everything that logs meanwhile, not only this camera; without the prop the camera leaves
+it alone. `setLogLevel()` sets the level for the whole app, and throws `PoseConfigError` on an
+unknown level or category rather than doing nothing, because a silently ignored level looks
 exactly like a bug in whatever you were trying to diagnose.
 
 Entries reach Logcat, or `os.Logger` on iOS, whatever is attached, and are batched to JavaScript
-while a listener is. `addLogListener()` is a multiset rather than a set, so the same function
+while a listener is: `onLog` on a mounted camera, or `addLogListener()`. `addLogListener()` is a multiset rather than a set, so the same function
 registered twice needs two `remove()` calls. See [troubleshooting](../troubleshooting.md#watching-it-work-the-log-channel).
 
 ## Callbacks

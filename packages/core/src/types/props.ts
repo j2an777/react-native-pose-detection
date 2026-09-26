@@ -74,7 +74,10 @@ export type PoseCameraProps = {
   data?: DataConfig;
   triggers?: readonly Trigger[];
 
-  /** Raises the level while this camera is mounted. `setLogLevel()` sets it globally. */
+  /**
+   * Raises the level on top of `setLogLevel()` while this camera is mounted, and gives it back on
+   * unmount. The level is global, so the raise covers everything that logs meanwhile.
+   */
   logLevel?: LogLevelConfig;
 
   onReady?: (event: ReadyEvent) => void;
@@ -91,6 +94,7 @@ export type PoseCameraProps = {
    * delivery, so a steady trickle here means the callback is doing too much work.
    */
   onFramesDropped?: (count: number) => void;
+  /** Log batches while this camera is mounted, at whatever level is in force. */
   onLog?: (entries: readonly LogEntry[]) => void;
 };
 

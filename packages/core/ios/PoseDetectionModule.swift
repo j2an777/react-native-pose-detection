@@ -170,9 +170,9 @@ extension PoseDetectionModule {
         applySmoothing(view, unwrap(value))
       }
 
-      // The level is global, and the prop is a convenience for setting it per camera.
-      Prop("logLevel") { (_: PoseCameraView, value: Either<String, [String: String]>?) in
-        applyLogLevel(unwrap(value))
+      // Raises the global level while this camera exists, see PoseLog.raise. Absent withdraws it.
+      Prop("logLevel") { (view: PoseCameraView, value: Either<String, [String: String]>?) in
+        PoseLog.raise(view, to: PoseLog.levelMask(for: unwrap(value)))
       }
 
       Prop("triggers") { (view: PoseCameraView, value: [[String: Any]]?) in
@@ -268,12 +268,7 @@ func applyLogLevel(_ config: Any?) {
     return
   }
   if let map = config as? [String: String] {
-    var levels = [LogCategory: LogLevel]()
-    for (key, value) in map {
-      guard let category = LogCategory.from(key) else { continue }
-      levels[category] = LogLevel.from(value)
-    }
-    PoseLog.setLevels(levels)
+    PoseLog.setLevels(PoseLog.levels(from: map))
     return
   }
   PoseLog.setLevel(.off)

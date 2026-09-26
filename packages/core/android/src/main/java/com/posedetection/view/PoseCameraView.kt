@@ -1820,6 +1820,7 @@ class PoseCameraView(
     /** Called from `OnViewDestroys`, where the view really is going away. */
     fun releaseEverything() {
         streamId?.let { FrameStreams.unregister(stream, it) }
+        PoseLog.raise(this, null)
         unregisterEverything()
         releaseForDetach(keepForReattach = false)
         stopObservingLifecycle()

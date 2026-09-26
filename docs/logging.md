@@ -5,7 +5,8 @@ A diagnostic channel that costs nothing when it's off and streams live when it's
 **Status:** built end to end on both platforms. `setLogLevel()` validates and forwards,
 `addLogListener()` maintains the registry and starts and stops the native stream, and `onLog` fans
 a batch out. Native mirrors every entry to Logcat on Android and `os.Logger` on iOS whatever is
-attached, and batches to JavaScript while a listener is. Nothing here has run on a device.
+attached, and batches to JavaScript while a listener is. It has run on an iPhone 15, which is where
+the two notes on the `logLevel` prop and `onLog` below come from.
 
 ## Contract
 
@@ -92,6 +93,12 @@ enabled, so native-only debugging works without a JS listener attached.
   compare per call site. Both platforms must pack the same six in the same order, or a level set
   on one is read as another on the other.
 - Changing the level is a write to that int, no re-initialization, safe at any time.
+- The int is `setLogLevel()`'s level raised, category by category, by every mounted camera's
+  `logLevel` prop, and it is recomputed only when one of them changes. An absent prop raises
+  nothing. Expo on iOS hands every declared prop to its setter on a view's first update, set or
+  not, and while absent meant `off`, every camera that mounted switched logging off.
+- The native stream runs while anything holds it: a listener in the registry, or a mounted camera
+  with `onLog`. When only the registry could start it, `onLog` on its own received nothing.
 - Timestamps come from the same monotonic clock as `PoseFrame.timestamp`, so logs and frames
   can be correlated.
 - `plugin` logs come from Node at build time and never reach the runtime channel.

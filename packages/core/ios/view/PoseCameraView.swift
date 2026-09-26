@@ -308,5 +308,6 @@ public class PoseCameraView: ExpoView {
     releaseTimer?.invalidate()
     switchTimer?.invalidate()
     PoseLog.releaseStream(self)
+    PoseLog.raise(self, to: nil)
   }
 }

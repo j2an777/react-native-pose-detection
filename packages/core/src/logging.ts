@@ -1,6 +1,7 @@
 import { PoseConfigError } from './errors';
 import type { ValidationIssue } from './errors';
 import { getNativeModule } from './native';
+import { logStreamGate } from './native/logStream';
 import { LOG_CATEGORIES, LOG_LEVELS } from './types/logging';
 import type {
   LogEntry,
@@ -13,6 +14,11 @@ import type {
 // A multiset: two callers may pass the same handler, and identity dedupe would make one
 // remove() unsubscribe both.
 const listeners: LogListener[] = [];
+
+const stream = logStreamGate(
+  () => getNativeModule().startLogStream(),
+  () => getNativeModule().stopLogStream(),
+);
 
 function isLogLevel(value: unknown): value is LogLevel {
   return typeof value === 'string' && (LOG_LEVELS as readonly string[]).includes(value);
@@ -61,7 +67,7 @@ export function setLogLevel(config: LogLevelConfig): void {
 /** Entries arrive batched. The native stream runs only while a listener is attached. */
 export function addLogListener(listener: LogListener): Subscription {
   listeners.push(listener);
-  if (listeners.length === 1) getNativeModule().startLogStream();
+  const release = stream.hold();
 
   let removed = false;
   return {
@@ -71,9 +77,14 @@ export function addLogListener(listener: LogListener): Subscription {
 
       const at = listeners.indexOf(listener);
       if (at >= 0) listeners.splice(at, 1);
-      if (listeners.length === 0) getNativeModule().stopLogStream();
+      release();
     },
   };
+}
+
+/** Keeps the native stream running for a camera's `onLog` prop, which the registry never sees. */
+export function holdLogStream(): () => void {
+  return stream.hold();
 }
 
 /** Iterates a copy so unsubscribing during delivery cannot skip the next listener. */

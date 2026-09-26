@@ -1,6 +1,7 @@
 package com.posedetection
 
 import android.util.Log
+import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 internal enum class LogLevel(
@@ -46,8 +47,17 @@ internal object PoseLog {
     private const val BITS_PER_CATEGORY = 3
     private const val CATEGORY_MASK = 0x7
 
-    // 3 bits of level per category, packed into one int. One atomic read per call site.
+    // 3 bits of level per category, packed into one int. One atomic read per call site. It is
+    // `base` raised by every camera's `logLevel` prop, and written only under `levelLock`.
     private val mask = AtomicInteger(0)
+
+    private val levelLock = Any()
+
+    /** What `setLogLevel()` asked for. Guarded by `levelLock`. */
+    private var base = 0
+
+    /** Each camera's `logLevel` prop, raising the level for as long as that camera exists. */
+    private val raises = IdentityHashMap<Any, Int>()
 
     /** Bounded and drop-oldest, like the frame buffer: a listener that stalls costs a fixed size. */
     private const val CAPACITY = 256
@@ -146,20 +156,84 @@ internal object PoseLog {
     }
 
     fun setLevel(level: LogLevel) {
-        var packed = 0
-        for (category in LogCategory.entries) {
-            packed = packed or (level.rank shl (category.ordinal * BITS_PER_CATEGORY))
+        synchronized(levelLock) {
+            base = packed(level)
+            mask.set(combined())
         }
-        mask.set(packed)
     }
 
     fun setLevels(levels: Map<LogCategory, LogLevel>) {
-        var packed = mask.get()
+        synchronized(levelLock) {
+            base = merged(base, levels)
+            mask.set(combined())
+        }
+    }
+
+    /**
+     * A camera's `logLevel` prop: raises the level on top of `setLogLevel()` while the camera
+     * exists, and gives it back when the prop goes or the camera does. `null` withdraws the raise
+     * and leaves the global level alone rather than turning it off, which is what iOS needs because
+     * Expo hands it every prop on a view's first update, set or not.
+     */
+    fun raise(
+        owner: Any,
+        raised: Int?,
+    ) {
+        synchronized(levelLock) {
+            if (raised == null) raises.remove(owner) else raises[owner] = raised
+            mask.set(combined())
+        }
+    }
+
+    /** A level config as JavaScript sends it, a level or a map of categories to levels, as a mask. */
+    fun levelMask(config: Any?): Int? =
+        when (config) {
+            is String -> packed(LogLevel.from(config))
+            is Map<*, *> -> merged(0, levelsFrom(config))
+            else -> null
+        }
+
+    /** A map of category names to level names; a name this version does not know is skipped. */
+    fun levelsFrom(config: Map<*, *>): Map<LogCategory, LogLevel> =
+        config.entries
+            .mapNotNull { (key, value) ->
+                val category = LogCategory.from(key as? String) ?: return@mapNotNull null
+                category to LogLevel.from(value as? String)
+            }.toMap()
+
+    private fun packed(level: LogLevel): Int {
+        var bits = 0
+        for (category in LogCategory.entries) {
+            bits = bits or (level.rank shl (category.ordinal * BITS_PER_CATEGORY))
+        }
+        return bits
+    }
+
+    private fun merged(
+        start: Int,
+        levels: Map<LogCategory, LogLevel>,
+    ): Int {
+        var bits = start
         for ((category, level) in levels) {
             val shift = category.ordinal * BITS_PER_CATEGORY
-            packed = (packed and (CATEGORY_MASK shl shift).inv()) or (level.rank shl shift)
+            bits = (bits and (CATEGORY_MASK shl shift).inv()) or (level.rank shl shift)
         }
-        mask.set(packed)
+        return bits
+    }
+
+    /** `base` with each category taken up to the highest level any camera raised it to. */
+    private fun combined(): Int {
+        var bits = base
+        for (raised in raises.values) {
+            for (category in LogCategory.entries) {
+                val shift = category.ordinal * BITS_PER_CATEGORY
+                val level = (raised shr shift) and CATEGORY_MASK
+                if (level > ((bits shr shift) and CATEGORY_MASK)) {
+                    bits = (bits and (CATEGORY_MASK shl shift).inv()) or (level shl shift)
+                }
+            }
+        }
+        return bits
     }
 
     fun isEnabled(

@@ -190,9 +190,10 @@ sub.remove();
 setLogLevel('off');
 ```
 
-Or scoped to one camera with the `logLevel` prop and `onLog` callback. An unknown level or
-category **throws** `PoseConfigError` rather than doing nothing quietly: a level that silently
-failed to apply looks exactly like the bug you were trying to diagnose.
+Or raise it only while one camera is mounted, with the `logLevel` prop, and read it with that
+camera's `onLog`. An unknown level or category **throws** `PoseConfigError` rather than doing
+nothing quietly: a level that silently failed to apply looks exactly like the bug you were trying
+to diagnose.
 
 | Level | Shows |
 | --- | --- |

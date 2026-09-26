@@ -88,7 +88,12 @@ enum PoseLog {
   private static let lock = NSLock()
 
   // Everything below is guarded by `lock`.
+  /// What `isEnabled` reads: `base`, raised by every camera's `logLevel` prop.
   private static var mask = 0
+  /// What `setLogLevel()` asked for.
+  private static var base = 0
+  /// Each camera's `logLevel` prop, which raises the level for as long as that camera exists.
+  private static var raises = [ObjectIdentifier: Int]()
   private static var entries = [LogEntry?](repeating: nil, count: capacity)
   private static var head = 0
   private static var count = 0
@@ -172,22 +177,82 @@ enum PoseLog {
   }
 
   static func setLevel(_ level: LogLevel) {
-    var packed = 0
-    for category in LogCategory.allCases {
-      packed |= level.rawValue << (category.rawValue * bitsPerCategory)
-    }
+    let every = packed(level)
     lock.lock()
-    mask = packed
-    lock.unlock()
+    defer { lock.unlock() }
+    base = every
+    mask = combined()
   }
 
   static func setLevels(_ levels: [LogCategory: LogLevel]) {
     lock.lock()
     defer { lock.unlock() }
+    base = merged(base, levels)
+    mask = combined()
+  }
+
+  /**
+   A camera's `logLevel` prop: raises the level on top of `setLogLevel()` while the camera exists,
+   and gives it back when the prop goes or the camera does. `nil` withdraws the raise and leaves the
+   global level alone. It must not turn logging off: Expo hands every prop to its setter on a view's
+   first update, set or not, so an absent prop arrives as `nil` with every mount, and treating that
+   as `off` undid `setLogLevel()` each time a camera appeared.
+   */
+  static func raise(_ owner: AnyObject, to raised: Int?) {
+    let identifier = ObjectIdentifier(owner)
+    lock.lock()
+    defer { lock.unlock() }
+    raises[identifier] = raised
+    mask = combined()
+  }
+
+  /// A level config as JavaScript sends it, a level or a map of categories to levels, as a mask.
+  static func levelMask(for config: Any?) -> Int? {
+    if let name = JS.string(config) { return packed(LogLevel.from(name)) }
+    guard let map = config as? [String: String] else { return nil }
+    return merged(0, levels(from: map))
+  }
+
+  /// A map of category names to level names; a name this version does not know is skipped.
+  static func levels(from map: [String: String]) -> [LogCategory: LogLevel] {
+    var parsed = [LogCategory: LogLevel]()
+    for (key, value) in map {
+      guard let category = LogCategory.from(key) else { continue }
+      parsed[category] = LogLevel.from(value)
+    }
+    return parsed
+  }
+
+  private static func packed(_ level: LogLevel) -> Int {
+    var bits = 0
+    for category in LogCategory.allCases {
+      bits |= level.rawValue << (category.rawValue * bitsPerCategory)
+    }
+    return bits
+  }
+
+  private static func merged(_ start: Int, _ levels: [LogCategory: LogLevel]) -> Int {
+    var bits = start
     for (category, level) in levels {
       let shift = category.rawValue * bitsPerCategory
-      mask = (mask & ~(categoryMask << shift)) | (level.rawValue << shift)
+      bits = (bits & ~(categoryMask << shift)) | (level.rawValue << shift)
     }
+    return bits
+  }
+
+  /// `base` with each category taken up to the highest level any camera raised it to. Under `lock`.
+  private static func combined() -> Int {
+    var bits = base
+    for raised in raises.values {
+      for category in LogCategory.allCases {
+        let shift = category.rawValue * bitsPerCategory
+        let level = (raised >> shift) & categoryMask
+        if level > (bits >> shift) & categoryMask {
+          bits = (bits & ~(categoryMask << shift)) | (level << shift)
+        }
+      }
+    }
+    return bits
   }
 
   static func isEnabled(_ level: LogLevel, _ category: LogCategory) -> Bool {

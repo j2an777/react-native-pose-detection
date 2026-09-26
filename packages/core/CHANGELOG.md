@@ -35,6 +35,8 @@ the first list is what to check when upgrading.
 - **File jobs reject with the code that fits**: `IMAGE_DECODE_FAILED` or `VIDEO_DECODE_FAILED` when
   the file cannot be read, `MODEL_NOT_FOUND`, and `DETECTION_FAILED` only when inference fails.
 - **`exportPose`'s `minConfidence` goes up to 1**, the documented range, instead of stopping at 0.9.
+- **The `logLevel` prop raises the level while its camera is mounted**, on top of `setLogLevel()`,
+  and gives it back on unmount, as documented. It used to overwrite the global level and keep it.
 
 ### Added
 
@@ -93,6 +95,9 @@ the first list is what to check when upgrading.
 - A `data.select` or angle change no longer reports a spurious `DETECTION_FAILED` for the frames
   already in flight.
 - Unrelated prop changes no longer restart the camera after the rate or the heat moved.
+- iOS: mounting a camera without a `logLevel` prop turned logging off for the whole app, undoing an
+  earlier `setLogLevel()`, so the documented setup delivered nothing.
+- A camera's `onLog` received nothing unless something had also called `addLogListener()`.
 
 ## 0.1.0
 

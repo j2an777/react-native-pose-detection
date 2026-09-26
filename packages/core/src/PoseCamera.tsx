@@ -13,7 +13,7 @@ import { resolveSmoothing } from './smoothing';
 import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from './types/events';
 import type { LogEntry } from './types/logging';
 import type { Condition, TriggerEvent } from './types/triggers';
-import { emitLogEntries } from './logging';
+import { emitLogEntries, holdLogStream } from './logging';
 import { assertValidCameraNumbers, assertValidTriggers } from './validation';
 import { resolveAngleJoints } from './frames/wire';
 
@@ -293,6 +293,11 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     };
     callbacks.current.onPerformanceChange?.(performance);
   }, []);
+
+  // The native stream runs only while something holds it, and `onLog` is a listener the
+  // `addLogListener()` registry never sees. Without this hold, `onLog` alone received nothing.
+  const logs = props.onLog !== undefined;
+  React.useEffect(() => (logs ? holdLogStream() : undefined), [logs]);
 
   // One native stream feeds both the prop and the global `addLogListener()` registry.
   const handleLog = React.useCallback((event: NativeEvent<{ entries: LogEntry[] }>) => {
