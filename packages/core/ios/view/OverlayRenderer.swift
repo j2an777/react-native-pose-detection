@@ -21,15 +21,39 @@ struct OverlayPalette {
   }
 }
 
-/**
- The skeleton, drawn into any `CGContext`.
+/// One angle's arc, and its label when the spec asks for one.
+struct OverlayArc {
+  let path: CGPath
+  let color: CGColor
+  let label: OverlayLabel?
+}
 
- This is the only place the overlay is drawn. `OverlayView` builds one of these per redraw and
- hands it the screen's context; the exporter builds one per video frame and hands it a context
- over the pixel buffer it is about to encode. Neither knows how the other works, and because the
- geometry lives here rather than in either of them, a painted export and a live preview of the
- same pose cannot disagree about where a joint goes. `OverlayProjection` makes the same guarantee
- one level down, for the rect the pose is projected into.
+/// A degree label: the text, and the rounded box drawn behind it so it reads on any frame.
+struct OverlayLabel {
+  let text: NSAttributedString
+  let box: CGRect
+  let cornerRadius: CGFloat
+  let origin: CGPoint
+}
+
+/// Everything one pose draws, as paths in the target's coordinates.
+struct OverlayPaths {
+  let bones: CGPath?
+  let joints: CGPath?
+  let arcs: [OverlayArc]
+
+  static let empty = OverlayPaths(bones: nil, joints: nil, arcs: [])
+}
+
+/**
+ The skeleton, as paths, and drawn into any `CGContext`.
+
+ This is the only place the overlay's geometry is worked out. The live view hands `paths()` to shape
+ layers, which the GPU composites; the exporter draws the same paths into a context over the pixel
+ buffer it is about to encode. Neither knows how the other works, and because the geometry lives
+ here rather than in either of them, a painted export and a live preview of the same pose cannot
+ disagree about where a joint goes. `OverlayProjection` makes the same guarantee one level down,
+ for the rect the pose is projected into.
 
  A value type with no reference to a view, so it is safe to build and draw on the export queue.
  */
@@ -38,6 +62,8 @@ struct OverlayRenderer {
   static let labelGap: CGFloat = 18
   static let labelPadding: CGFloat = 5
   static let degreesPerRadian = CGFloat(180.0 / Double.pi)
+  static let arcWidthRatio: CGFloat = 0.75
+  static let labelBackground = UIColor(white: 0, alpha: 140.0 / 255.0).cgColor
 
   let config: OverlayConfig
   let palette: OverlayPalette
@@ -60,14 +86,52 @@ struct OverlayRenderer {
   var lineWidth: CGFloat { config.lineWidth * scale }
   var pointRadius: CGFloat { config.pointRadius * scale }
 
-  func draw(into context: CGContext) {
-    guard sourceWidth > 0, sourceHeight > 0 else { return }
-    if config.connections { drawConnections(context) }
-    if config.landmarks { drawLandmarks(context) }
-    if !config.angles.isEmpty { drawAngles(context) }
+  /// The pose as paths. Parts the config turns off are nil or empty rather than drawn somewhere.
+  func paths() -> OverlayPaths {
+    guard sourceWidth > 0, sourceHeight > 0 else { return .empty }
+    return OverlayPaths(
+      bones: config.connections ? bonesPath() : nil,
+      joints: config.landmarks && pointRadius > 0 ? jointsPath() : nil,
+      arcs: config.angles.isEmpty ? [] : angleArcs()
+    )
   }
 
-  /// Normalized frame coordinates to context points, through the projection this was built with.
+  /// The export's path: the same geometry the live layers show, stroked and filled into `context`.
+  func draw(into context: CGContext) {
+    let paths = self.paths()
+
+    if let bones = paths.bones {
+      context.setStrokeColor(palette.stroke)
+      context.setLineWidth(lineWidth)
+      context.setLineCap(.round)
+      context.addPath(bones)
+      context.strokePath()
+    }
+    if let joints = paths.joints {
+      context.setFillColor(palette.stroke)
+      context.addPath(joints)
+      context.fillPath()
+    }
+    for arc in paths.arcs {
+      context.setLineWidth(lineWidth * OverlayRenderer.arcWidthRatio)
+      context.setStrokeColor(arc.color)
+      context.addPath(arc.path)
+      context.strokePath()
+      guard let label = arc.label else { continue }
+      context.setFillColor(OverlayRenderer.labelBackground)
+      context.addPath(CGPath(
+        roundedRect: label.box,
+        cornerWidth: label.cornerRadius,
+        cornerHeight: label.cornerRadius,
+        transform: nil
+      ))
+      context.fillPath()
+      // Needs a current UIKit context, which the export pushes around the whole frame.
+      label.text.draw(at: label.origin)
+    }
+  }
+
+  /// Normalized frame coordinates to target points, through the projection this was built with.
   func project(_ joint: Int) -> CGPoint {
     let base = joint * Skeleton.landmarkStride
     return projection.point(
@@ -83,31 +147,18 @@ struct OverlayRenderer {
     return only[joint]
   }
 
-  private func drawLandmarks(_ context: CGContext) {
+  private func jointsPath() -> CGPath? {
     let radius = pointRadius
-    guard radius > 0 else { return }
-    context.setFillColor(palette.stroke)
-
-    var drawn = false
+    let path = CGMutablePath()
     for joint in 0..<Skeleton.landmarkCount where isDrawable(joint) {
       let point = project(joint)
-      context.addEllipse(in: CGRect(
-        x: point.x - radius,
-        y: point.y - radius,
-        width: radius * 2,
-        height: radius * 2
-      ))
-      drawn = true
+      path.addEllipse(in: CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2))
     }
-    if drawn { context.fillPath() }
+    return path.isEmpty ? nil : path
   }
 
-  private func drawConnections(_ context: CGContext) {
-    context.setStrokeColor(palette.stroke)
-    context.setLineWidth(lineWidth)
-    context.setLineCap(.round)
-
-    var drawn = false
+  private func bonesPath() -> CGPath? {
+    let path = CGMutablePath()
     var index = 0
     while index < Skeleton.connections.count {
       let from = Skeleton.connections[index]
@@ -116,10 +167,9 @@ struct OverlayRenderer {
 
       // A segment with one bad endpoint is a line to a guess, so it is not drawn at all.
       guard isDrawable(from), isDrawable(to) else { continue }
-      context.move(to: project(from))
-      context.addLine(to: project(to))
-      drawn = true
+      path.move(to: project(from))
+      path.addLine(to: project(to))
     }
-    if drawn { context.strokePath() }
+    return path.isEmpty ? nil : path
   }
 }
