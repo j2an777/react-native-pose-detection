@@ -1,5 +1,6 @@
 import { getNativeModule } from './native';
 import type { OverlayConfig } from './types/camera';
+import { assertValidFileOptions } from './validation';
 
 export type ExportOptions = {
   /**
@@ -93,6 +94,7 @@ let nextTaskId = 1;
  * ```
  */
 export function exportPose(uri: string, options?: ExportOptions): ExportTask {
+  assertValidFileOptions(options);
   const module = getNativeModule();
   const taskId = nextTaskId;
   nextTaskId += 1;

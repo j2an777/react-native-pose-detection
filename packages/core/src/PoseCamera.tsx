@@ -12,7 +12,7 @@ import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from
 import type { LogEntry } from './types/logging';
 import type { Condition, TriggerEvent } from './types/triggers';
 import { emitLogEntries } from './logging';
-import { assertValidTriggers } from './validation';
+import { assertValidCameraNumbers, assertValidTriggers } from './validation';
 import { resolveAngleJoints } from './frames/wire';
 
 type NativeEvent<T> = { nativeEvent: T };
@@ -61,6 +61,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
   // During render, before anything walks the conditions: a bad config fails at the call site
   // with a path. The validator's depth limit makes the walk below safe on a cyclic config.
   if (triggers && triggers.length > 0) assertValidTriggers(triggers);
+  assertValidCameraNumbers(props);
 
   const requestedAngles = data?.angles;
   const angleJoints = useStableList<AngleJointName>(
@@ -300,7 +301,9 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       profile={props.profile}
       facing={props.facing}
       delegate={props.delegate}
-      targetFps={props.targetFps}
+      // Both native props are integers: the string would fail to convert and leave the previous
+      // explicit rate in force. Absent is what native reads as `auto`.
+      targetFps={props.targetFps === 'auto' ? undefined : props.targetFps}
       resolution={props.resolution}
       analysisResolution={props.analysisResolution}
       thermalPolicy={props.thermalPolicy}

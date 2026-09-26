@@ -4,6 +4,7 @@ import type { AngleJointName, JointName } from './types/joints';
 import { ANGLE_JOINT_NAMES } from './types/joints';
 import type { PoseFrame } from './types/frame';
 import { resolveAngleJoints } from './frames/wire';
+import { assertValidFileOptions } from './validation';
 
 export type StaticOptions = {
   /** 1 to 5. Default 1. */
@@ -67,6 +68,7 @@ function decode(
  * decodes to two.
  */
 export async function detectOnImage(uri: string, options?: StaticOptions): Promise<PoseFrame[]> {
+  assertValidFileOptions(options);
   const angleJoints = angleJointsFor(options?.angles);
   const buffer = await getNativeModule().detectOnImage(uri, nativeOptions(options, angleJoints));
   return decode(buffer, angleJoints, options?.select);
@@ -80,6 +82,7 @@ let nextTaskId = 1;
  * frames are real and throwing them away is not what cancel means.
  */
 export function detectOnVideo(uri: string, options?: VideoOptions): VideoTask {
+  assertValidFileOptions(options);
   const angleJoints = angleJointsFor(options?.angles);
   const module = getNativeModule();
   const taskId = nextTaskId;
