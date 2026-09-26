@@ -93,21 +93,35 @@ extension PoseCameraView: PoseDetectorObserver {
       landmarkBuffer[base + Skeleton.offsetVisibility] = landmark.visibility?.floatValue ?? 0
     }
 
+    // With several people tracked, the primary is whoever is largest on this frame, so it can become
+    // somebody else between two frames. Nothing carried across that boundary describes anyone.
+    let box = PoseBox(landmarkBuffer)
+    if let previous = previousBox, box.overlap(previous) < PoseBox.sameBodyOverlap {
+      PoseLog.debug(.engine, "the primary pose is somebody else now, starting its motion over")
+      resetVelocity()
+      smoothing.reset()
+    }
+    previousBox = box
+
     // A gap means a switch, a pause, or a backgrounded app. The positions on either side are real,
     // the difference between them is not a movement that happened at that speed.
     let elapsedMs = Double(nowMs) - previousFrameMs.value
     let comparable = previousFrameMs.value > 0 && elapsedMs > 0 && elapsedMs <= PoseCameraView.maxVelocityGapMs
     let elapsedSeconds = comparable ? Float(elapsedMs / PoseCameraView.millisPerSecond) : Float.nan
 
+    let size = frameSize.value
+
     // Before anything reads a coordinate: the overlay, the geometry, the evaluators and the wire
-    // all have to agree about where the body is.
+    // all have to agree about where the body is. Speed is measured in body spans, so a distant
+    // subject is smoothed like a near one; x is normalized by width, so its span is scaled to it.
     if propSmoothing {
-      smoothing.apply(to: &landmarkBuffer, elapsedSeconds: elapsedSeconds)
+      let span = Geometry.bodySpan(landmarkBuffer)
+      let aspect = size.width > 0 ? Float(size.height) / Float(size.width) : 1
+      smoothing.apply(to: &landmarkBuffer, elapsedSeconds: elapsedSeconds, scaleX: span * aspect, scaleY: span)
     } else {
       smoothing.reset()
     }
 
-    let size = frameSize.value
     overlayView.submit(landmarkBuffer, width: size.width, height: size.height)
 
     buildFrame(result: result, pose: primaryIndex, poseSize: primary.count, timing: FrameTiming(
@@ -134,6 +148,7 @@ extension PoseCameraView: PoseDetectorObserver {
   }
 
   private func onPoseLost() {
+    previousBox = nil
     overlayView.clearPose()
     // A frame is only current while a pose is in it, and velocity across the gap where someone left
     // and came back is not a speed anybody moved at.

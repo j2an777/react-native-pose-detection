@@ -121,6 +121,8 @@ public class PoseCameraView: ExpoView {
   var hasPreviousLandmarks = false
   var previousComX = Float.nan
   var previousComY = Float.nan
+  /// The primary pose's box on the frame before, which is how a change of person is noticed.
+  var previousBox: PoseBox?
 
   let frames = FrameRingBuffer()
   let triggers = TriggerEngine()

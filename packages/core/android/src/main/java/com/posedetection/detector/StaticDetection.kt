@@ -45,7 +45,8 @@ internal class StaticOptions(
                 maxPoses = count(raw?.get("maxPoses"), 1),
                 angles = raw?.get("angles") as? Boolean ?: true,
                 worldLandmarks = raw?.get("worldLandmarks") as? Boolean ?: false,
-                smoothing = raw?.get("smoothing") as? Boolean ?: true,
+                // JavaScript resolves `'auto'` against `maxPoses`. VIDEO mode already smooths one pose.
+                smoothing = raw?.get("smoothing") as? Boolean ?: false,
                 fps = count(raw?.get("fps"), 10),
                 startMs = (raw?.get("startMs") as? Number)?.toLong()?.coerceAtLeast(0L) ?: 0L,
                 endMs = (raw?.get("endMs") as? Number)?.toLong() ?: -1L,

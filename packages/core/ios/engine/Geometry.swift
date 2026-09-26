@@ -137,3 +137,58 @@ enum Geometry {
 
   private static let comWeights: [Float] = [0.25, 0.25, 0.1, 0.1, 0.15, 0.15]
 }
+
+/**
+ The box around one pose's landmarks, in normalized frame coordinates.
+
+ What tells one person from another across frames when several are tracked. The largest body is
+ chosen as primary on every frame, so when someone else becomes the largest the primary changes
+ identity between two frames, and smoothing or velocity carried across that boundary glides from one
+ person to the other, or reports a speed nobody moved at.
+ */
+struct PoseBox: Equatable {
+  let minX: Float
+  let minY: Float
+  let maxX: Float
+  let maxY: Float
+
+  /// Below this much overlap two consecutive primary poses are different people.
+  static let sameBodyOverlap: Float = 0.3
+
+  /// The landmarks' bounding box, read from the flat landmark buffer.
+  init(_ landmarks: [Float]) {
+    var minX = Float.greatestFiniteMagnitude
+    var minY = Float.greatestFiniteMagnitude
+    var maxX = -Float.greatestFiniteMagnitude
+    var maxY = -Float.greatestFiniteMagnitude
+    for joint in 0..<Skeleton.landmarkCount {
+      let base = joint * Skeleton.landmarkStride
+      minX = min(minX, landmarks[base])
+      maxX = max(maxX, landmarks[base])
+      minY = min(minY, landmarks[base + 1])
+      maxY = max(maxY, landmarks[base + 1])
+    }
+    self.init(minX: minX, minY: minY, maxX: maxX, maxY: maxY)
+  }
+
+  init(minX: Float, minY: Float, maxX: Float, maxY: Float) {
+    self.minX = minX
+    self.minY = minY
+    self.maxX = maxX
+    self.maxY = maxY
+  }
+
+  /// Intersection over union, 0 for disjoint boxes and 1 for identical ones.
+  func overlap(_ other: PoseBox) -> Float {
+    let width = min(maxX, other.maxX) - max(minX, other.minX)
+    let height = min(maxY, other.maxY) - max(minY, other.minY)
+    guard width > 0, height > 0 else { return 0 }
+    let intersection = width * height
+    let union = area + other.area - intersection
+    return union > 0 ? intersection / union : 0
+  }
+
+  private var area: Float {
+    return max(0, maxX - minX) * max(0, maxY - minY)
+  }
+}

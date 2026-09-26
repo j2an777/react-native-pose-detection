@@ -255,10 +255,10 @@ func applyLogLevel(_ config: Any?) {
 }
 
 func applySmoothing(_ view: PoseCameraView, _ value: Any?) {
-  // Absent is on: the documented default is true, and an unset prop is not somebody asking for
-  // raw landmarks.
+  // Absent is off. JavaScript resolves `'auto'` against `maxPoses` and always sends the answer, and
+  // one pose is already smoothed inside MediaPipe.
   guard !JS.isNull(value) else {
-    view.setSmoothing(enabled: true, minCutoff: OneEuroFilter.defaultMinCutoff, beta: OneEuroFilter.defaultBeta)
+    view.setSmoothing(enabled: false, minCutoff: OneEuroFilter.defaultMinCutoff, beta: OneEuroFilter.defaultBeta)
     return
   }
   if let enabled = JS.bool(value) {

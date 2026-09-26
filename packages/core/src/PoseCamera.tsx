@@ -8,6 +8,7 @@ import type { AngleJointName, JointName } from './types/joints';
 import { ANGLE_JOINT_NAMES } from './types/joints';
 import type { CameraState, ProfileState } from './types/camera';
 import type { PoseCameraProps, PoseCameraRef } from './types/props';
+import { resolveSmoothing } from './smoothing';
 import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from './types/events';
 import type { LogEntry } from './types/logging';
 import type { Condition, TriggerEvent } from './types/triggers';
@@ -312,7 +313,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       thermalPolicy={props.thermalPolicy}
       maxPoses={props.maxPoses}
       minConfidence={props.minConfidence}
-      smoothing={props.smoothing}
+      smoothing={resolveSmoothing(props.smoothing, props.maxPoses)}
       active={active}
       detection={detection}
       overlay={overlay}

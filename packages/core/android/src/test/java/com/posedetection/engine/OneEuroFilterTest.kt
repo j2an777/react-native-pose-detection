@@ -138,4 +138,30 @@ class OneEuroFilterTest {
 
         assertTrue("a lag of $last is not following the signal", last < 0.1f)
     }
+
+    @Test
+    fun `speed is measured in body spans so a distant subject is not left behind`() {
+        // A subject a tenth the height of the frame moving one of its own spans a second: slow in
+        // frame units, brisk for the body. Measured in spans it gets the cutoff a near one would.
+        fun lagOf(scale: Float): Float {
+            val filter = OneEuroFilter()
+            var landmarks = frame(0.5f)
+            filter.apply(landmarks, 1f / 30f, scale, scale)
+            var position = 0.5f
+            repeat(15) {
+                position += 0.1f / 30f
+                landmarks = frame(position)
+                filter.apply(landmarks, 1f / 30f, scale, scale)
+            }
+            return abs(position - landmarks[0])
+        }
+
+        assertTrue("the span-relative speed must track tighter", lagOf(0.1f) < lagOf(1f) / 2)
+    }
+
+    @Test
+    fun `the defaults are MediaPipe's own for pose landmarks`() {
+        assertEquals(0.05f, OneEuroFilter.DEFAULT_MIN_CUTOFF, 0f)
+        assertEquals(80f, OneEuroFilter.DEFAULT_BETA, 0f)
+    }
 }

@@ -154,3 +154,51 @@ internal object Geometry {
 
     private const val EPSILON = 1e-6f
 }
+
+/**
+ * The box around one pose's landmarks, in normalized frame coordinates.
+ *
+ * What tells one person from another across frames when several are tracked. The largest body is
+ * chosen as primary on every frame, so when someone else becomes the largest the primary changes
+ * identity between two frames, and smoothing or velocity carried across that boundary glides from
+ * one person to the other, or reports a speed nobody moved at.
+ */
+internal data class PoseBox(
+    val minX: Float,
+    val minY: Float,
+    val maxX: Float,
+    val maxY: Float,
+) {
+    /** Intersection over union, 0 for disjoint boxes and 1 for identical ones. */
+    fun overlap(other: PoseBox): Float {
+        val width = minOf(maxX, other.maxX) - maxOf(minX, other.minX)
+        val height = minOf(maxY, other.maxY) - maxOf(minY, other.minY)
+        if (width <= 0f || height <= 0f) return 0f
+        val intersection = width * height
+        val union = area() + other.area() - intersection
+        return if (union > 0f) intersection / union else 0f
+    }
+
+    private fun area(): Float = maxOf(0f, maxX - minX) * maxOf(0f, maxY - minY)
+
+    companion object {
+        /** Below this much overlap two consecutive primary poses are different people. */
+        const val SAME_BODY_OVERLAP = 0.3f
+
+        /** The landmarks' bounding box, read from the flat landmark buffer. */
+        fun of(landmarks: FloatArray): PoseBox {
+            var minX = Float.MAX_VALUE
+            var minY = Float.MAX_VALUE
+            var maxX = -Float.MAX_VALUE
+            var maxY = -Float.MAX_VALUE
+            for (joint in 0 until Skeleton.LANDMARK_COUNT) {
+                val base = joint * Skeleton.LANDMARK_STRIDE
+                minX = minOf(minX, landmarks[base])
+                maxX = maxOf(maxX, landmarks[base])
+                minY = minOf(minY, landmarks[base + 1])
+                maxY = maxOf(maxY, landmarks[base + 1])
+            }
+            return PoseBox(minX, minY, maxX, maxY)
+        }
+    }
+}

@@ -57,7 +57,13 @@ export type PoseCameraProps = {
    * changes every frame.
    */
   minConfidence?: number;
-  smoothing?: boolean | SmoothingConfig;
+  /**
+   * `'auto'` (the default) is off for one pose and on for several. MediaPipe already runs a One
+   * Euro filter on a single tracked body, so a second pass there only adds lag; with more than one
+   * body it runs none, and this one takes its place with the same constants. `true` or a config
+   * turns it on regardless, `false` off.
+   */
+  smoothing?: 'auto' | boolean | SmoothingConfig;
 
   /** Camera on or off. The lowest power state short of unmounting. */
   active?: boolean;

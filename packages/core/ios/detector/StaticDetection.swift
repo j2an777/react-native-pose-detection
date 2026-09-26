@@ -31,7 +31,8 @@ struct StaticOptions {
       maxPoses: count(raw?["maxPoses"], 1),
       angles: JS.bool(raw?["angles"]) ?? true,
       worldLandmarks: JS.bool(raw?["worldLandmarks"]) ?? false,
-      smoothing: JS.bool(raw?["smoothing"]) ?? true,
+      // JavaScript resolves `'auto'` against `maxPoses`. VIDEO mode already smooths one pose.
+      smoothing: JS.bool(raw?["smoothing"]) ?? false,
       fps: count(raw?["fps"], 10),
       startMs: max(0, JS.int64(raw?["startMs"]) ?? 0),
       endMs: JS.int64(raw?["endMs"]) ?? -1

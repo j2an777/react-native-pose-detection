@@ -38,6 +38,7 @@ import com.posedetection.engine.FrameRingBuffer
 import com.posedetection.engine.FrameShape
 import com.posedetection.engine.Geometry
 import com.posedetection.engine.OneEuroFilter
+import com.posedetection.engine.PoseBox
 import com.posedetection.engine.TriggerEngine
 import com.posedetection.engine.TriggerFiring
 import com.posedetection.engine.TriggerSpec
@@ -243,6 +244,9 @@ class PoseCameraView(
      */
     private var previousComX = Float.NaN
     private var previousComY = Float.NaN
+
+    /** The primary pose's box on the frame before, which is how a change of person is noticed. */
+    private var previousBox: PoseBox? = null
 
     @Volatile
     private var previousFrameMs = 0.0
@@ -974,6 +978,7 @@ class PoseCameraView(
 
         val poses = result.landmarks()
         if (poses.isEmpty()) {
+            previousBox = null
             overlayView.clearPose()
             // A frame is only current while a pose is in it, and velocity across the gap where
             // someone left and came back is not a speed anybody moved at.
@@ -1006,15 +1011,23 @@ class PoseCameraView(
             landmarkBuffer[base + Skeleton.OFFSET_VISIBILITY] = if (visibility.isPresent) visibility.get() else 0f
         }
 
+        // With several people tracked, the primary is whoever is largest on this frame, so it can
+        // become somebody else between two frames. Nothing carried across that boundary describes
+        // anyone.
+        val box = PoseBox.of(landmarkBuffer)
+        val previous = previousBox
+        if (previous != null && box.overlap(previous) < PoseBox.SAME_BODY_OVERLAP) {
+            PoseLog.debug(LogCategory.ENGINE) { "the primary pose is somebody else now, starting its motion over" }
+            resetVelocity()
+            smoothing.reset()
+        }
+        previousBox = box
+
         // A gap means a switch, a pause, or a backgrounded app. The positions on either side are
         // real, the difference between them is not a movement that happened at that speed.
         val elapsedMs = nowMs.toDouble() - previousFrameMs
         val comparable = previousFrameMs > 0.0 && elapsedMs > 0.0 && elapsedMs <= MAX_VELOCITY_GAP_MS
         val elapsedSeconds = if (comparable) (elapsedMs / MILLIS_PER_SECOND).toFloat() else Float.NaN
-
-        // Before anything reads a coordinate: the overlay, the geometry, the evaluators and the
-        // wire all have to agree about where the body is.
-        if (propSmoothing) smoothing.apply(landmarkBuffer, elapsedSeconds) else smoothing.reset()
 
         // Landmarks are normalized to the rotated frame MediaPipe was asked to process, not to the
         // sensor buffer, so the overlay is handed the display-upright size. The mirror flag comes
@@ -1022,6 +1035,18 @@ class PoseCameraView(
         val rotation = frameRotationDegrees
         val frameWidth = if (rotation % 180 == 0) image.width else image.height
         val frameHeight = if (rotation % 180 == 0) image.height else image.width
+
+        // Before anything reads a coordinate: the overlay, the geometry, the evaluators and the
+        // wire all have to agree about where the body is. Speed is measured in body spans, so a
+        // distant subject is smoothed like a near one; x is normalized by width, so its span is
+        // scaled to it.
+        if (propSmoothing) {
+            val span = Geometry.bodySpan(landmarkBuffer)
+            val aspect = if (frameWidth > 0) frameHeight.toFloat() / frameWidth else 1f
+            smoothing.apply(landmarkBuffer, elapsedSeconds, span * aspect, span)
+        } else {
+            smoothing.reset()
+        }
 
         overlayView.submit(landmarkBuffer, frameWidth, frameHeight)
 

@@ -4,6 +4,7 @@ import type { AngleJointName, JointName } from './types/joints';
 import { ANGLE_JOINT_NAMES } from './types/joints';
 import type { PoseFrame } from './types/frame';
 import { resolveAngleJoints } from './frames/wire';
+import { resolveSmoothing } from './smoothing';
 import { assertValidFileOptions } from './validation';
 
 export type StaticOptions = {
@@ -21,8 +22,11 @@ export type VideoOptions = StaticOptions & {
   fps?: number;
   startMs?: number;
   endMs?: number;
-  /** Temporal, so unlike a still image this one means something. Default `true`. */
-  smoothing?: boolean;
+  /**
+   * Temporal, so unlike a still image this one means something. `'auto'` (the default) is off for
+   * one pose, which MediaPipe's VIDEO mode already smooths, and on for several, where it does not.
+   */
+  smoothing?: 'auto' | boolean;
   /** 0 to 1. Never receives frames. */
   onProgress?: (progress: number) => void;
 };
@@ -47,7 +51,9 @@ function nativeOptions(
   // onProgress is a JavaScript callback and cannot cross. Progress arrives as an event instead.
   const rest = { ...((options ?? {}) as VideoOptions) };
   delete rest.onProgress;
-  return { ...rest, angles: angleJoints.length > 0, angleJoints: [...angleJoints] };
+  // Native reads a boolean. `'auto'` is resolved here, where `maxPoses` is.
+  const smoothing = resolveSmoothing(rest.smoothing, rest.maxPoses);
+  return { ...rest, smoothing, angles: angleJoints.length > 0, angleJoints: [...angleJoints] };
 }
 
 function decode(

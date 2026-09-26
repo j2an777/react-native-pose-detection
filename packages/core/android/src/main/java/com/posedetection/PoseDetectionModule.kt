@@ -213,13 +213,13 @@ class PoseDetectionModule : Module() {
                 }
                 Prop("smoothing") { view: PoseCameraView, value: Any? ->
                     when (value) {
-                        // Absent is on: the documented default is true, and an unset prop is not
-                        // somebody asking for raw landmarks.
-                        null, true -> {
+                        true -> {
                             view.setSmoothing(true, OneEuroFilter.DEFAULT_MIN_CUTOFF, OneEuroFilter.DEFAULT_BETA)
                         }
 
-                        false -> {
+                        // Absent is off. JavaScript resolves `'auto'` against `maxPoses` and always
+                        // sends the answer, and one pose is already smoothed inside MediaPipe.
+                        null, false -> {
                             view.setSmoothing(false, OneEuroFilter.DEFAULT_MIN_CUTOFF, OneEuroFilter.DEFAULT_BETA)
                         }
 

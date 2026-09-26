@@ -108,6 +108,30 @@ final class OneEuroFilterTests: XCTestCase {
     XCTAssertEqual(filter.beta, OneEuroFilter.defaultBeta)
   }
 
+  func testSpeedIsMeasuredInBodySpansSoADistantSubjectIsNotLeftBehind() {
+    // A subject a tenth the height of the frame moving one of its own spans a second: slow in frame
+    // units, brisk for the body. Measured in spans it gets the cutoff a near subject would.
+    func lagOf(scale: Float) -> Float {
+      let filter = OneEuroFilter()
+      var landmarks = frame(0.5)
+      filter.apply(to: &landmarks, elapsedSeconds: step, scaleX: scale, scaleY: scale)
+      var position: Float = 0.5
+      for _ in 0..<15 {
+        position += 0.1 * step
+        landmarks = frame(position)
+        filter.apply(to: &landmarks, elapsedSeconds: step, scaleX: scale, scaleY: scale)
+      }
+      return abs(position - landmarks[0])
+    }
+
+    XCTAssertLessThan(lagOf(scale: 0.1), lagOf(scale: 1) / 2, "the span-relative speed must track tighter")
+  }
+
+  func testTheDefaultsAreMediaPipesOwnForPoseLandmarks() {
+    XCTAssertEqual(OneEuroFilter.defaultMinCutoff, 0.05)
+    XCTAssertEqual(OneEuroFilter.defaultBeta, 80)
+  }
+
   func testASmoothedSignalFollowsARealMovementRatherThanFlatteningIt() {
     filter.configure(minCutoff: 1, beta: 0.5)
 
