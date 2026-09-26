@@ -4,7 +4,9 @@ import * as React from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  addLogListener,
   PoseCamera,
+  setLogLevel,
   type CameraChangeEvent,
   type PoseCameraRef,
   type ProfileState,
@@ -36,10 +38,19 @@ async function settledProfile(camera: React.RefObject<PoseCameraRef | null>) {
   return null;
 }
 
-function describeDevice(profile: ProfileState, ready: ReadyEvent | null): string {
-  const analysis = ready
+/**
+ * `buffers` is the size the camera log says frames really arrive at, which can differ from the
+ * analysis size asked for. Only iOS logs it.
+ */
+function describeDevice(
+  profile: ProfileState,
+  ready: ReadyEvent | null,
+  buffers: string | null,
+): string {
+  const asked = ready
     ? `, analysis ${ready.analysisResolution.width}x${ready.analysisResolution.height}`
     : '';
+  const analysis = `${asked}${buffers ? `, buffers ${buffers}` : ''}`;
   return (
     `${ready?.model ?? 'unknown'} model on ${profile.resolved.delegate}, ` +
     `p50 ${profile.p50InferenceMs.toFixed(1)} ms (${profile.source}), ` +
@@ -174,12 +185,29 @@ export function DiagnosticsScreen({
   React.useEffect(() => {
     if (!autoRun) return;
     let cancelled = false;
+    // The camera log says once per mount what size frames really arrive at. It is listened to only
+    // until the scenarios start, so they run with logging off.
+    let buffers: string | null = null;
+    setLogLevel({ camera: 'info' });
+    const subscription = addLogListener((entries) => {
+      for (const entry of entries) {
+        const size = /analysis buffers arrive at (\d+x\d+)/.exec(entry.message)?.[1];
+        if (size) buffers = size;
+      }
+    });
     void (async () => {
       // Let the first mount come up before anything is timed against it.
       await sleep(2_500);
       const profile = await settledProfile(camera);
+      subscription.remove();
+      setLogLevel('off');
       const device = profile
-        ? { summary: describeDevice(profile, lastReady.current), profile, ready: lastReady.current }
+        ? {
+            summary: describeDevice(profile, lastReady.current, buffers),
+            profile,
+            ready: lastReady.current,
+            buffers,
+          }
         : null;
       if (device) log(`device ${device.summary}`);
       const ids =
@@ -218,6 +246,7 @@ export function DiagnosticsScreen({
     })();
     return () => {
       cancelled = true;
+      subscription.remove();
     };
   }, [autoRun, log, runOne]);
 
