@@ -14,7 +14,7 @@ import {
 import { formatBytes, jsHeapBytes } from '../memory';
 import type { Scenario, ScenarioContext, ScenarioReport } from './types';
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Thrown by a runner that cannot apply on this device or in this scene. Reported, not failed. */
 class Skip extends Error {}
@@ -23,7 +23,7 @@ class Skip extends Error {}
  * Every runner returns a report rather than throwing, so one failure does not stop a sweep and
  * the panel can show what happened on the run that failed next to the runs that did not.
  */
-async function measure(
+export async function measure(
   id: string,
   iterations: number,
   body: (report: (line: string) => void) => Promise<string>,
@@ -57,7 +57,7 @@ async function measure(
   }
 }
 
-function requireCamera(context: ScenarioContext): PoseCameraRef {
+export function requireCamera(context: ScenarioContext): PoseCameraRef {
   const camera = context.camera.current;
   if (!camera) throw new Error('the camera is not mounted');
   return camera;
@@ -125,7 +125,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
 }
 
 /** The nose above both ankles, which is what a person the right way up looks like. */
-function headAboveFeet(frame: PoseFrame): boolean {
+export function headAboveFeet(frame: PoseFrame): boolean {
   const nose = landmark(frame, 'nose').y;
   return nose < landmark(frame, 'leftAnkle').y && nose < landmark(frame, 'rightAnkle').y;
 }

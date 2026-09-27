@@ -116,6 +116,7 @@ the device as `diagnostics.json` in the app's documents directory.
 | `files` | An EXIF-rotated photo and a clip stored sideways come out upright; the clip is sampled in time order at real positions with velocity measured; trimming, cancelling, both exports and the decode error codes behave |
 | `logs` | `addLogListener()` hears a video job with the camera unmounted, and keeps hearing once a camera is back and takes the flush over |
 | `soak` | Ten minutes: the rate holds and the heat stays at `fair` or below. Only when asked for by name |
+| `person` | A person follows prompts on screen, about three minutes: every trigger kind fires as written (hold with `minDurationMs`, `while` throttling, `exit`, `between`, `any`, velocity, a squat `cycle`), counts survive two camera switches and a new `triggers` array, snapshots are the frame fired on, and the three data modes, `select`, `angles`, `worldLandmarks` and `onFramesDropped` behave. Only when asked for by name |
 
 A check that frames came back always waits to see them stop first, because the measured rate
 stays up for two seconds after the last result and would otherwise pass on the frames from before.

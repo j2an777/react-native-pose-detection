@@ -17,7 +17,7 @@ import {
 import { Button } from '../components/Controls';
 import { Glass } from '../components/Glass';
 import type { DiagnosticsRequest } from '../diagnosticsRequest';
-import { EXTERNAL, SCENARIOS, type ScenarioReport } from '../scenarios';
+import { EXTERNAL, SCENARIOS, type CameraProps, type ScenarioReport } from '../scenarios';
 import { theme } from '../theme';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -92,6 +92,8 @@ export function DiagnosticsScreen({
   const [detached, setDetached] = React.useState(false);
   const [variant, setVariant] = React.useState(false);
   const [finished, setFinished] = React.useState<string | null>(null);
+  const [cameraProps, setCameraProps] = React.useState<CameraProps | null>(null);
+  const [prompt, setPrompt] = React.useState<string | null>(null);
   const ready = React.useRef<(() => void) | null>(null);
   const readyCount = React.useRef(0);
   const facing = React.useRef<'front' | 'back' | null>(null);
@@ -192,6 +194,7 @@ export function DiagnosticsScreen({
       if (!scenario) return null;
       setRunning(id);
       setLines([]);
+      const lines: string[] = [];
       try {
         const report = await scenario.run({
           camera,
@@ -203,11 +206,17 @@ export function DiagnosticsScreen({
           cover,
           withoutCamera,
           toggleProps: () => setVariant((value) => !value),
+          setCameraProps,
+          prompt: setPrompt,
           media: autoRun?.media ?? {},
-          log,
+          log: (line) => {
+            lines.push(line);
+            log(line);
+          },
         });
-        setReports((value) => ({ ...value, [id]: report }));
-        return report;
+        const logged = { ...report, log: lines };
+        setReports((value) => ({ ...value, [id]: logged }));
+        return logged;
       } catch (problem) {
         log(`${id} threw: ${String(problem)}`);
         return null;
@@ -265,7 +274,7 @@ export function DiagnosticsScreen({
         if (device) log(`device ${device.summary}`);
         ids =
           autoRun.scenarios === 'all'
-            ? SCENARIOS.filter((item) => !item.slow).map((item) => item.id)
+            ? SCENARIOS.filter((item) => !item.slow && !item.manual).map((item) => item.id)
             : autoRun.scenarios.filter((id) => SCENARIOS.some((item) => item.id === id));
       }
       subscription.remove();
@@ -314,7 +323,7 @@ export function DiagnosticsScreen({
         </Pressable>
       </View>
 
-      <View style={styles.stage}>
+      <View style={[styles.stage, prompt !== null && styles.stageFull]}>
         {detached ? null : (
           <PoseCamera
             key={generation}
@@ -328,13 +337,23 @@ export function DiagnosticsScreen({
             onPose={variant ? () => undefined : undefined}
             onReady={onReady}
             onCameraChange={onCameraChange}
+            {...cameraProps}
           />
         )}
+        {prompt !== null ? (
+          <View style={styles.promptPlate} pointerEvents="none">
+            <Text style={styles.prompt}>{prompt}</Text>
+          </View>
+        ) : null}
       </View>
 
       {finished ? <Text style={styles.finished}>Automated run finished: {finished}</Text> : null}
 
-      <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={prompt !== null && styles.hidden}
+        contentContainerStyle={styles.list}
+        showsVerticalScrollIndicator={false}
+      >
         {SCENARIOS.map((scenario) => {
           const report = reports[scenario.id];
           return (
@@ -425,6 +444,30 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     overflow: 'hidden',
     backgroundColor: '#000',
+  },
+  stageFull: {
+    flex: 1,
+    height: undefined,
+    marginBottom: theme.space(8),
+  },
+  promptPlate: {
+    position: 'absolute',
+    top: theme.space(4),
+    left: theme.space(4),
+    right: theme.space(4),
+    padding: theme.space(4),
+    borderRadius: theme.radius.md,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  prompt: {
+    color: '#fff',
+    fontSize: 30,
+    fontWeight: '800',
+    lineHeight: 38,
+    textAlign: 'center',
+  },
+  hidden: {
+    display: 'none',
   },
   list: {
     padding: theme.space(6),
