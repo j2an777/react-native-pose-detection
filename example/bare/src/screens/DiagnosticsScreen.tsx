@@ -89,6 +89,7 @@ export function DiagnosticsScreen({
   const [reports, setReports] = React.useState<Record<string, ScenarioReport>>({});
   const [lines, setLines] = React.useState<string[]>([]);
   const [covered, setCovered] = React.useState(false);
+  const [detached, setDetached] = React.useState(false);
   const [variant, setVariant] = React.useState(false);
   const [finished, setFinished] = React.useState<string | null>(null);
   const ready = React.useRef<(() => void) | null>(null);
@@ -149,6 +150,27 @@ export function DiagnosticsScreen({
     return { ready: readyPromise };
   }, []);
 
+  const withoutCamera = React.useCallback(async (run: () => Promise<void>) => {
+    setDetached(true);
+    // The unmount commits and the native view leaves the window before anything runs.
+    await sleep(400);
+    try {
+      await run();
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          ready.current = null;
+          reject(new Error('the camera did not report ready within 10 s'));
+        }, 10_000);
+        ready.current = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+        setDetached(false);
+      });
+    }
+  }, []);
+
   const cover = React.useCallback(async (ms: number) => {
     setCovered(true);
     await sleep(ms);
@@ -179,6 +201,7 @@ export function DiagnosticsScreen({
           facing: () => facing.current,
           cameraChanges: () => cameraChanges.current,
           cover,
+          withoutCamera,
           toggleProps: () => setVariant((value) => !value),
           media: autoRun?.media ?? {},
           log,
@@ -192,7 +215,7 @@ export function DiagnosticsScreen({
         setRunning(null);
       }
     },
-    [autoRun, cover, log, remount, remountNow],
+    [autoRun, cover, log, remount, remountNow, withoutCamera],
   );
 
   React.useEffect(() => {
@@ -292,19 +315,21 @@ export function DiagnosticsScreen({
       </View>
 
       <View style={styles.stage}>
-        <PoseCamera
-          key={generation}
-          ref={camera}
-          style={StyleSheet.absoluteFill}
-          delegate={autoRun?.delegate ?? 'auto'}
-          // Flipped by the prop-toggle scenario: every one of these must be applied in place.
-          overlay={{ color: theme.color.accent, angles: variant ? [{ joint: 'leftKnee' }] : [] }}
-          smoothing={variant ? { minCutoff: 0.05, beta: 80 } : 'auto'}
-          data={{ mode: variant ? 'throttled' : 'off' }}
-          onPose={variant ? () => undefined : undefined}
-          onReady={onReady}
-          onCameraChange={onCameraChange}
-        />
+        {detached ? null : (
+          <PoseCamera
+            key={generation}
+            ref={camera}
+            style={StyleSheet.absoluteFill}
+            delegate={autoRun?.delegate ?? 'auto'}
+            // Flipped by the prop-toggle scenario: every one of these must be applied in place.
+            overlay={{ color: theme.color.accent, angles: variant ? [{ joint: 'leftKnee' }] : [] }}
+            smoothing={variant ? { minCutoff: 0.05, beta: 80 } : 'auto'}
+            data={{ mode: variant ? 'throttled' : 'off' }}
+            onPose={variant ? () => undefined : undefined}
+            onReady={onReady}
+            onCameraChange={onCameraChange}
+          />
+        )}
       </View>
 
       {finished ? <Text style={styles.finished}>Automated run finished: {finished}</Text> : null}

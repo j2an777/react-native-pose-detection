@@ -1,9 +1,11 @@
 import {
+  addLogListener,
   detectOnImage,
   detectOnVideo,
   exportPose,
   landmark,
   setLogLevel,
+  type LogEntry,
   type PoseCameraRef,
   type PoseFrame,
   type ProfileState,
@@ -548,6 +550,60 @@ export const SCENARIOS: readonly Scenario[] = [
             `upright photos, ${frames.length} clip frames in ${elapsed} ms, trim, cancel, ` +
             'error codes and exports all as documented'
           );
+        },
+        context,
+      ),
+  },
+  {
+    id: 'logs',
+    title: 'Logs without a camera',
+    verifies:
+      'addLogListener() hears a video job with no camera mounted, and keeps hearing once a camera ' +
+      'is back and takes the flush over.',
+    run: (context) =>
+      measure(
+        'logs',
+        1,
+        async (log) => {
+          const { clip } = context.media;
+          if (!clip) {
+            throw new Skip('no media given: scripts/device-diagnostics.sh pushes and passes them');
+          }
+          const heard: LogEntry[] = [];
+          const subscription = addLogListener((entries) => {
+            heard.push(...entries);
+          });
+          setLogLevel({ camera: 'info', detector: 'info', engine: 'info' });
+          try {
+            let alone = 0;
+            await context.withoutCamera(async () => {
+              await detectOnVideo(clip, { fps: 2 }).frames;
+              // A flush interval and a margin, for the batch the job's entries went out in.
+              await sleep(600);
+              alone = heard.length;
+            });
+            const jobs = heard
+              .slice(0, alone)
+              .filter((entry) => entry.message.startsWith('file job'));
+            if (jobs.length === 0) {
+              throw new Error(
+                `no file job entry reached the listener without a camera (${alone} in all)`,
+              );
+            }
+            log(`no camera: ${alone} entries, ${jobs.length} of them the video job's`);
+
+            // What the camera logs as it comes back reaches the same listener.
+            for (let waited = 0; waited < 3_000 && heard.length === alone; waited += 100) {
+              await sleep(100);
+            }
+            if (heard.length === alone)
+              throw new Error('nothing reached the listener once the camera was back');
+            log(`camera back: ${heard.length - alone} more entries`);
+            return `${alone} entries with no camera, and the camera's own after it came back`;
+          } finally {
+            subscription.remove();
+            setLogLevel('off');
+          }
         },
         context,
       ),

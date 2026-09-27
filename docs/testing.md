@@ -90,7 +90,7 @@ scripts/device-diagnostics.sh android files    # one scenario, by id
 DELEGATE=cpu scripts/device-diagnostics.sh android startup   # hold it to one delegate
 ```
 
-The script makes a photo and a clip for the file scenario (see
+The script makes a photo and a clip for the `files` and `logs` scenarios (see
 `scripts/diagnostics-media.swift`), copies them onto the device, and launches the sweep. It prints
 what the camera settled on first (model, delegate, inference p50, rate, heat), then each result
 as it lands, and saves the whole report as `diagnostics-<platform>.json`. The app has to be
@@ -114,6 +114,7 @@ the device as `diagnostics.json` in the app's documents directory.
 | `idle` | With nobody in frame, 12 fps after 2 s and 5 fps after 20 s |
 | `remount` | 50 mount and unmount cycles, each awaited to `onReady` |
 | `files` | An EXIF-rotated photo and a clip stored sideways come out upright; the clip is sampled in time order at real positions with velocity measured; trimming, cancelling, both exports and the decode error codes behave |
+| `logs` | `addLogListener()` hears a video job with the camera unmounted, and keeps hearing once a camera is back and takes the flush over |
 | `soak` | Ten minutes: the rate holds and the heat stays at `fair` or below. Only when asked for by name |
 
 A check that frames came back always waits to see them stop first, because the measured rate

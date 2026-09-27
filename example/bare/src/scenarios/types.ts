@@ -35,6 +35,11 @@ export type ScenarioContext = {
    * window and puts it back: the native-stack push and pop case, without a navigation library.
    */
   readonly cover: (ms: number) => Promise<void>;
+  /**
+   * Unmounts the camera, runs `run` with no camera in the tree, and mounts it again, resolving on
+   * that mount's `onReady`: what a screen without a camera, a studio or a settings page, looks like.
+   */
+  readonly withoutCamera: (run: () => Promise<void>) => Promise<void>;
   /** Flips a set of props that must never restart the camera: overlay, smoothing, data mode. */
   readonly toggleProps: () => void;
   /** Files the launch pointed at, for the scenarios that need a real photo or clip. */
