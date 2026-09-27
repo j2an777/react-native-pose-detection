@@ -32,8 +32,8 @@ git push origin v0.1.0
 
 The tag is the version footprint. `git tag --sort=-v:refname` lists every version ever shipped,
 `git show v0.1.0` gives the tree that went to npm, and `git log v0.1.0..v0.2.0` is the honest
-diff between two published versions. GitHub attaches the release notes to the tag, and npm
-provenance signs the tag, so it is also the link from a published tarball back to a commit.
+diff between two published versions. GitHub attaches the release notes to the tag, so it is also
+the link from a published version back to a commit.
 
 We do not create a branch per version. A branch is a moving pointer meant for work in progress,
 so it can be reset, force pushed, or deleted, and it carries no promise about what was
@@ -42,8 +42,8 @@ Forty releases means forty tags, which is fine, or forty branches, which turns t
 into a landfill and gives every one of them a protection rule to think about.
 
 Every tool in the release path already keys off tags: `npm version` writes one, GitHub releases
-attach to one, provenance attests to one, and semantic-release creates one. A branch named
-`package/1.0.9` is invisible to all of it.
+attach to one, and semantic-release creates one. A branch named `package/1.0.9` is invisible to
+all of it.
 
 Tags matching `v*` are protected: they cannot be deleted or moved once pushed, so the release
 history is append-only. The maintainer can bypass this to correct a tag pushed by mistake, the
@@ -81,9 +81,12 @@ someone actually needs the backport.
 ## Publishing
 
 ```bash
-npm publish --tag next     # verify in clean apps first
+CI=1 npm publish -w react-native-pose-detection --tag next   # verify in clean apps first
 npm dist-tag add react-native-pose-detection@x.y.z latest
 ```
+
+`CI=1` matters in a terminal: `prepack` runs `expo-module build`, which starts the TypeScript
+compiler in watch mode when it sees a TTY, and the publish never finishes.
 
 Never publish straight to `latest`. The install path is the thing most likely to break, and
 it can't be tested from inside this repo.
@@ -91,7 +94,7 @@ it can't be tested from inside this repo.
 ## Verifying the tarball
 
 ```bash
-npm pack --dry-run -w react-native-pose-detection
+CI=1 npm pack --dry-run -w react-native-pose-detection
 ```
 
 That runs the package's `prepack`, which cleans and rebuilds both the module and the config
@@ -105,7 +108,7 @@ Confirm:
   `app.plugin.js` and `expo-module.config.json` are all present
 - `android/proguard-rules.pro` is present, or release builds in consumer apps lose their keep rules
 - No `node_modules`, no `Pods`, no stray build output
-- Total size in the tens of KB, not MB
+- About 250 KB packed and under 1 MB unpacked, not several MB
 
 CI asserts all of this on every PR, in both directions: nothing leaks in, nothing required drops
 out. A tarball that grows by megabytes means something leaked into `files`.

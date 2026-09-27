@@ -21,9 +21,9 @@ and each can be toggled at runtime without tearing anything down.
 ```tsx
 const cam = useRef<PoseCameraRef>(null);
 
-await cam.current.pause();                    // camera off: lowest power short of unmounting
-await cam.current.stopDetection();            // preview stays, inference stops, GPU freed after a minute
-await cam.current.setOverlayEnabled(false);   // drawing stops, inference continues
+await cam.current?.pause();                   // camera off: lowest power short of unmounting
+await cam.current?.stopDetection();           // preview stays, inference stops, GPU freed after a minute
+await cam.current?.setOverlayEnabled(false);  // drawing stops, inference continues
 ```
 
 `pause`, `resume`, `startDetection`, `stopDetection` and `setOverlayEnabled` all return
@@ -54,8 +54,8 @@ larger value would only make that string longer.
 ## Switching cameras
 
 ```tsx
-await cam.current.switchCamera();      // resolves when the session is stable
-await cam.current.setFacing('back');
+await cam.current?.switchCamera();     // resolves when the session is stable
+await cam.current?.setFacing('back');
 ```
 
 **Await it.** The promise resolves only after the capture session has been reconfigured and the

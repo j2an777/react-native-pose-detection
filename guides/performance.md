@@ -113,13 +113,13 @@ measurement it comes from installed memory, and on Android from the number of co
 ### Inspecting it
 
 ```ts
-await cam.current.getProfile();
+await cam.current?.getProfile();
 // { profile: 'auto', phase: 'settled', source: 'measured', tier: 'high',
 //   resolved: { delegate: 'GPU', targetFps: 30, preview: '1080p', analysis: '480p' },
 //   p50InferenceMs: 16.2, measuredFps: 30, limitedBy: 'camera',
 //   cameraFps: 30, thermalState: 'nominal', lowPower: false }
 
-cam.current.getState();
+cam.current?.getState();
 // { ..., fps: 30, limitedBy: 'camera' }
 ```
 

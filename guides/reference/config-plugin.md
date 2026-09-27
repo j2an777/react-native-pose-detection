@@ -6,7 +6,7 @@
     "plugins": [
       ["react-native-pose-detection", {
         "model": "full",
-        "cameraPermissionText": "We use the camera to analyse your movement."
+        "cameraPermissionText": "We use the camera to analyze your movement."
       }]
     ]
   }

@@ -255,8 +255,8 @@ built and nothing crosses to JavaScript.
 
 ```ts
 setLogLevel('debug');
-console.log(cam.current.getState());
-console.log(await cam.current.getProfile());
+console.log(cam.current?.getState());
+console.log(await cam.current?.getProfile());
 ```
 
 Include both outputs, the log entries around the failure, your device model and OS version.

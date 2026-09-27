@@ -85,12 +85,15 @@ Expo Go is not supported: this package contains native code, so use a developmen
 ### Bare React Native
 
 ```bash
-npm i react-native-pose-detection
+npm i react-native-pose-detection expo
 npx react-native-pose-detection fetch-model full
 ```
 
-The CLI installs the model into both native projects. Declare the camera permission yourself,
-in **`ios/<YourApp>/Info.plist`**:
+`expo` is there for its autolinking, which is what links the native module; it does not make your
+app an Expo app. Take the SDK that matches your React Native, `expo@56` for 0.85 and `expo@57` for
+0.86, and wire it in as the [installation guide](https://github.com/khalid999devs/react-native-pose-detection/blob/main/guides/installation.md#bare-react-native) shows.
+The CLI installs the model into both native projects. Declare the camera permission yourself, in
+**`ios/<YourApp>/Info.plist`**:
 
 ```xml
 <key>NSCameraUsageDescription</key>
@@ -191,7 +194,7 @@ is 30 fps on any recent phone. Heat halves it and then pauses it, Low Power Mode
 nobody in frame drops it to an idle search. Every rate says why it is what it is:
 
 ```ts
-await cam.current.getProfile();
+await cam.current?.getProfile();
 // { phase: 'settled', tier: 'high',
 //   resolved: { delegate: 'GPU', targetFps: 30, preview: '1080p', analysis: '480p' },
 //   p50InferenceMs: 16.2, measuredFps: 30, limitedBy: 'camera', thermalState: 'nominal' }

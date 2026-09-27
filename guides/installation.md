@@ -27,7 +27,7 @@ npm i react-native-pose-detection
     "plugins": [
       ["react-native-pose-detection", {
         "model": "full",
-        "cameraPermissionText": "We use the camera to analyse your movement."
+        "cameraPermissionText": "We use the camera to analyze your movement."
       }]
     ]
   }
@@ -46,12 +46,15 @@ Full plugin options: [config plugin reference](./reference/config-plugin.md).
 ```bash
 npm i react-native-pose-detection expo
 npx react-native-pose-detection fetch-model full
-cd ios && pod install
+cd ios && pod install   # after the wiring below
 ```
 
 `expo` is not a typo and it does not turn your app into an Expo app. This package is built with
 the Expo Modules API, and that API's autolinking is what finds the native module. You need the
 `expo` package for autolinking. You do not need the config plugin, `app.json`, or prebuild.
+
+Each Expo SDK is built against one React Native, so take the one that matches yours: `expo@56`
+for React Native 0.85 and `expo@57` for 0.86. A plain `expo` installs the newest SDK.
 
 ### Wiring Expo modules into an existing app
 
@@ -119,7 +122,7 @@ override fun createReactActivityDelegate(): ReactActivityDelegate =
 
 ```xml
 <key>NSCameraUsageDescription</key>
-<string>We use the camera to analyse your movement.</string>
+<string>We use the camera to analyze your movement.</string>
 ```
 
 `ios/Podfile`, deployment target 16.4 or higher, because that is what `ExpoModulesCore` requires

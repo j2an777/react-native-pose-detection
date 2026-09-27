@@ -1,7 +1,7 @@
 # Getting Started
 
-**Pre-1.0.** Both platforms are complete and everything on this page runs on both; iOS is
-verified on physical hardware, and the Android device pass is in progress.
+**Pre-1.0.** Both platforms are complete and everything on this page runs on both, verified on
+physical hardware: an iPhone 15 and a Redmi Note 12, a budget Android phone.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ npm i react-native-pose-detection
     "plugins": [
       ["react-native-pose-detection", {
         "model": "full",
-        "cameraPermissionText": "We use the camera to analyse your movement."
+        "cameraPermissionText": "We use the camera to analyze your movement."
       }]
     ]
   }

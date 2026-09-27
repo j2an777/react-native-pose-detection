@@ -212,16 +212,17 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
   to mistime on rotation.
 - **Six AVFoundation reads are deprecated in iOS 16** and every replacement is async and 16-only.
   The podspec still declares 15.1, React Native's floor, so the old calls are still the ones that
-  run and each one warns, though every supported Expo SDK now needs 16.4. They live in `AssetCompat` and nowhere else, so one comment explains
-  all of them rather than a warning appearing wherever a track or a frame is read. Raising the floor
-  to 16 is the fix, and it is a compatibility decision rather than a cleanup.
+  run and each one warns, though every supported Expo SDK now needs 16.4. They live in
+  `AssetCompat` and nowhere else, so one comment explains all of them rather than a warning
+  appearing wherever a track or a frame is read. Raising the floor to 16 is the fix, and it is a
+  compatibility decision rather than a cleanup.
 - **Three view functions warn under Swift 6 strict concurrency.** `drainFrames`, `snapshotFrame`
   and `takeTriggerSnapshot` use `PoseCameraView`'s `AnyArgument` conformance, which `ExpoView`
   isolates to the main actor, from the nonisolated closure `AsyncFunction` takes. Both halves are
   Expo's, so there is nothing to change here: marking the closure `@MainActor` adds a second warning
   about losing that isolation instead of removing the first. They are warnings under the Swift 5
   language mode this package builds in, and the fix is upstream.
-- **Expo SDK 57 requires iOS 16.4**, so an app that targets lower gets every Expo pod silently
+- **Expo SDK 56 and later require iOS 16.4**, so an app that targets lower gets every Expo pod silently
   skipped by autolinking, and this package fails to resolve `ExpoModulesCore`. `example/bare`
   pins 16.4 for exactly that reason. The podspec itself declares 15.1, which is this package's own
   floor; Expo raises it to match `ExpoModulesCore` during `pod install`.
