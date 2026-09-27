@@ -11,6 +11,7 @@ import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.opengl.GLUtils
+import android.os.SystemClock
 import android.view.Surface
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -115,9 +116,9 @@ internal class ExportGl(
 
     fun awaitFrame(): Boolean {
         synchronized(frameAvailable) {
-            val deadline = System.currentTimeMillis() + FRAME_TIMEOUT_MS
+            val deadline = SystemClock.elapsedRealtime() + FRAME_TIMEOUT_MS
             while (!hasFrame) {
-                val remaining = deadline - System.currentTimeMillis()
+                val remaining = deadline - SystemClock.elapsedRealtime()
                 if (remaining <= 0) return false
                 frameAvailable.wait(remaining)
             }

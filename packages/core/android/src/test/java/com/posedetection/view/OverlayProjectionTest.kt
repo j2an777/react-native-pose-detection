@@ -78,15 +78,13 @@ class OverlayProjectionTest {
     }
 
     @Test
-    fun `mirroring flips x and leaves y alone`() {
+    fun `mirroring flips x about the centre of the picture`() {
         val projection = projection(1080, 1920, ContentFit.FILL)
 
         val plain = projection.x(0.25f, false)
         val mirrored = projection.x(0.25f, true)
 
-        // The two land equidistant from the centre of the picture, not of the view.
         assertEquals(projection.left + projection.width / 2f, (plain + mirrored) / 2f, 0.001f)
-        assertEquals(projection.y(0.75f), projection.y(0.75f), 0.001f)
     }
 
     @Test

@@ -1819,8 +1819,6 @@ class PoseCameraView(
          */
         const val MIN_CONFIDENCE = 0.6f
         const val MULTI_POSE_CONFIDENCE = 0.3f
-        const val DEFAULT_THROTTLE_MS = 100L
-        const val DEFAULT_FLUSH_MS = 500L
         const val MILLIS_PER_SECOND = 1_000.0
         const val NANOS_PER_MILLI = 1_000_000.0
 
