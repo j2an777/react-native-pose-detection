@@ -81,9 +81,9 @@
     "access": "public"
   },
   "peerDependencies": {
-    "expo": ">=51",
-    "react": ">=18",
-    "react-native": ">=0.74"
+    "expo": ">=56",
+    "react": ">=19",
+    "react-native": ">=0.85"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
