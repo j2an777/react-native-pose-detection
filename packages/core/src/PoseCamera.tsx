@@ -155,9 +155,9 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       if (droppedCount > 0) callbacks.current.onFramesDropped?.(droppedCount);
       if (frames.length === 0) return;
 
-      const { onPose, onPoseBatch } = callbacks.current;
-      if (onPoseBatch) {
-        onPoseBatch(frames);
+      const { data: config, onPose, onPoseBatch } = callbacks.current;
+      if (config?.mode === 'batched') {
+        onPoseBatch?.(frames);
       } else if (onPose) {
         // A drain can carry more than one when the JavaScript thread was busy.
         for (const frame of frames) onPose(frame);
