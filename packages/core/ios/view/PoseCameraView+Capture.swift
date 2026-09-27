@@ -59,9 +59,9 @@ extension PoseCameraView: AVCaptureVideoDataOutputSampleBufferDelegate {
     let now = Double(nowMs)
     guard now + PoseCameraView.pacingJitterMs >= nextDetectDueMs else { return false }
 
-    // max(): after a stall the schedule restarts from now instead of owing a backlog.
+    // More than an interval late is a stall: restart the schedule rather than run a backlog.
     let intervalMs = PoseCameraView.millisPerSecond / Double(fps)
-    nextDetectDueMs = max(nextDetectDueMs + intervalMs, now)
+    nextDetectDueMs = now - nextDetectDueMs > intervalMs ? now + intervalMs : nextDetectDueMs + intervalMs
     return true
   }
 

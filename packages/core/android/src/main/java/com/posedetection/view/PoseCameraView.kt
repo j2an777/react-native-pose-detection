@@ -978,9 +978,10 @@ class PoseCameraView(
         val now = nowMs.toDouble()
         if (now + PACING_JITTER_MS < nextDetectDueMs) return false
 
-        // From the schedule while kept, from now after a stall, so a stall runs no backlog.
+        // More than an interval late is a stall: restart the schedule rather than run a backlog.
         val intervalMs = MILLIS_PER_SECOND / fps
-        nextDetectDueMs = maxOf(nextDetectDueMs + intervalMs, now)
+        nextDetectDueMs =
+            if (now - nextDetectDueMs > intervalMs) now + intervalMs else nextDetectDueMs + intervalMs
         return true
     }
 
