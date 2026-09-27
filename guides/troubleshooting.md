@@ -82,6 +82,10 @@ package. Raise `platform :ios` in the Podfile and `IPHONEOS_DEPLOYMENT_TARGET` i
 `16.4`. The podspec itself declares 15.1, which is this package's own floor; Expo raises it during
 `pod install` and prints that it did.
 
+**`compiling for iOS 15.1, but module 'Expo' has a minimum deployment target of iOS 16.4`** is the
+app target still at React Native's 15.1 while the Podfile says 16.4. Raise **General → Minimum
+Deployments** on the app target to 16.4; `npx react-native-pose-detection doctor` checks it.
+
 **A Swift compile error inside `expo-modules-jsi` or `expo-modules-core`** is a toolchain that is
 too old, not anything in this package. Expo SDK 57 ships `ExpoModulesCore` precompiled with Swift
 6.3.1, and an older compiler rejects it; the errors it produces while falling back to Expo's

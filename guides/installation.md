@@ -125,13 +125,19 @@ override fun createReactActivityDelegate(): ReactActivityDelegate =
 <string>We use the camera to analyze your movement.</string>
 ```
 
-`ios/Podfile`, deployment target 16.4 or higher, because that is what `ExpoModulesCore` requires
-from Expo SDK 56 and Expo's autolinking silently skips every one of its pods on an app that
-targets lower, which surfaces as CocoaPods failing to find `ExpoModulesCore`:
+Deployment target 16.4 or higher, because that is what `ExpoModulesCore` requires from Expo SDK
+56, and in two places, since React Native's template sets both to 15.1. In `ios/Podfile`, where a
+lower target makes Expo's autolinking silently skip every one of its pods, which surfaces as
+CocoaPods failing to find `ExpoModulesCore`:
 
 ```ruby
 platform :ios, '16.4'
 ```
+
+And on the app target in Xcode, **General → Minimum Deployments**, which is
+`IPHONEOS_DEPLOYMENT_TARGET` in the project. Left at 15.1, the app stops compiling at
+`compiling for iOS 15.1, but module 'Expo' has a minimum deployment target of iOS 16.4`.
+`doctor` checks this one.
 
 A bare app also needs Expo's autolinking in its `Podfile`, the counterpart of
 `expo-autolinking-settings` in `settings.gradle`. `install-expo-modules` writes it for you on
