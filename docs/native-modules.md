@@ -227,6 +227,10 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
 ## MediaPipe on both platforms
 
 - `LIVE_STREAM` mode rejects non-increasing timestamps. Clamp, never trust the source.
+- Android hands MediaPipe CameraX's `rotationDegrees` negated: MediaPipe turns the image the other
+  way by what it is given. Check a change there against a dumped analysis frame with its landmarks
+  plotted, not by eye: a close face gathers the landmarks around itself even when the model was
+  handed the picture upside down.
 - Landmarker construction is expensive, first inference can stall for seconds. It is created
   once per process and pre-warmed during camera setup.
 - GPU delegate success is verified by a successful first inference, not by construction alone.
@@ -241,4 +245,5 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
 | Frozen preview, iOS | a sample buffer retained past `captureOutput` |
 | Overlay misaligned | the projection in `OverlayView`, and the frame size it was handed |
 | Landmarks sideways or upside down, iOS | the connection's rotation, set in `CaptureRotation` |
+| Landmarks sideways or upside down, Android | `mediaPipeDegrees` in `PoseDetector`, and `Upright` |
 | Memory climbing | allocations in the frame path: profile it |

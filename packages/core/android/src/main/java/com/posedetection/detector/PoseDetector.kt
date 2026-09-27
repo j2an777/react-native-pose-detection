@@ -12,6 +12,7 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import com.posedetection.LogCategory
 import com.posedetection.PoseLog
+import com.posedetection.engine.Upright
 
 internal enum class DelegateRequest { AUTO, GPU, CPU }
 
@@ -267,26 +268,31 @@ internal class PoseDetector private constructor(
          * three allocations per frame for a value with four possible states that changes when the
          * device turns, not when a frame arrives.
          *
-         * Clockwise, as CameraX's `rotationDegrees` is: MediaPipe turns the image clockwise by this
-         * much before the model sees it. The negative turned it the other way, so a phone held
-         * upright showed the model its subject upside down.
+         * See [mediaPipeDegrees] for the sign.
          */
         private val ROTATION_OPTIONS =
             Array(QUARTER_TURNS) { quarter ->
                 ImageProcessingOptions
                     .builder()
-                    .setRotationDegrees(quarter * DEGREES_PER_QUARTER)
+                    .setRotationDegrees(mediaPipeDegrees(quarter * DEGREES_PER_QUARTER))
                     .build()
             }
 
-        fun rotationOptions(rotationDegrees: Int): ImageProcessingOptions {
-            val quarter = ((rotationDegrees % FULL_TURN) / DEGREES_PER_QUARTER) and (QUARTER_TURNS - 1)
-            return ROTATION_OPTIONS[quarter]
-        }
+        fun rotationOptions(rotationDegrees: Int): ImageProcessingOptions =
+            ROTATION_OPTIONS[Upright.quarterOf(rotationDegrees)]
+
+        /**
+         * What MediaPipe is handed for a buffer CameraX says needs [rotationDegrees] clockwise to
+         * stand upright: the same turn, negated, because MediaPipe turns the image the other way by
+         * the amount it is given. A frame dumped on a Redmi Note 12 settles it. Handed +270 for its
+         * front camera, the model found the face and put the shoulders above the head: a person
+         * upside down, which it finds late and draws scrambled, and whose landmarks still gather
+         * around a close face, which is how that got past a look at the screen.
+         */
+        fun mediaPipeDegrees(rotationDegrees: Int): Int = -(Upright.quarterOf(rotationDegrees) * DEGREES_PER_QUARTER)
 
         private const val QUARTER_TURNS = 4
         private const val DEGREES_PER_QUARTER = 90
-        private const val FULL_TURN = 360
 
         private const val PROBE_SIZE = 256
 

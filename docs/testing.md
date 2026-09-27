@@ -126,7 +126,10 @@ fixes: a view unmounting after its replacement had bound took the new camera wit
 `onCameraChange` could reach JavaScript a moment after `switchCamera()` resolved, and the
 emulator's decoder hands frames back in decode order, which the sampler now reorders. The Redmi,
 the first Android phone with a person in front of it, is where the live skeleton turned out to be
-drawn a quarter turn out, which a rendered scene with nobody in it could never show.
+drawn a quarter turn out, which a rendered scene with nobody in it could never show. The change
+that fixed the drawing also flipped the rotation handed to MediaPipe, and that one got past a look
+at the screen, because a close face gathers the landmarks around itself even upside down. A dumped
+analysis frame with its landmarks plotted is what caught it: the shoulders sat above the head.
 
 On the iPhone the full model ran on the GPU at 16 to 18 ms per inference and held the camera's 30
 fps, a mount reached `onReady` in about a second, a restarted detector had frames back in about

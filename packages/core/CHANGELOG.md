@@ -71,9 +71,8 @@ the first list is what to check when upgrading.
 
 ### Fixed
 
-- Android: the live skeleton was drawn a quarter turn out, and the model saw the camera's picture
-  upside down. The frame's rotation reached MediaPipe with its sign inverted, and the landmarks came
-  back in the sensor's frame but were used as if upright. Photos and videos were not affected.
+- Android: the live skeleton was drawn a quarter turn out. The landmarks come back in the
+  sensor's frame and were used as if upright. Photos and videos were not affected.
 - iOS: a portrait video, which a phone stores sideways with a rotation, lost the body on about a
   third of its frames in `detectOnVideo` and in exports. Frames are now turned upright before
   MediaPipe sees them.
