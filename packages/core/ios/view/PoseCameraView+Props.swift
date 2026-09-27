@@ -131,8 +131,9 @@ extension PoseCameraView {
     frames.setLayout(next)
   }
 
-  /// `reason` goes to `onPerformanceChange`; nil, for a props update, fires no event.
-  func applyPerformance(reason: String?) {
+  /// Emits `onPerformanceChange` when the rate moved and `reason` is set; says whether it did.
+  @discardableResult
+  func applyPerformance(reason: String?) -> Bool {
     let next = RateGovernor.decide(RateRequest(
       profile: propProfile,
       policy: propThermalPolicy,
@@ -146,8 +147,9 @@ extension PoseCameraView {
 
     let changed = next != rate.value
     rate.value = next
-    guard let reason = reason, changed else { return }
+    guard let reason = reason, changed else { return false }
     emitPerformanceChange(reason: reason)
+    return true
   }
 
   func resolveGeometry() -> CameraGeometry {

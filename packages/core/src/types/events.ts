@@ -6,6 +6,7 @@ import type {
   LimitedBy,
   ModelVariant,
   Resolution,
+  ThermalState,
 } from './camera';
 
 const CODES = [
@@ -74,4 +75,8 @@ export type PerformanceEvent = {
   readonly limitedBy: LimitedBy;
   readonly analysisResolution: Resolution;
   readonly actualFps: number;
+  /** Reported on every change, whatever `thermalPolicy` lets the rate do about it. */
+  readonly thermalState: ThermalState;
+  /** Battery Saver or Low Power Mode. */
+  readonly lowPower: boolean;
 };

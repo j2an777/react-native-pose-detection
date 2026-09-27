@@ -1042,7 +1042,9 @@ class PoseCameraView(
         PoseLog.info(
             LogCategory.ENGINE,
         ) { "heat is ${thermal.state.nameForJs()}, low power ${if (lowPower) "on" else "off"}" }
-        applyPerformance(reason = if (heatMoved) "thermal" else "lowPower")
+        val reason = if (heatMoved) "thermal" else "lowPower"
+        // Reported even when the policy leaves the rate alone: the app may act on heat itself.
+        if (!applyPerformance(reason)) post { emitPerformanceChange(reason) }
     }
 
     /** Analysis thread. [imageWidth] and [imageHeight] are the buffer's, before rotation. */
@@ -1549,8 +1551,8 @@ class PoseCameraView(
         applyOverlayEnabled()
     }
 
-    /** [reason] is what `onPerformanceChange` reports; null, a props update, fires no event. */
-    private fun applyPerformance(reason: String?) {
+    /** Emits `onPerformanceChange` when the rate moved and [reason] is set; says whether it did. */
+    private fun applyPerformance(reason: String?): Boolean {
         val next =
             RateGovernor.decide(
                 RateRequest(
@@ -1567,9 +1569,10 @@ class PoseCameraView(
 
         val changed = next != rate
         rate = next
-        if (reason == null || !changed) return
+        if (reason == null || !changed) return false
 
         post { emitPerformanceChange(reason) }
+        return true
     }
 
     private fun emitPerformanceChange(reason: String) {
@@ -1581,6 +1584,8 @@ class PoseCameraView(
                 "limitedBy" to currentLimitedBy().forJs,
                 "analysisResolution" to (camera.boundAnalysisSize ?: camera.analysisSize).toMap(),
                 "actualFps" to currentMeasuredFps(),
+                "thermalState" to thermal.state.nameForJs(),
+                "lowPower" to lowPower,
             ),
         )
     }

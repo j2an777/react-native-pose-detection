@@ -200,7 +200,9 @@ extension PoseCameraView {
       "targetFps": currentTargetFps(),
       "limitedBy": currentLimitedBy().rawValue,
       "analysisResolution": camera.analysisSize.forJs,
-      "actualFps": currentMeasuredFps()
+      "actualFps": currentMeasuredFps(),
+      "thermalState": thermal.state.rawValue,
+      "lowPower": lowPower
     ])
   }
 

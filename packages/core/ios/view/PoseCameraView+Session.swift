@@ -248,7 +248,9 @@ extension PoseCameraView {
     guard heatMoved || powerMoved else { return }
 
     PoseLog.info(.engine, "heat is \(thermal.state.rawValue), low power \(lowPower ? "on" : "off")")
-    applyPerformance(reason: heatMoved ? "thermal" : "lowPower")
+    let reason = heatMoved ? "thermal" : "lowPower"
+    // Reported even when the policy leaves the rate alone: the app may act on heat itself.
+    if !applyPerformance(reason: reason) { emitPerformanceChange(reason: reason) }
   }
 }
 
