@@ -38,12 +38,7 @@ class PoseDetectionModule : Module() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
-    /**
-     * The log flush while no camera is attached. A camera hands batches over as its own `onLog`
-     * while it is, and with none on screen nothing did: `addLogListener()` heard nothing from a
-     * file detection or an export. It runs while the stream does, which is only while something in
-     * JavaScript listens, and a tick with a camera attached is one volatile read and a lock.
-     */
+    /** Flushes the log while no camera is attached, so file and export jobs reach addLogListener(). */
     private val logFlush =
         object : Runnable {
             override fun run() {
@@ -59,8 +54,6 @@ class PoseDetectionModule : Module() {
 
             Function("setLogLevel") { config: Any? -> applyLogLevel(config) }
 
-            // The buffer is global because the level mask is. A camera runs the flush while one is
-            // attached, and the module while none is, see PoseLog.
             Function("startLogStream") {
                 PoseLog.startStream()
                 mainHandler.removeCallbacks(logFlush)
@@ -74,8 +67,7 @@ class PoseDetectionModule : Module() {
 
             Events("onVideoProgress", "onExportProgress", "onLog")
 
-            // Both handed to this package's own thread rather than run on Expo's, which every
-            // module in the app shares: a video job there held all of them up while it ran.
+            // Our own executor, not Expo's queue: that one is shared by every module in the app.
             AsyncFunction(
                 "detectOnImage",
             ) { uri: String, options: Map<String, Any?>?, promise: expo.modules.kotlin.Promise ->
@@ -126,8 +118,6 @@ class PoseDetectionModule : Module() {
 
             Function("cancelDetectOnVideo") { taskId: Int -> StaticDetection.cancel(taskId) }
 
-            // Handed to the export executor rather than run on Expo's, which is what keeps a long
-            // export off any thread the camera cares about. See PoseExport for the other rules.
             AsyncFunction(
                 "exportPose",
             ) { uri: String, options: Map<String, Any?>?, taskId: Int, promise: expo.modules.kotlin.Promise ->
@@ -155,12 +145,9 @@ class PoseDetectionModule : Module() {
 
             Function("cancelExportPose") { taskId: Int -> PoseExport.cancel(taskId) }
 
-            // Synchronous and on the JavaScript thread that calls them, the same shape as iOS, where
-            // a view function would run on main. Each reads a view's frames through the id
-            // `<PoseCamera>` gave it, and an id with no view behind it reads as an empty buffer.
+            // Module functions, not view functions, so they run on the calling JS thread. See ADR 0010.
             Function("drainFrames") { streamId: Int -> NativeArrayBuffer.wrap(FrameStreams.drain(streamId)) }
             Function("snapshotFrame") { streamId: Int -> NativeArrayBuffer.wrap(FrameStreams.snapshot(streamId)) }
-            // An unknown or spent ticket is an empty buffer, which is the documented contract.
             Function("takeTriggerSnapshot") { streamId: Int, snapshotId: Int ->
                 NativeArrayBuffer.wrap(FrameStreams.takeSnapshot(streamId, snapshotId))
             }
@@ -169,10 +156,7 @@ class PoseDetectionModule : Module() {
             AsyncFunction("getCameraPermission") { promise: expo.modules.kotlin.Promise ->
                 val permissions = appContext.permissions
                 if (permissions == null) {
-                    // Readable without a manager, which is what makes this the useful fallback:
-                    // an app can still find out where it stands, it just cannot ask from here.
-                    // Without the manager only "granted or not" is knowable, and reporting a
-                    // refusal as UNDETERMINED is the honest half of that: it says "ask to find out".
+                    // Without a manager only "granted" is knowable, so a refusal reads as UNDETERMINED.
                     val status =
                         if (hasCameraPermission()) PermissionsStatus.GRANTED else PermissionsStatus.UNDETERMINED
                     promise.resolve(permissionResult(status, canAskAgain = true))
@@ -236,13 +220,11 @@ class PoseDetectionModule : Module() {
                 Prop("analysisResolution") { view: PoseCameraView, value: String? ->
                     view.setAnalysisResolution(value ?: "auto")
                 }
-                // `Any?` and a cast, like `overlay`: a star-projected Map has no registered type
-                // converter, and that failure would only show up on a device.
+                // Any? and a cast: a star-projected Map has no registered type converter.
                 Prop("data") { view: PoseCameraView, value: Any? ->
                     view.setData(parseData(value as? Map<*, *>))
                 }
-                // Resolved by JavaScript, in ANGLE_JOINT_NAMES order. Re-deriving the set here
-                // would be a second implementation of one rule, and a way for them to disagree.
+                // Already resolved by JavaScript, in ANGLE_JOINT_NAMES order.
                 Prop("angleJoints") { view: PoseCameraView, value: List<String>? ->
                     view.setAngleJoints(value?.toTypedArray() ?: emptyArray())
                 }
@@ -267,8 +249,7 @@ class PoseDetectionModule : Module() {
                             view.setSmoothing(true, OneEuroFilter.DEFAULT_MIN_CUTOFF, OneEuroFilter.DEFAULT_BETA)
                         }
 
-                        // Absent is off. JavaScript resolves `'auto'` against `maxPoses` and always
-                        // sends the answer, and one pose is already smoothed inside MediaPipe.
+                        // Absent is off: JavaScript always sends 'auto' resolved against maxPoses.
                         null, false -> {
                             view.setSmoothing(false, OneEuroFilter.DEFAULT_MIN_CUTOFF, OneEuroFilter.DEFAULT_BETA)
                         }
@@ -287,8 +268,6 @@ class PoseDetectionModule : Module() {
                     }
                 }
                 Prop("logLevel") { view: PoseCameraView, value: Any? ->
-                    // Raises the global level while this camera exists, see PoseLog.raise. Absent
-                    // withdraws it.
                     PoseLog.raise(view, PoseLog.levelMask(value))
                 }
                 Prop("triggers") { view: PoseCameraView, value: Any? ->
@@ -311,8 +290,7 @@ class PoseDetectionModule : Module() {
                     view.releaseEverything()
                 }
 
-                // Every one of these touches the capture session, which CameraX requires on the main
-                // thread. That is also the serial queue all session state lives on, see CameraSource.
+                // On main: CameraX needs it for the capture session, and all session state lives there.
                 AsyncFunction("switchCamera") { view: PoseCameraView, promise: expo.modules.kotlin.Promise ->
                     view.switchCamera(
                         onDone = { promise.resolve(null) },
@@ -350,8 +328,7 @@ class PoseDetectionModule : Module() {
                     view.currentState()
                 }.runOnQueue(Queues.MAIN)
 
-                // On main, because the calibration it reads is main-thread state. Frames and the
-                // live rate are read on the JavaScript thread instead, see FrameStreams.
+                // On main because the calibration it reads is main-thread state.
                 AsyncFunction("getProfile") { view: PoseCameraView ->
                     view.profileState()
                 }.runOnQueue(Queues.MAIN)
@@ -363,11 +340,6 @@ class PoseDetectionModule : Module() {
         }
 }
 
-/**
- * A file that could not be read rejects with its decode code, a missing model with
- * `MODEL_NOT_FOUND`, and anything that failed after the file was read with `DETECTION_FAILED`:
- * three different things for the app to tell its user, where one code used to cover all of them.
- */
 private fun rejectFileJob(
     promise: expo.modules.kotlin.Promise,
     error: Throwable,
@@ -376,7 +348,6 @@ private fun rejectFileJob(
     promise.reject(code.name, error.message ?: "detection failed", null)
 }
 
-/** Resolved by JavaScript for the live path, and passed the same way here. */
 internal fun angleJointsFrom(options: Map<String, Any?>?): Array<String> {
     val raw = options?.get("angleJoints") as? List<*> ?: return Skeleton.ANGLE_JOINT_NAMES
     return raw.mapNotNull { it as? String }.toTypedArray()

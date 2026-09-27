@@ -10,18 +10,7 @@ import com.posedetection.engine.FrameStreams
 import com.posedetection.performance.calibratorFor
 import java.io.Closeable
 
-/**
- * The landmarker a video job runs on, and the rule that picks its delegate.
- *
- * The GPU when this device's GPU check passed and no camera is running inference; the CPU
- * otherwise. A file job therefore never competes with a live preview for the GPU that preview's own
- * inference runs on. A device the check has never run on tries the GPU, and the first frame is the
- * check: if it fails, the job carries on on the CPU, and the answer is kept for the camera and for
- * the next job.
- *
- * The choice is made once, when the job starts. A camera started halfway through a long job shares
- * the GPU with it until the job ends, which is rarer and cheaper than rebuilding mid-job.
- */
+/** GPU unless its check failed or a camera is detecting; an unchecked GPU is proven by the first frame. */
 internal class FileDetector(
     private val context: Context,
     private val modelFileName: String,
@@ -62,7 +51,6 @@ internal class FileDetector(
         PoseLog.info(LogCategory.DETECTOR) { "file job on ${detector.delegate}$reason" }
     }
 
-    /** VIDEO mode. A GPU that fails is replaced by the CPU once, and the frame is run again there. */
     fun detect(
         image: MPImage,
         timestampMs: Long,

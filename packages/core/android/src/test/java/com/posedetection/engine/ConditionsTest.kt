@@ -31,7 +31,6 @@ class ConditionsTest {
         into[base + 3] = visibility
     }
 
-    /** A right angle at the knee, laid out so the aspect correction has something to correct. */
     private fun bendKneeTo90() {
         place(Skeleton.LEFT_HIP, 0.5f, 0.2f)
         place(Skeleton.LEFT_KNEE, 0.5f, 0.5f)
@@ -80,7 +79,7 @@ class ConditionsTest {
 
     @Test
     fun `an unmeasurable angle matches nothing rather than reading as zero`() {
-        // Collinear: the vertex has no angle, and Geometry reports NaN rather than 0.
+        // The ankle sits on the knee: a zero-length segment has no angle, so Geometry reports NaN.
         place(Skeleton.LEFT_HIP, 0.5f, 0.2f)
         place(Skeleton.LEFT_KNEE, 0.5f, 0.5f)
         place(Skeleton.LEFT_ANKLE, 0.5f, 0.5f)

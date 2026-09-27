@@ -31,7 +31,6 @@ final class OneEuroFilterTests: XCTestCase {
     next[Skeleton.landmarkStride - 1] = 0.1
     filter.apply(to: &next, elapsedSeconds: step)
 
-    // A joint that has just left frame must not keep reading as present.
     XCTAssertEqual(next[Skeleton.landmarkStride - 1], 0.1)
   }
 
@@ -92,8 +91,7 @@ final class OneEuroFilterTests: XCTestCase {
     var gap = frame(0.9)
     filter.apply(to: &gap, elapsedSeconds: .nan)
 
-    // Held still at the new place: filtered against the frame after the gap, nothing moves. Against
-    // the stale state from before it, this frame would be dragged back toward 0.1.
+    // Filtered against the stale pre-gap state, this frame would be dragged back toward 0.1.
     var next = frame(0.9)
     filter.apply(to: &next, elapsedSeconds: step)
     XCTAssertEqual(next[0], 0.9, accuracy: 1e-6)
@@ -123,8 +121,7 @@ final class OneEuroFilterTests: XCTestCase {
   }
 
   func testSpeedIsMeasuredInBodySpansSoADistantSubjectIsNotLeftBehind() {
-    // A subject a tenth the height of the frame moving one of its own spans a second: slow in frame
-    // units, brisk for the body. Measured in spans it gets the cutoff a near subject would.
+    // A tenth-of-frame subject moving a span a second: slow in frame units, brisk in spans.
     func lagOf(scale: Float) -> Float {
       let filter = OneEuroFilter()
       var landmarks = frame(0.5)

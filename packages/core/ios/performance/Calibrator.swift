@@ -1,16 +1,6 @@
 import Foundation
 
-/**
- What this device's inference costs, in the order `guides/performance.md` describes it.
-
- 1. Measured: the median dispatch-to-result time over the last 60 frames that had a pose, first
-    published after 15, so a session knows what its device costs within about half a second.
- 2. Cached, so the second launch starts where the first one finished.
-
- Before either, the governor runs at the camera's rate. An unknown device is not a slow one, and
- half a second at the camera's rate costs less than a start that looks slow to the person watching.
- The memory probe that used to guess a rate now only names a tier until a measurement replaces it.
- */
+/// What inference costs here: a median over the last 60 frames, first after 15, then cached.
 final class Calibrator {
   enum Phase: String {
     case calibrating
@@ -24,17 +14,13 @@ final class Calibrator {
     case cache
   }
 
-  /// Two seconds at 30 fps, which is long enough for a median to mean something.
+  /// Two seconds at 30 fps: long enough for a median to mean something.
   static let window = 60
 
   /// Half a second at 30 fps: enough that one slow frame cannot decide it, soon enough to matter.
   static let firstEstimate = 15
 
-  /**
-   The median is a copy and a sort, so it is refreshed every quarter window rather than every
-   frame. Inference cost does not change in fifteen frames; recomputing inside that span is work on
-   the hot path for a number that comes out the same.
-   */
+  /// A median is a copy and a sort, so refresh it every quarter window, not every frame.
   static let medianStride = 15
 
   static let cooldownMs: Int64 = 3_000
@@ -50,7 +36,7 @@ final class Calibrator {
   private static let highMemoryGiB: Float = 5.5
   private static let mediumMemoryGiB: Float = 3.5
 
-  /// Versioned: the first version cached a rate under a model that no longer exists.
+  /// Versioned: v1 entries cached a rate under a model that no longer exists.
   private static let defaultsPrefix = "react-native-pose-detection.v2."
 
   private(set) var tier: DeviceTier = .medium
@@ -60,7 +46,7 @@ final class Calibrator {
   /// The published median, or 0 before one exists. What the governor divides by.
   private(set) var p50InferenceMs: Float = 0
 
-  /// What the GPU check decided for this device and model last time, or nil if it never ran here.
+  /// The GPU check's cached answer for this device and model; nil if it never ran.
   private(set) var gpuVerdict: Bool?
 
   private var samples = [Float](repeating: 0, count: Calibrator.window)
@@ -79,11 +65,7 @@ final class Calibrator {
     self.memoryGiB = memoryGiB
   }
 
-  /**
-   Loads what this device and model are known to cost. Runs on every session start and does nothing
-   when the model has not changed: a camera restart is not a new device, and throwing the
-   measurement away there sent the rate back to a guess every time a prop rebound the session.
-   */
+  /// A no-op while the model is unchanged: a camera restart is not a new device.
   func start(modelFileName: String) {
     guard modelFileName != self.modelFileName else { return }
     self.modelFileName = modelFileName
@@ -112,12 +94,8 @@ final class Calibrator {
     PoseLog.info(.calibration, "nothing measured yet, memory suggests the \(tier.rawValue) tier")
   }
 
-  /**
-   One frame's cost, dispatch to result. That span breathes with load: a rate the device cannot hold
-   shows up as queue wait long before it shows up as heat, which is what closes the loop. Returns
-   true when the published median or the tier moved, or when the measurement settled, which the
-   caller answers by re-running the governor and persisting.
-   */
+  /// Dispatch to result, so queue wait from an unsustainable rate shows up before heat does.
+  /// True when the median or tier moved, or it settled: the caller re-governs and persists.
   func record(inferenceMs: Float, nowMs: Int64) -> Bool {
     guard inferenceMs > 0, inferenceMs.isFinite else { return false }
 
@@ -126,14 +104,11 @@ final class Calibrator {
     if sampleCount < Calibrator.window { sampleCount += 1 }
     sinceMedian += 1
 
-    // The first estimate lands at `firstEstimate` samples, then one every `medianStride`.
     guard sampleCount >= Calibrator.firstEstimate, sinceMedian >= Calibrator.medianStride else { return false }
     sinceMedian = 0
     let candidate = median()
 
-    // Hysteresis: a rate that just moved is given time to show what it costs before it moves again,
-    // or a device sitting between two answers oscillates between them forever. The window itself
-    // is kept: inference cost does not become untrue because the rate changed.
+    // Cooldown, or a device between two answers oscillates. Samples are kept when the rate moves.
     if lastChangeMs != 0 && nowMs - lastChangeMs < Calibrator.cooldownMs { return false }
 
     let nextTier = AutoTuner.tier(p50Ms: candidate)
@@ -142,7 +117,7 @@ final class Calibrator {
       || abs(Calibrator.implied(candidate) - Calibrator.implied(p50InferenceMs)) > Calibrator.deadbandFps
 
     guard moved else {
-      // Inside the deadband across a whole window with nowhere to move is what settled means.
+      // Settled: a whole window inside the deadband.
       guard phase != .settled, sampleCount >= Calibrator.window else { return false }
       phase = .settled
       source = .measured
@@ -159,7 +134,6 @@ final class Calibrator {
     return true
   }
 
-  /// Only a settled, measured answer is worth persisting. A guess is not worth a second launch.
   func persist() {
     guard let model = modelFileName, phase == .settled, source == .measured else { return }
     write(model)
@@ -172,7 +146,7 @@ final class Calibrator {
     write(model)
   }
 
-  /// The rate a median implies at the default duty, capped where more stops meaning anything.
+  /// The rate a median implies at the default duty, for deadband comparisons.
   static func implied(_ p50Ms: Float) -> Int {
     let capacity = RateGovernor.capacity(duty: comparisonDuty, p50Ms: p50Ms) ?? comparisonCeilingFps
     return min(capacity, comparisonCeilingFps)
@@ -186,8 +160,7 @@ final class Calibrator {
 
   private func median() -> Float {
     let count = min(sampleCount, Calibrator.window)
-    // Element-wise: `scratch = samples` would share storage and make the sort copy-on-write a fresh
-    // buffer every call, which is an allocation on the frame path.
+    // Element-wise: `scratch = samples` shares storage, so the sort would allocate a copy.
     for index in 0..<count {
       scratch[index] = samples[index]
     }
@@ -195,7 +168,7 @@ final class Calibrator {
     return scratch[count / 2]
   }
 
-  /// A verdict this calibrator never saw is kept rather than erased: a file job may have recorded it.
+  /// Keeps a verdict this calibrator never saw: a file job may have recorded it.
   private func write(_ model: String) {
     let verdict = gpuVerdict ?? Calibrator.readCache(model, defaults)?.gpu
     let gpu = verdict.map { $0 ? "gpu" : "cpu" } ?? ""
@@ -207,7 +180,7 @@ final class Calibrator {
     return readCache(modelFileName, defaults)?.gpu
   }
 
-  /// Records a file job's verdict beside whatever the camera measured, which it leaves as it was.
+  /// A file job's verdict, stored beside the camera's measurement without touching it.
   static func storeGpu(_ usable: Bool, modelFileName: String, defaults: UserDefaults = .standard) {
     let cached = readCache(modelFileName, defaults)
     let tier = cached?.tier ?? .medium
@@ -215,7 +188,7 @@ final class Calibrator {
     defaults.set("\(tier.rawValue)|\(cached?.p50Ms ?? 0)|\(gpu)", forKey: cacheKey(modelFileName))
   }
 
-  /// One cache entry. `p50Ms` is 0 when only the GPU check has run.
+  /// `p50Ms` is 0 when only the GPU check has run.
   private struct Cached {
     let tier: DeviceTier
     let p50Ms: Float
@@ -232,17 +205,14 @@ final class Calibrator {
     return Cached(tier: tier, p50Ms: p50, gpu: gpu)
   }
 
-  /**
-   Device, model, OS version and MediaPipe version. Any of them changing invalidates by producing a
-   different key rather than by anything having to notice and clear the old one.
-   */
+  /// Device, model, OS and MediaPipe version: any change is a new key, which is the invalidation.
   private static func cacheKey(_ modelFileName: String) -> String {
     let os = ProcessInfo.processInfo.operatingSystemVersion
     return "\(defaultsPrefix)\(hardwareModel())|\(modelFileName)|\(os.majorVersion).\(os.minorVersion)"
       + "|\(MediaPipeVersion.pinned)"
   }
 
-  /// `iPhone16,2` and the like. `UIDevice.model` only ever answers "iPhone", which separates nothing.
+  /// `iPhone16,2` and the like. `UIDevice.model` only ever answers "iPhone".
   private static func hardwareModel() -> String {
     var info = utsname()
     uname(&info)
@@ -259,7 +229,6 @@ enum MediaPipeVersion {
   static let pinned = "0.10.35"
 }
 
-/// The OS thermal status and Low Power Mode, read separately: one is heat, the other is intent.
 final class ThermalMonitor {
   static let sampleIntervalSeconds: TimeInterval = 1
 

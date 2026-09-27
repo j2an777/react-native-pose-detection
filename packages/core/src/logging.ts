@@ -11,15 +11,10 @@ import type {
   Subscription,
 } from './types/logging';
 
-// A multiset: two callers may pass the same handler, and identity dedupe would make one
-// remove() unsubscribe both.
+// A multiset: with identity dedupe, one remove() would unsubscribe a handler added twice.
 const listeners: LogListener[] = [];
 
-/**
- * Batches the module hands over itself, which it does only while no camera is attached: a mounted
- * camera flushes through its own `onLog`, and `<PoseCamera>` passes those on to the registry.
- * Without this a file detection or an export with no camera on screen reached no listener at all.
- */
+/** Batches the module sends itself, only while no camera is mounted to flush them via `onLog`. */
 let moduleBatches: { remove(): void } | null = null;
 
 const stream = logStreamGate(
@@ -70,10 +65,7 @@ function validate(config: LogLevelConfig): ValidationIssue[] {
   return issues;
 }
 
-/**
- * Sets the diagnostic level for every camera. Writes one integer natively, re-initializes nothing.
- * Throws on an unknown level or category rather than silently ignoring it.
- */
+/** Sets the level app-wide, or per category. Throws `PoseConfigError` on an unknown one. */
 export function setLogLevel(config: LogLevelConfig): void {
   const issues = validate(config);
   if (issues.length > 0) throw new PoseConfigError(issues);
@@ -81,7 +73,7 @@ export function setLogLevel(config: LogLevelConfig): void {
   getNativeModule().setLogLevel(config);
 }
 
-/** Entries arrive batched. The native stream runs only while a listener is attached. */
+/** Batches about every 250 ms, camera or not. A function added twice needs two `remove()` calls. */
 export function addLogListener(listener: LogListener): Subscription {
   listeners.push(listener);
   const release = stream.hold();

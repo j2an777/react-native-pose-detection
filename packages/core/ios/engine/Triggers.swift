@@ -19,10 +19,6 @@ enum TriggerEmit {
 struct TriggerSpec {
   let id: String
   let enter: any PoseCondition
-  /**
-   Absent means "when `enter` stops holding". Without that a trigger with no `exit` would go active
-   once and have nothing that could ever return it to idle.
-   */
   let exit: any PoseCondition
   let emit: TriggerEmit
   let debounceMs: Int64
@@ -31,7 +27,7 @@ struct TriggerSpec {
   let throttleMs: Int64
 }
 
-/// One fired trigger. Scalars only: a frame cannot ride an event, see ADR 0009.
+/// Scalars only: a frame cannot ride an event, see ADR 0009.
 struct TriggerFiring {
   let id: String
   let phase: String
@@ -41,15 +37,7 @@ struct TriggerFiring {
   let wantsSnapshot: Bool
 }
 
-/**
- The state machine from `guides/reference/trigger-schema.md`, one per trigger.
-
- ```text
- IDLE   + enter holds → ACTIVE ; emit if 'enter'
- ACTIVE + exit  holds → IDLE   ; count++ ; emit if 'cycle' or 'exit'
- ACTIVE + enter holds → emit if 'while', throttled
- ```
- */
+/// One trigger's state machine, as in `guides/reference/trigger-schema.md`.
 final class TriggerRuntime {
   let spec: TriggerSpec
 
@@ -63,16 +51,12 @@ final class TriggerRuntime {
   private var lastFireMs: Int64 = 0
   private var lastWhileMs: Int64 = 0
 
-  /// `initialCount` is carried across a props update by the engine. Only unmount starts from zero.
   init(spec: TriggerSpec, initialCount: Int = 0) {
     self.spec = spec
     self.count = initialCount
   }
 
-  /**
-   A hold has to be continuous, so a frame with no pose ends one. The active state survives:
-   somebody stepping out of frame mid-rep has not finished the rep, and has not abandoned it either.
-   */
+  /// Breaks a hold, which must be continuous, but keeps an active trigger active.
   func onPoseLost() {
     holdSince = 0
   }
@@ -89,8 +73,7 @@ final class TriggerRuntime {
 
     if holdSince == 0 { holdSince = nowMs }
     if nowMs - holdSince < spec.minDurationMs { return nil }
-    // Debounce suppresses re-entry, not the hold: the condition keeps being measured, it just
-    // cannot fire again yet.
+    // Debounce delays re-entry, not the hold: `holdSince` keeps counting meanwhile.
     if lastFireMs != 0 && nowMs - lastFireMs < spec.debounceMs { return nil }
 
     active = true
@@ -147,8 +130,7 @@ final class TriggerRuntime {
 
     holdSince = 0
     guard spec.emit == .whileActive else { return nil }
-    // `while` needs `enter` to hold, not only `exit` not to: between the two thresholds of a
-    // trigger with both, it is still active but `enter` no longer holds.
+    // `while` needs `enter` to hold: between an enter and an exit threshold, both fail.
     guard spec.enter.matches(frame) else { return nil }
     if lastWhileMs != 0 && nowMs - lastWhileMs < spec.throttleMs { return nil }
 
@@ -165,17 +147,9 @@ final class TriggerRuntime {
   }
 }
 
-/**
- Every trigger on one camera. Rebuilt when the `triggers` prop changes, carrying counts across by
- id: a re-render is not an unmount, and `count` is documented to survive everything but one.
- */
+/// Every trigger on one camera, rebuilt on a `triggers` prop change with counts carried by id.
 final class TriggerEngine {
-  /**
-   Swift has no `volatile`, and an array is not safely published by assignment: the inference
-   thread could see the reference before the elements. The lock is taken around the whole
-   evaluation rather than around a copy, because copying the array per frame is ARC traffic on the
-   frame path and `setTriggers` runs on a props update, not on a frame.
-   */
+  /// Held for the whole evaluation, not around a copy: a per-frame array copy is ARC traffic.
   private let lock = NSLock()
   private var runtimes: [TriggerRuntime] = []
 
@@ -203,7 +177,7 @@ final class TriggerEngine {
     }
   }
 
-  /// Appends to `sink` rather than returning an array, so a frame that fires nothing allocates nothing.
+  /// Appends to `sink`, so a frame that fires nothing allocates nothing.
   func evaluate(_ frame: FrameContext, nowMs: Int64, into sink: inout [TriggerFiring]) {
     lock.lock()
     defer { lock.unlock() }

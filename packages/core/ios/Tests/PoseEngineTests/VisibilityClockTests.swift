@@ -4,7 +4,6 @@ import XCTest
 final class VisibilityClockTests: XCTestCase {
   private let clock = VisibilityClock()
 
-  /// MediaPipe's own filter, per frame: the first value passes through, then 0.1 of each new one.
   private final class MediaPipeFilter {
     private var value = Float.nan
 
@@ -23,7 +22,6 @@ final class VisibilityClockTests: XCTestCase {
     return landmarks
   }
 
-  /// Feeds `models` through MediaPipe's filter at `intervalMs` and then the clock.
   private func run(_ models: [Float], intervalMs: Double) -> [Float] {
     let mediaPipe = MediaPipeFilter()
     return models.enumerated().map { index, model in

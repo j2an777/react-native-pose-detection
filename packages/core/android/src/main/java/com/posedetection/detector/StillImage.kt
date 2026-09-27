@@ -19,31 +19,12 @@ import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/**
- * A photo decoded upright and no larger than it needs to be.
- *
- * `BitmapFactory.decodeStream` decodes the whole file at full size and ignores the EXIF
- * orientation: a 12-megapixel photo is a 48 MB bitmap, and a portrait one stored sideways reaches
- * MediaPipe sideways. From Android 9, `ImageDecoder` decodes straight to the size asked for with
- * the orientation applied. Before it, `BitmapFactory` samples the decode down by a power of two and
- * the orientation is applied afterwards, from the file's EXIF.
- *
- * Always a software ARGB_8888 bitmap: MediaPipe reads the pixels, which a hardware bitmap does not
- * allow, and takes no other format.
- */
+/** Always a software ARGB_8888 bitmap: MediaPipe reads the pixels and takes no other format. */
 internal object StillImage {
-    /**
-     * The long side a photo is decoded to for detection. The detector sees 224 pixels of the whole
-     * frame and the landmark model a 256-pixel crop around the body, so at 1920 that crop is sampled
-     * down rather than stretched for anybody taller than about a seventh of the picture. A larger
-     * decode costs memory and finds nobody new.
-     */
+    /** The model sees a 256 px crop: at 1920 anyone over a seventh of the frame is still sampled down. */
     const val DETECTION_MAX_PIXELS = 1920
 
-    /**
-     * Upright, with the long side at most [maxPixels], or at full size when that is null. Never
-     * upscaled. Null when the source cannot be read or is not an image.
-     */
+    /** Upright, long side at most [maxPixels] (null: full size), never upscaled; null if unreadable. */
     fun decode(
         context: Context,
         uri: String,
@@ -80,7 +61,6 @@ internal object StillImage {
         return ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
-            // Both sides scaled by one factor, so the aspect holds whichever way the size is reported.
             val longSide = max(info.size.width, info.size.height)
             if (maxPixels != null && longSide > maxPixels) {
                 val factor = maxPixels.toFloat() / longSide
@@ -97,7 +77,7 @@ internal object StillImage {
         uri: String,
         maxPixels: Int?,
     ): Bitmap? {
-        // Read three times: bounds, pixels, EXIF. A download is fetched once and read from memory.
+        // Read three times (bounds, pixels, EXIF), so a download is fetched once and read from memory.
         val downloaded = if (Uri.parse(uri).scheme in REMOTE) download(uri) else null
         val open = { downloaded?.let { ByteArrayInputStream(it) } ?: open(context, uri) }
 
@@ -120,7 +100,6 @@ internal object StillImage {
         return transform(sampled, orientation, maxPixels)
     }
 
-    /** The largest power of two that still leaves the long side at or above [maxPixels]. */
     fun sampleSize(
         longSide: Int,
         maxPixels: Int?,
@@ -131,7 +110,7 @@ internal object StillImage {
         return sample
     }
 
-    /** The EXIF orientation applied and the last step of the downscale, in one pass. */
+    /** BitmapFactory ignores EXIF orientation, so it is applied here with the last downscale step. */
     private fun transform(
         bitmap: Bitmap,
         orientation: Int,
@@ -190,7 +169,6 @@ internal object StillImage {
             ?: throw StaticDetectionError(ErrorCode.IMAGE_DECODE_FAILED, "could not open $uri")
     }
 
-    /** A picture fetched whole, as iOS does: the photo is decoded from memory, never streamed twice. */
     private fun download(uri: String): ByteArray = URL(uri).openStream().use { it.readBytes() }
 
     private val REMOTE = setOf("http", "https")

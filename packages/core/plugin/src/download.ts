@@ -56,10 +56,7 @@ async function sizeOf(filePath: string): Promise<number | null> {
   }
 }
 
-/**
- * A size check alone passes on a file a full disk truncated to the right length, which crashes
- * natively at model load rather than failing the build.
- */
+/** Hashed too: a right-sized file of wrong bytes would crash at model load, not fail the build. */
 export async function verifyFile(filePath: string, model: ModelEntry): Promise<Verification> {
   const bytes = await sizeOf(filePath);
   if (bytes === null) return { ok: false, sha256: null, bytes: null };
@@ -69,7 +66,6 @@ export async function verifyFile(filePath: string, model: ModelEntry): Promise<V
   return { ok: sha256 === model.sha256, sha256, bytes };
 }
 
-/** The two lines every mismatch message carries, built from what the check already computed. */
 export function describeMismatch(model: ModelEntry, result: Verification): string {
   const received =
     result.sha256 === null
@@ -130,8 +126,7 @@ async function acquireCacheLock(cachePath: string, fileName: string): Promise<Lo
       await handle.writeFile(`${process.pid}\n`);
       await handle.close();
 
-      // The heartbeat is what makes the staleness check safe: a slow 30 MB download keeps
-      // touching the lock, so only a holder that died ever looks stale.
+      // The heartbeat keeps a slow download's lock fresh, so only a dead holder's looks stale.
       const heartbeat = setInterval(() => {
         const now = new Date();
         void utimes(lockPath, now, now).catch(() => undefined);
@@ -169,7 +164,6 @@ function parseContentRange(header: string | null): { start: number; total: numbe
   return { start: Number(match[1]), total: Number(match[3]) };
 }
 
-/** One transfer attempt. `FatalTransferError` means retrying cannot help. */
 async function transfer(model: ModelEntry, partial: string): Promise<void> {
   let resumeFrom = (await sizeOf(partial)) ?? 0;
 
@@ -204,8 +198,7 @@ async function transfer(model: ModelEntry, partial: string): Promise<void> {
     const body = response.body;
     if (!body) throw new FatalTransferError('the response had an empty body');
 
-    // A server that ignores Range answers 200 with the whole file. Appending then would corrupt
-    // the result, so treat it as a fresh download.
+    // A server that ignores Range answers 200 with the whole file: start over, don't append.
     const resuming = resumeFrom > 0 && response.status === 206;
     if (resumeFrom > 0 && !resuming) {
       await rm(partial, { force: true });
@@ -215,8 +208,7 @@ async function transfer(model: ModelEntry, partial: string): Promise<void> {
     if (resuming) {
       const range = parseContentRange(response.headers.get('content-range'));
       if (range === null || range.start !== resumeFrom || range.total !== model.bytes) {
-        // A proxy answering from a different offset would be appended at the wrong place and
-        // only caught by the checksum, which reads as tampering rather than a broken cache.
+        // A range at another offset would corrupt the file and fail the checksum as tampering.
         await body.cancel();
         await rm(partial, { force: true });
         throw new Error(
@@ -234,8 +226,7 @@ async function transfer(model: ModelEntry, partial: string): Promise<void> {
     source.on('data', (chunk: Buffer) => {
       received += chunk.length;
       if (received > model.bytes) {
-        // The manifest records the exact size, so anything longer is a captive portal or a
-        // proxy, and letting it run fills the disk before the checksum ever gets to speak.
+        // Longer than the manifest's exact size is a captive portal or a proxy: stop it early.
         source.destroy(
           new FatalTransferError(
             `the server sent more than the ${model.bytes} bytes the manifest records`,
@@ -319,8 +310,7 @@ export async function ensureModel(
   }
 
   if (options.skipDownload) {
-    // skipDownload wins over force: there is no network to force a fresh copy out of. A damaged
-    // entry is left alone rather than deleted, because this machine cannot fetch it again.
+    // skipDownload wins over force, and a damaged entry is kept: this machine cannot fetch another.
     if (cached.ok) {
       log.line(`model "${model.variant}" found in cache`);
       return cachePath;
@@ -345,8 +335,7 @@ export async function ensureModel(
   if (cached.bytes === null) {
     log.line(`model "${model.variant}" not in cache`);
   } else if (!cached.ok) {
-    // A cached file that no longer verifies is a damaged cache, not a rejected download. It is
-    // removed and fetched again, and the fresh copy still has to verify or the build fails.
+    // A damaged cache, not a rejected download, so it is fetched again. See ADR 0006.
     log.warn(
       `cached ${model.fileName} failed verification, re-downloading\n  ` +
         describeMismatch(model, cached),
@@ -392,8 +381,8 @@ export async function clearCache(cacheDir: string = DEFAULT_CACHE_DIR): Promise<
 
     const filePath = join(cacheDir, name);
     if (name.endsWith('.lock')) {
-      // Deleting a lock another process is holding would let a second download start into the
-      // same path. A stale one is already swept by whoever asks for it next.
+      // A live lock stays, or a second download could start into the same path. Stale ones are
+      // swept by the next download.
       const age = await ageOf(filePath);
       if (age !== null && age <= LOCK_STALE_MS) continue;
     }

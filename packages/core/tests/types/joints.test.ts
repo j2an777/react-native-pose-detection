@@ -79,7 +79,7 @@ test('each angle triple is two connected limb segments', () => {
 });
 
 test('the guards reject inherited Object keys', () => {
-  // `value in JOINT_INDEX` walked the prototype chain, so these passed and reached the evaluator.
+  // `value in JOINT_INDEX` would walk the prototype chain and pass these.
   for (const key of ['toString', 'constructor', 'hasOwnProperty', '__proto__', 'valueOf']) {
     assert.strictEqual(isJointName(key), false);
     assert.strictEqual(isAngleJointName(key), false);

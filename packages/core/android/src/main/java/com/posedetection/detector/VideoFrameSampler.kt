@@ -27,20 +27,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
-/**
- * A video's frames in order, each decoded once, handing back only the ones a sampling rate asks
- * for, upright and scaled down.
- *
- * `MediaMetadataRetriever.getFrameAtTime` seeks for every sample. Each seek decodes forward from the
- * keyframe before it and returns a full-size bitmap, so ten samples a second of a clip with
- * two-second keyframes decode most frames several times over. A codec decodes each frame exactly
- * once, and a frame between samples is released without being drawn, so it costs the decode and
- * nothing else. A sampled frame is drawn by GL into a small offscreen surface, which turns, scales
- * and converts it in one pass, and is read back into a bitmap from a small pool that every sample
- * reuses.
- *
- * Built, used and closed on one thread: the EGL context is bound to it.
- */
+/** A codec, not a seek per sample, so each frame decodes once. One thread only: EGL is bound to it. */
 internal class VideoFrameSampler(
     context: Context,
     uri: String,
@@ -49,13 +36,12 @@ internal class VideoFrameSampler(
     endMs: Long,
 ) : Closeable {
     class Frame(
-        /** Valid until the next call to [next], which reuses its pixels for a later sample. */
+        /** Valid until the next [next] call, which reuses its pixels. */
         val bitmap: Bitmap,
-        /** Where the frame sits in the video, in milliseconds. */
         val timestampMs: Long,
     )
 
-    /** The upright frame, which is what landmarks are normalized against. */
+    /** Upright, which is what landmarks are normalized against. */
     val width: Int
     val height: Int
     val startMs: Long
@@ -103,7 +89,6 @@ internal class VideoFrameSampler(
             val turned = rotation == QUARTER || rotation == THREE_QUARTERS
             val naturalWidth = format.getInteger(MediaFormat.KEY_WIDTH)
             val naturalHeight = format.getInteger(MediaFormat.KEY_HEIGHT)
-            // Capped and even, exactly like an export's canvas, which is the size GL draws into.
             val size =
                 ExportCanvas.size(
                     if (turned) naturalHeight else naturalWidth,
@@ -120,8 +105,7 @@ internal class VideoFrameSampler(
             val mime = format.getString(MediaFormat.KEY_MIME) ?: throw decodeFailure("the video track has no type")
             val codec = MediaCodec.createDecoderByType(mime)
             this.codec = codec
-            // The rotation is applied by GL, so it must not reach the decoder as well: some devices
-            // honour it on a surface and the frame would come out turned twice.
+            // GL applies the rotation; some decoders also honour it on a surface, turning the frame twice.
             format.setInteger(MediaFormat.KEY_ROTATION, 0)
             codec.configure(format, reader.surface, null, 0)
             codec.start()
@@ -135,13 +119,7 @@ internal class VideoFrameSampler(
         }
     }
 
-    /**
-     * The next sample, or null at the end of the range: each is the earliest frame in its slot of
-     * the sampling grid, in time order whatever order the decoder returns frames in. See
-     * [SampleSlots].
-     */
     fun next(): Frame? {
-        // The caller is done with the frame it had: its pixels can take a later sample.
         handedOut?.let { spare.addLast(it) }
         handedOut = null
         while (true) {
@@ -176,7 +154,7 @@ internal class VideoFrameSampler(
         val ended = info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0
         val slot = if (info.size > 0) slots.wants(ptsUs) else null
         PoseLog.trace(LogCategory.ENGINE) { "decoded ${ptsUs / MICROS_PER_MILLI} ms, slot ${slot ?: "none"}" }
-        // Only a wanted frame is drawn. Every other one is handed back undrawn, which is free.
+        // Unwanted frames are released undrawn, which costs nothing.
         codec.releaseOutputBuffer(index, slot != null)
         if (ended || slots.pastRange()) outputDone = true
         if (slot == null) return
@@ -191,14 +169,13 @@ internal class VideoFrameSampler(
         slots.fill(slot, ptsUs, bitmap)
     }
 
-    /** How far through the range a frame is, 0 to 1. */
     fun progress(frame: Frame): Float {
         if (endMs == Long.MAX_VALUE) return 0f
         val span = (endMs - startMs).coerceAtLeast(1L)
         return ((frame.timestampMs - startMs).toFloat() / span).coerceIn(0f, 1f)
     }
 
-    /** True once the extractor has nothing left and the end of stream has been queued. */
+    /** True once the end of stream has been queued. */
     private fun feed(codec: MediaCodec): Boolean {
         val index = codec.dequeueInputBuffer(TIMEOUT_US)
         if (index < 0) return false
@@ -240,12 +217,7 @@ internal class VideoFrameSampler(
     private fun decodeFailure(message: String) = StaticDetectionError(ErrorCode.VIDEO_DECODE_FAILED, message)
 
     companion object {
-        /**
-         * The long side frames are drawn at. The detector sees 224 pixels of the whole frame and the
-         * landmark model a 256-pixel crop around the body, so at 960 that crop is sampled down
-         * rather than stretched for anybody taller than about 40% of a landscape frame. That is
-         * already better than the live camera's 480p, and a file has no deadline to trade detail for.
-         */
+        /** At 960 the 256 px crop still samples down anyone over 40% of a landscape frame. */
         const val MAX_LONG_SIDE = 960
 
         private const val MICROS_PER_SECOND = 1_000_000L
@@ -257,14 +229,6 @@ internal class VideoFrameSampler(
     }
 }
 
-/**
- * The GL half of [VideoFrameSampler]: an offscreen surface the size of a sample, the decoder's
- * frames arriving as an external texture, and a read back into a bitmap.
- *
- * `glReadPixels` returns the bottom row first and a bitmap starts with the top one, so the quad is
- * drawn upside down, which lands the picture in the bitmap upright. The rotation quads are the
- * export's own, so a sampled frame and an exported one are turned by the same table.
- */
 private class FrameReader(
     private val width: Int,
     private val height: Int,
@@ -297,8 +261,7 @@ private class FrameReader(
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
         surfaceTexture = SurfaceTexture(texture)
         surfaceTexture.setDefaultBufferSize(width, height)
-        // Delivered on main, never on the thread that built this: a thread with a looper that is
-        // blocked waiting for the frame would never run the callback that says it arrived.
+        // On main: the building thread blocks waiting for this callback, so it could never run there.
         surfaceTexture.setOnFrameAvailableListener({
             synchronized(frameAvailable) {
                 hasFrame = true
@@ -355,7 +318,7 @@ private class FrameReader(
         check(EGL14.eglMakeCurrent(display, eglSurface, eglSurface, context)) { "could not bind the EGL context" }
     }
 
-    /** Waits for the frame the decoder was just told to draw, then reads it upright into [into]. */
+    /** False when the frame the decoder was told to draw never arrives. */
     fun read(
         rotationDegrees: Int,
         into: Bitmap,
@@ -375,7 +338,7 @@ private class FrameReader(
         val quad = ExportGl.quadFor(rotationDegrees)
         positions.clear()
         for (index in quad.indices) {
-            // Odd entries are y: flipped, so the bottom-up read lands top-down in the bitmap.
+            // Odd entries are y, flipped: glReadPixels returns the bottom row first.
             positions.put(if (index % 2 == 1) -quad[index] else quad[index])
         }
         positions.position(0)

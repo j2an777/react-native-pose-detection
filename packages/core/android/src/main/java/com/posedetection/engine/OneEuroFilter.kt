@@ -3,22 +3,8 @@ package com.posedetection.engine
 import com.posedetection.Skeleton
 import kotlin.math.abs
 
-/**
- * One-Euro filter over the landmark buffer, in place.
- *
- * The trade every smoother makes is lag against jitter. This one moves the cutoff with the speed
- * of the signal: slow movement is filtered hard, because that is where jitter is visible and lag
- * is not; fast movement is barely filtered, because that is where lag is visible and jitter is
- * not. `minCutoff` sets how hard the slow case is filtered, `beta` how quickly it gets out of the
- * way when things move.
- *
- * Visibility is left alone. It is a confidence, not a position, and smoothing it would make a
- * joint that has just left frame keep reading as present.
- *
- * Casteljau et al., "1e Filter: A Simple Speed-based Low-pass Filter", CHI 2012.
- */
+/** The One-Euro filter (Casiez et al., CHI 2012), in place over the landmark buffer. */
 internal class OneEuroFilter {
-    /** Filtered value and filtered derivative per axis, x/y/z of every landmark. */
     private val values = FloatArray(Skeleton.LANDMARK_COUNT * AXES)
     private val derivatives = FloatArray(Skeleton.LANDMARK_COUNT * AXES)
     private var primed = false
@@ -48,16 +34,8 @@ internal class OneEuroFilter {
     }
 
     /**
-     * [elapsedSeconds] is the real interval, not a nominal one: the filter's whole behavior is a
-     * function of it, and feeding a constant makes it lie whenever a frame is late. A non-positive
-     * or unknown interval is a gap, so the frame passes through untouched and the filter starts
-     * over from it. Keeping the state from before the gap would filter the next frame against a
-     * position the body left long ago.
-     *
-     * [scaleX] and [scaleY] turn a speed in normalized units into one in body spans: the span in
-     * each axis's own units, so a distant subject's small movements count as much as a near one's
-     * large ones. Depth rides with x, which is how MediaPipe scales it. Left at 1, speeds are frame
-     * units.
+     * [elapsedSeconds] is the real interval, not a nominal one; `NaN` or non-positive restarts here.
+     * [scaleX] and [scaleY] are the body span per axis, making speeds spans per second; z uses x's.
      */
     fun apply(
         landmarks: FloatArray,
@@ -106,7 +84,7 @@ internal class OneEuroFilter {
         primed = true
     }
 
-    /** A span can collapse to nothing on a half-visible body; dividing by it would read as infinite speed. */
+    /** A half-visible body's span can collapse to nothing, which would read as infinite speed. */
     private fun usableScale(scale: Float): Float = if (scale.isFinite()) maxOf(scale, MINIMUM_SCALE) else 1f
 
     private fun alpha(
@@ -118,33 +96,18 @@ internal class OneEuroFilter {
     }
 
     companion object {
-        /** x, y, z. Visibility is index 3 and is deliberately not one of these. */
+        /** x, y, z. Not visibility: smoothed, it keeps a joint that left the frame looking present. */
         private const val AXES = 3
 
-        /**
-         * The cutoff a body that is not moving is smoothed at. Low, because jitter lives there.
-         *
-         * This and [DEFAULT_BETA] are MediaPipe's own constants for pose landmarks, the filter it
-         * runs itself whenever it tracks one body. Measured in the same units, body spans per
-         * second, the two filters feel the same, so a session that goes from one pose to several
-         * does not suddenly lag.
-         */
+        /** Hz. With [DEFAULT_BETA], MediaPipe's own single-pose values, in the same body-span units. */
         const val DEFAULT_MIN_CUTOFF = 0.05f
 
-        /**
-         * How hard the cutoff rises with speed, and the reason this filter is worth having.
-         *
-         * `cutoff = minCutoff + beta * speed`, with speed in body spans per second. A brisk arm
-         * moves about one span a second, which 80 turns into a cutoff near 80 Hz: no lag at all. A
-         * resting body stays near [DEFAULT_MIN_CUTOFF], which is where the jitter is filtered out.
-         * The earlier default of 4, in frame units, left the skeleton a tenth of a second behind
-         * every slow movement.
-         */
+        /** A brisk arm, about one body span a second, lifts the cutoff to about 80 Hz: no lag. */
         const val DEFAULT_BETA = 80f
 
         private const val MINIMUM_SCALE = 0.05f
 
-        /** The derivative's own cutoff. 1 Hz is the value the paper uses and rarely needs changing. */
+        /** Hz, the paper's value. */
         private const val DERIVATIVE_CUTOFF = 1.0f
 
         private const val TAU = (2.0 * Math.PI).toFloat()

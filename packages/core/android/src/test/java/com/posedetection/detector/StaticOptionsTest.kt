@@ -5,7 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** What a photo or video job runs with when the caller leaves things out, and what it refuses. */
 class StaticOptionsTest {
     @Test
     fun `confidence follows maxPoses unless chosen`() {

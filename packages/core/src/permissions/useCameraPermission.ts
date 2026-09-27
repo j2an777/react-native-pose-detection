@@ -9,10 +9,8 @@ export type UseCameraPermission = CameraPermission & {
   /** Prompt again. Returns the outcome, and is also written to the hook's state. */
   readonly request: () => Promise<CameraPermission>;
   /**
-   * Set when the native module could not answer, which means the app was built without it: an
-   * Expo Go session, or a bare app that has not run `pod install` or a Gradle sync since adding
-   * the package. `status` stays `undetermined` in that case, so an app that ignores this still
-   * refuses to open the camera rather than opening one it has no permission for.
+   * Set when reading or asking fails, which means an incomplete install such as Expo Go. `status`
+   * then stays `undetermined`, so `granted` stays false.
    */
   readonly error?: Error;
 };
@@ -23,18 +21,7 @@ const UNDETERMINED: CameraPermission = {
   canAskAgain: true,
 };
 
-/**
- * The camera permission, asked for on mount.
- *
- * ```tsx
- * const { granted } = useCameraPermission();
- * return granted ? <PoseCamera style={StyleSheet.absoluteFill} /> : <Explain />;
- * ```
- *
- * Pass `{ ask: false }` to read the status without prompting, for an app that wants to choose the
- * moment. Nothing else in this package prompts: `<PoseCamera>` reports `PERMISSION_DENIED` and
- * stops, because when to ask is a product decision and a dialog at mount is rarely the answer.
- */
+/** The camera permission as React state, asked for on mount unless `ask` is `false`. */
 export function useCameraPermission(options?: { ask?: boolean }): UseCameraPermission {
   const ask = options?.ask ?? true;
 
@@ -43,8 +30,7 @@ export function useCameraPermission(options?: { ask?: boolean }): UseCameraPermi
   const [error, setError] = React.useState<Error | undefined>(undefined);
 
   const mounted = React.useRef(true);
-  // A second prompt while one is open is rejected by the system, and StrictMode runs effects
-  // twice, so the in-flight call is shared rather than started again.
+  // Shared, not restarted: the system rejects a second prompt, and StrictMode runs effects twice.
   const inFlight = React.useRef<Promise<CameraPermission> | null>(null);
 
   React.useEffect(() => {

@@ -6,11 +6,7 @@ import type { ModelEntry } from './manifest';
 import { MODEL_FILE_PATTERN } from './manifest';
 import type * as Pbxproj from './pbxproj';
 
-/**
- * Where an app's Android project and its application module are, relative to the project root.
- * The React Native template and Expo's prebuild both use `android/app`; React Native's own CLI
- * lets `react-native.config.js` name others, see `readAndroidProject` in the CLI.
- */
+/** Relative to the project root: `android/app` unless react-native.config.js names others. */
 export type AndroidProject = { readonly sourceDir: string; readonly appName: string };
 
 export const DEFAULT_ANDROID_PROJECT: AndroidProject = { sourceDir: 'android', appName: 'app' };
@@ -56,10 +52,7 @@ export async function removeInstalledModels(dir: string, keep?: string): Promise
   return removed;
 }
 
-/**
- * Re-verified after the copy: this is the step that puts bytes into the native project, and the
- * cache it reads is shared with every other process on the machine.
- */
+/** Re-verified after the copy: the cache it reads is shared with every process on the machine. */
 export async function installModelFile(
   sourcePath: string,
   destDir: string,
@@ -87,10 +80,7 @@ export async function installModelFile(
   return destPath;
 }
 
-/**
- * Asks expo the same question the config plugin asks, so a renamed project gets one answer
- * rather than two disagreeing heuristics. Loaded on demand, the CLI works without `expo`.
- */
+/** Asks expo, as the config plugin does, so both agree. On demand: the CLI works without `expo`. */
 async function iosProjectNameFromExpo(projectRoot: string): Promise<string | null> {
   try {
     const xcode: typeof Pbxproj = await import('./pbxproj.js');

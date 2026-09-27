@@ -1,35 +1,20 @@
 import AVFoundation
 import UIKit
 
-/**
- A video's frames in order, each decoded once and scaled down, handing back only the ones a
- sampling rate asks for.
-
- `AVAssetImageGenerator` seeks for every sample. Each seek decodes forward from the keyframe before
- it at full size, so ten samples a second of a clip with two-second keyframes decode most frames
- several times over. A reader decodes each frame exactly once, and the scaling happens in the
- decoder's own output path, so what reaches MediaPipe is already small.
-
- Frames keep the file's storage orientation. `orientation` is what MediaPipe is told, so landmarks
- come back in the upright picture's space, which is the space `size` describes.
- */
+/// An `AVAssetReader` decodes each frame once, already scaled; an image generator's per-sample
+/// seeks decode most frames several times over. See ADR 0012.
 final class VideoFrameSampler {
-  /**
-   The long side frames are decoded to. The detector sees 224 pixels of the whole frame and the
-   landmark model a 256-pixel crop around the body, so at 960 that crop is sampled down rather than
-   stretched for anybody taller than about 40% of a landscape frame. That is already better than
-   the live camera's 480p, and a file has no deadline to trade detail for.
-   */
+  /// At 960 the model's 256-pixel body crop is sampled down for anyone over about 40% of a
+  /// landscape frame, already more than the live camera's 480p gives.
   static let maxLongSide = 960
 
   struct Frame {
     let buffer: CVPixelBuffer
-    /// Where the frame sits in the video, in milliseconds.
     let timestampMs: Int64
   }
 
   let orientation: UIImage.Orientation
-  /// The upright frame, which is what landmarks are normalized against.
+  /// Upright, unlike the frames, which keep the file's storage orientation.
   let size: CGSize
   let startMs: Int64
   let endMs: Int64
@@ -52,7 +37,7 @@ final class VideoFrameSampler {
     dueMs = self.startMs
 
     orientation = VideoFrameSampler.orientation(for: AssetCompat.preferredTransform(track))
-    // Capped and even, exactly like an export's canvas, which is what the decoder scales to.
+    // Capped and even, like an export's canvas; the decoder scales to it.
     let scaled = exportCanvasSize(display: AssetCompat.naturalSize(track), maxSize: VideoFrameSampler.maxLongSide)
     let turned = orientation == .left || orientation == .right
     size = turned ? CGSize(width: scaled.height, height: scaled.width) : scaled
@@ -62,8 +47,7 @@ final class VideoFrameSampler {
     } catch {
       throw StaticDetectionError(.videoDecodeFailed, error.localizedDescription)
     }
-    // The reader starts at the keyframe before `startMs` and stops at `endMs`, so a trimmed range
-    // decodes the range and not the whole clip.
+    // Decodes only the range, from the keyframe before `startMs`.
     reader.timeRange = CMTimeRange(
       start: CMTime(value: CMTimeValue(self.startMs), timescale: 1_000),
       end: CMTime(value: CMTimeValue(self.endMs), timescale: 1_000)
@@ -73,7 +57,7 @@ final class VideoFrameSampler {
       kCVPixelBufferWidthKey as String: Int(scaled.width),
       kCVPixelBufferHeightKey as String: Int(scaled.height)
     ])
-    // Detection reads each buffer once and lets it go, so a copy per frame would buy nothing.
+    // Each buffer is read once and released, so a copy would buy nothing.
     output.alwaysCopiesSampleData = false
     guard reader.canAdd(output) else {
       throw StaticDetectionError(.videoDecodeFailed, "could not read frames from \(url.lastPathComponent)")
@@ -95,14 +79,10 @@ final class VideoFrameSampler {
     case frame(Frame)
   }
 
-  /**
-   The next frame a sample is due at, or nil at the end of the range. Samples stay on an even grid
-   from `startMs`, so one late frame does not push every later sample back with it.
-   */
+  /// Nil at the end of the range. Samples keep to a grid from `startMs`: a late frame shifts none.
   func next() throws -> Frame? {
     while true {
-      // One pool per decoded frame, skipped ones included: this loop never returns to a run loop,
-      // and the reader's autoreleased objects would otherwise pile up until the job ends.
+      // Per decoded frame, skipped ones too: the job never yields to a run loop to drain one.
       switch autoreleasepool(invoking: readOne) {
       case .skipped:
         continue
@@ -129,13 +109,11 @@ final class VideoFrameSampler {
     return .frame(Frame(buffer: buffer, timestampMs: timestampMs))
   }
 
-  /// How far through the range a frame is, 0 to 1.
   func progress(of frame: Frame) -> Float {
     let span = max(1, endMs - startMs)
     return min(1, max(0, Float(frame.timestampMs - startMs) / Float(span)))
   }
 
-  /// A track's transform as the orientation MediaPipe and UIKit take.
   static func orientation(for transform: CGAffineTransform) -> UIImage.Orientation {
     switch (transform.a, transform.b, transform.c, transform.d) {
     case (0, 1, -1, 0): return .right

@@ -20,18 +20,10 @@ import { Card } from '../components/Glass';
 import { NAV_CLEARANCE } from '../components/NavBar';
 import { theme } from '../theme';
 
-/**
- * Where painted files land.
- *
- * The package defaults to the cache directory, since an export is derived data. This app asks for
- * a directory of its own under Documents instead, which is the point being shown: what comes back
- * is an ordinary file in a place the app chose, so it can be listed, previewed, uploaded or deleted
- * with whatever the app already uses for files.
- */
+/** `exportPose()` writes to the cache by default; this app keeps its exports in Documents. */
 const EXPORT_DIR = 'exported';
 const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.m4v'];
-// The package takes its confidence threshold from this when none is given, so picking more than one
-// here is also what lowers the bar enough for a second body to be returned at all.
+// `maxPoses` above 1 also lowers the default `minConfidence` enough to find a second body.
 const PEOPLE = ['1', '2', '3', '4', '5'] as const;
 
 const isVideo = (uri: string) => VIDEO_EXTENSIONS.some((ext) => uri.toLowerCase().endsWith(ext));
@@ -68,7 +60,6 @@ export function UploadScreen() {
             size: file.size ?? 0,
             at: file.lastModified ?? 0,
           }))
-          // Newest first: the file somebody just made is the one they came back to look at.
           .sort((a, b) => b.at - a.at || a.name.localeCompare(b.name)),
       );
     } catch (problem) {
@@ -281,7 +272,6 @@ export function UploadScreen() {
   );
 }
 
-/** Relative for anything from today, so the newest files read as newest at a glance. */
 function when(at: number) {
   if (!at) return 'just now';
   const minutes = Math.round((Date.now() - at) / 60_000);
@@ -291,7 +281,6 @@ function when(at: number) {
   return new Date(at).toLocaleDateString();
 }
 
-/** Full screen playback for anything already in the folder. */
 function Viewer({ entry, onClose }: { entry: Entry | null; onClose: () => void }) {
   return (
     <Modal
@@ -450,8 +439,6 @@ const styles = StyleSheet.create({
     fontSize: theme.font.body,
     fontWeight: '600',
   },
-  // The pill turns pale while it works, so the label has to stop being the color of the pill it
-  // was sitting on.
   dropLabelBusy: {
     color: theme.color.text,
   },

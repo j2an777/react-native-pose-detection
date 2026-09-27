@@ -1,19 +1,12 @@
 import Foundation
 
-/// Pure functions over the flat landmark buffer. No allocation, no state, no camera.
+/// Pure functions over the flat landmark buffer: no allocation, no state.
 enum Geometry {
   private static let epsilon: Float = 1e-6
   private static let degreesPerRadian = Float(180.0 / Double.pi)
 
-  /**
-   The angle at `vertex`, in degrees, 0 to 180.
-
-   MediaPipe divides x by width and y by height, so on a non-square frame the normalized space is
-   anisotropic and an angle read straight off it is wrong by tens of degrees. The frame size is
-   what puts both axes back in a common unit.
-
-   `Float.nan` when the triangle is degenerate: 0 would be indistinguishable from a folded joint.
-   */
+  /// Degrees, 0 to 180. NaN when degenerate: 0 would read as a folded joint.
+  /// x is scaled by aspect: normalized space is anisotropic on a non-square frame.
   static func angleDegrees(
     _ landmarks: [Float],
     proximal: Int,
@@ -41,10 +34,7 @@ enum Geometry {
     return acos(cosine) * degreesPerRadian
   }
 
-  /**
-   Direction of the angle's bisector, for placing the arc and its label. Takes projected screen
-   pixels: a direction taken before projection lands outside the joint on a mirrored preview.
-   */
+  /// Takes projected screen pixels: a pre-projection direction is wrong on a mirrored preview.
   static func bisectorRadians(
     proximalX: Float,
     proximalY: Float,
@@ -73,18 +63,8 @@ enum Geometry {
     return landmarks[joint * Skeleton.landmarkStride + Skeleton.offsetVisibility]
   }
 
-  /**
-   Visibility-weighted center of mass, written to `out[offset]` and `out[offset + 1]`.
-
-   Hip 0.5, ankle 0.3, knee 0.2, each side carrying half of its pair's weight and scaled by its
-   own visibility, so one occluded leg shifts the result toward the leg that is actually visible
-   rather than toward the midpoint of a guess. `NaN` when nothing is visible enough to weigh: a
-   fallback would be a position the body is not in.
-
-   Normalized frame coordinates, uncorrected. It is compared against other normalized positions,
-   which are anisotropic in the same way, and correcting one side of that comparison is what would
-   make it wrong.
-   */
+  /// Weighted by visibility, so one occluded leg does not drag it; NaN when nothing is visible.
+  /// Normalized and uncorrected for aspect, like the positions it is compared against.
   static func centerOfMass(_ landmarks: [Float], into out: inout [Float], at offset: Int) {
     var sumX: Float = 0
     var sumY: Float = 0
@@ -108,10 +88,7 @@ enum Geometry {
     out[offset + 1] = sumY / total
   }
 
-  /**
-   Shoulder midpoint to ankle midpoint, in normalized units and uncorrected for the same reason as
-   `centerOfMass`: it exists to be divided into other normalized distances.
-   */
+  /// Normalized, uncorrected for aspect: it is a divisor for other normalized distances.
   static func bodySpan(_ landmarks: [Float]) -> Float {
     let shoulderX = midpoint(landmarks, Skeleton.leftShoulder, Skeleton.rightShoulder, axis: 0)
     let shoulderY = midpoint(landmarks, Skeleton.leftShoulder, Skeleton.rightShoulder, axis: 1)
@@ -138,14 +115,7 @@ enum Geometry {
   private static let comWeights: [Float] = [0.25, 0.25, 0.1, 0.1, 0.15, 0.15]
 }
 
-/**
- The box around one pose's landmarks, in normalized frame coordinates.
-
- What tells one person from another across frames when several are tracked. The largest body is
- chosen as primary on every frame, so when someone else becomes the largest the primary changes
- identity between two frames, and smoothing or velocity carried across that boundary glides from one
- person to the other, or reports a speed nobody moved at.
- */
+/// Normalized bounding box. Overlap across frames tells whether the primary is the same person.
 struct PoseBox: Equatable {
   let minX: Float
   let minY: Float
@@ -155,14 +125,10 @@ struct PoseBox: Equatable {
   /// Below this much overlap two consecutive primary poses are different people.
   static let sameBodyOverlap: Float = 0.3
 
-  /// Two areas closer than this are a tie, which the distance from the frame's centre breaks.
   static let areaTieEpsilon: Float = 1e-4
 
-  /**
-   The subject among several bodies: the largest box, ties broken by distance from the frame's
-   centre. MediaPipe's own order is detection order and means nothing about who the subject is.
-   The live view applies the same rule to MediaPipe's landmarks without building boxes first.
-   */
+  /// The largest box, ties broken by distance from centre; MediaPipe's order means nothing.
+  /// The live view's `primaryPose` applies the same rule to raw landmarks.
   static func primary(_ boxes: [PoseBox]) -> Int {
     var best = 0
     var bestArea: Float = -1
@@ -181,7 +147,6 @@ struct PoseBox: Equatable {
     return best
   }
 
-  /// The landmarks' bounding box, read from the flat landmark buffer.
   init(_ landmarks: [Float]) {
     var minX = Float.greatestFiniteMagnitude
     var minY = Float.greatestFiniteMagnitude
@@ -204,7 +169,7 @@ struct PoseBox: Equatable {
     self.maxY = maxY
   }
 
-  /// Intersection over union, 0 for disjoint boxes and 1 for identical ones.
+  /// Intersection over union, 0 to 1.
   func overlap(_ other: PoseBox) -> Float {
     let width = min(maxX, other.maxX) - max(minX, other.minX)
     let height = min(maxY, other.maxY) - max(minY, other.minY)

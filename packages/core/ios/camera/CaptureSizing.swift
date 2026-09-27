@@ -1,15 +1,6 @@
 import AVFoundation
 
-/**
- The size arithmetic behind a capture session, kept apart from the session that uses it.
-
- None of this touches AVFoundation state: it maps the three preset names the public API takes
- onto concrete dimensions, and works out what the analysis buffer may be given what the preview
- carries. That makes it the part worth reading on its own, and the part a test can reach without
- a camera. `CameraSource` owns the session; this owns the numbers it is configured with.
- */
 extension CameraSource {
-  /// The same three steps Android names, mapped onto the presets AVFoundation guarantees.
   static func previewSize(for preset: String) -> CaptureSize {
     switch preset {
     case "480p": return CaptureSize(width: 640, height: 480)
@@ -26,12 +17,7 @@ extension CameraSource {
     }
   }
 
-  /**
-   The analysis buffer is the data output scaled down, not a second capture: one session has one
-   preset, so the preview's aspect is the only aspect available and the ladder step picks the short
-   side. Asking for more than the preview carries would be an upscale of pixels the sensor never
-   produced, so it is clamped to it.
-   */
+  /// Scaled from the preview, not a second capture: same aspect, and never larger than the preview.
   static func analysisSize(for preset: String, preview: CaptureSize) -> CaptureSize {
     let requested: Int
     switch preset {
@@ -47,7 +33,7 @@ extension CameraSource {
     }
 
     let aspect = Double(max(preview.width, preview.height)) / Double(previewShort)
-    // Even, because an odd width is not expressible in the chroma planes of a subsampled format.
+    // Even: subsampled chroma planes cannot express an odd width.
     let longSide = Int((Double(shortSide) * aspect / 2).rounded()) * 2
     return preview.width >= preview.height
       ? CaptureSize(width: longSide, height: shortSide)
@@ -55,7 +41,6 @@ extension CameraSource {
   }
 }
 
-/// The lens asked for does not exist here, which is `CAMERA_UNAVAILABLE` rather than a start that failed.
 struct CameraMissing: LocalizedError {
   let facing: Facing
 

@@ -1,14 +1,5 @@
 import UIKit
 
-/**
- The angle arcs and their labels, split out of `OverlayRenderer` so each file stays one concern:
- the other one is the skeleton, this one is the only part that reads `config.angles`.
-
- Same aspect correction as `Geometry`, and for the same reason: landmarks are normalized by
- dividing x by width and y by height, so one unit of x is not one unit of y on any non-square
- frame. An arc drawn without putting both axes back in a common unit sits off the joint it belongs
- to on every standard 4:3 or 16:9 frame.
- */
 extension OverlayRenderer {
   func angleArcs() -> [OverlayArc] {
     var arcs = [OverlayArc]()
@@ -32,8 +23,7 @@ extension OverlayRenderer {
       let center = project(vertex)
       let distal = project(spec.triple[2])
 
-      // Taken in target points, after the mirror and the fill, so the arc opens into the joint on
-      // both cameras instead of straddling the limb on the front one.
+      // In target points, after mirror and fill, so the arc opens into the joint on either camera.
       let bisector = Geometry.bisectorRadians(
         proximalX: Float(proximal.x),
         proximalY: Float(proximal.y),
@@ -46,8 +36,6 @@ extension OverlayRenderer {
 
       let color = index < palette.arcs.count ? palette.arcs[index] : palette.stroke
 
-      // The sweep is the angle itself, centered on the bisector, so the arc sits inside the two limb
-      // segments rather than crossing them.
       let sweep = CGFloat(degrees) / OverlayRenderer.degreesPerRadian
       let start = CGFloat(bisector) - sweep / 2
       let path = CGMutablePath()
@@ -96,17 +84,11 @@ extension OverlayRenderer {
     )
   }
 
-  /**
-   Whole degrees take the integer path, which builds a short string and nothing else. Decimals go
-   through a format specifier, and only when a consumer opts in. Unlike Android there is no
-   reusable character buffer: drawing text on iOS needs a string either way, so the saving would
-   be one that the layer or the context immediately allocates again.
-   */
   private func format(degrees: Float, decimals: Int) -> String {
     if decimals <= 0 {
       return "\(max(0, Int(degrees.rounded())))\u{00B0}"
     }
-    // A fixed locale, because a de-DE device would otherwise render "90,5" for the same build.
+    // Fixed locale: a de-DE device would otherwise render "90,5".
     return String(format: "%.\(decimals)f\u{00B0}", locale: Locale(identifier: "en_US_POSIX"), degrees)
   }
 }

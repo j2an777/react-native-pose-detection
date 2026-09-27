@@ -1,8 +1,6 @@
 import XCTest
 @testable import PoseEngine
 
-/// The level `setLogLevel()` sets, what a camera's `logLevel` prop does on top of it, and who hands
-/// the buffered entries to JavaScript.
 final class PoseLogTests: XCTestCase {
   private let camera = NSObject()
   private let other = NSObject()

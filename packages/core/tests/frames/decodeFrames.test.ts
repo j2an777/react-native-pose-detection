@@ -24,11 +24,7 @@ type EncodedFrame = {
   processingMs: number;
 };
 
-/**
- * The encoder native will implement, written against the same header the decoder reads. Keeping
- * it here means a change to one side that the other does not follow fails a test rather than
- * showing up as plausible but wrong numbers on a device.
- */
+/** An encoder on the decoder's own header, so a one-sided change fails here, not on a device. */
 function encode(
   frames: EncodedFrame[],
   options: { jointCount: number; angleCount: number; droppedCount?: number; world?: boolean },
@@ -166,8 +162,7 @@ test('angles are named in the configured order and the scalars behind them stay 
 
   assert.strictEqual(error, undefined);
   assert.deepStrictEqual(frames[0]!.angles, { leftKnee: 91.5, rightKnee: 88.25 });
-  // The regression this guards: reading the angle block with the wrong length shifts every
-  // scalar behind it, and centerOfMass silently becomes an angle in degrees.
+  // A wrong angle-block length shifts every scalar after it: centerOfMass would be an angle.
   assert.strictEqual(frames[0]!.centerOfMass.x, 0.5);
   assert.strictEqual(frames[0]!.bodySpan, 0.75);
 });

@@ -64,35 +64,24 @@ private struct LogEntry {
   let timestampMs: Double
 }
 
-/**
- A disabled call site costs one lock and an integer compare, and the message is an `@autoclosure`
- that is never called, so nothing is built or formatted. Interpolating outside the closure turns
- that into a per-frame cost at 30 fps. See docs/logging.md.
-
- Android reads its level mask through an `AtomicInteger`; there is no dependency-free equivalent
- below iOS 18, so the mask is behind the same lock as the ring. Uncontended, that is tens of
- nanoseconds against a 33 ms frame.
-
- Entries always go to the unified log, so native-only debugging works with no JavaScript listener
- attached. They are additionally buffered for JavaScript while a listener is.
- */
+/// A disabled call site formats nothing because messages are `@autoclosure`s; keep formatting
+/// inside them. The mask shares the ring's lock since `Atomic` needs iOS 18. See docs/logging.md.
 enum PoseLog {
   private static let logger = Logger(subsystem: "react-native-pose-detection", category: "pose")
 
   private static let bitsPerCategory = 3
   private static let categoryMask = 0x7
 
-  /// Bounded and drop-oldest, like the frame buffer: a listener that stalls costs a fixed size.
+  /// Drop-oldest, so a stalled listener costs a fixed size.
   private static let capacity = 256
 
   private static let lock = NSLock()
 
   // Everything below is guarded by `lock`.
-  /// What `isEnabled` reads: `base`, raised by every camera's `logLevel` prop.
+  /// `base` raised by every camera's `logLevel` prop; what `isEnabled` reads.
   private static var mask = 0
   /// What `setLogLevel()` asked for.
   private static var base = 0
-  /// Each camera's `logLevel` prop, which raises the level for as long as that camera exists.
   private static var raises = [ObjectIdentifier: Int]()
   private static var entries = [LogEntry?](repeating: nil, count: capacity)
   private static var head = 0
@@ -100,15 +89,9 @@ enum PoseLog {
   private static var dropped = 0
   private static var streaming = false
 
-  /**
-   Who hands batches to JavaScript: the camera that attached first, from the moment it attaches
-   until it detaches. Without one owner every camera on screen would drain the same buffer and each
-   would receive an arbitrary share of the entries. With no camera attached nobody owns it, and the
-   module flushes instead.
-   */
+  /// The one camera that flushes, so several don't split the entries; with none, the module does.
   private static var owner: ObjectIdentifier?
 
-  /// How often a batch is handed over, by a camera or by the module.
   static let flushSeconds = 0.25
 
   static func startStream() {
@@ -128,7 +111,6 @@ enum PoseLog {
     dropped = 0
   }
 
-  /// A camera attaching takes the flush unless another one already has it.
   static func claimStream(_ candidate: AnyObject) {
     lock.lock()
     defer { lock.unlock() }
@@ -145,17 +127,6 @@ enum PoseLog {
     }
   }
 
-  /**
-   Everything buffered since the last batch, oldest first, for `flusher` to hand to JavaScript; nil
-   when there is nothing to hand over or the flush is somebody else's. A camera passes itself, and
-   takes the flush if nobody has it. The module passes nil and gets a batch only while no camera is
-   attached, which is what lets `addLogListener()` hear a file detection or an export with no
-   camera on screen.
-
-   The dictionaries are built here rather than at the call site, because a disabled channel must
-   not build anything. A drop count opens the batch as a warn entry rather than riding beside it,
-   so a listener that only reads entries still sees that something was lost.
-   */
   static func takeBatch(_ flusher: AnyObject?) -> [[String: Any]]? {
     lock.lock()
     defer { lock.unlock() }
@@ -176,6 +147,7 @@ enum PoseLog {
     var batch = [[String: Any]]()
     batch.reserveCapacity(waiting + 1)
     let start = (head - waiting + capacity) % capacity
+    // An entry, not a field, so a listener that reads only entries still sees the loss.
     if dropped > 0 {
       batch.append([
         "level": "warn",
@@ -218,13 +190,8 @@ enum PoseLog {
     mask = combined()
   }
 
-  /**
-   A camera's `logLevel` prop: raises the level on top of `setLogLevel()` while the camera exists,
-   and gives it back when the prop goes or the camera does. `nil` withdraws the raise and leaves the
-   global level alone. It must not turn logging off: Expo hands every prop to its setter on a view's
-   first update, set or not, so an absent prop arrives as `nil` with every mount, and treating that
-   as `off` undid `setLogLevel()` each time a camera appeared.
-   */
+  /// A camera's `logLevel` prop, on top of `setLogLevel()`. `nil` withdraws it and must not mean
+  /// off: Expo sends every unset prop as nil on mount.
   static func raise(_ owner: AnyObject, to raised: Int?) {
     let identifier = ObjectIdentifier(owner)
     lock.lock()
@@ -233,14 +200,12 @@ enum PoseLog {
     mask = combined()
   }
 
-  /// A level config as JavaScript sends it, a level or a map of categories to levels, as a mask.
   static func levelMask(for config: Any?) -> Int? {
     if let name = JS.string(config) { return packed(LogLevel.from(name)) }
     guard let map = config as? [String: String] else { return nil }
     return merged(0, levels(from: map))
   }
 
-  /// A map of category names to level names; a name this version does not know is skipped.
   static func levels(from map: [String: String]) -> [LogCategory: LogLevel] {
     var parsed = [LogCategory: LogLevel]()
     for (key, value) in map {
@@ -267,7 +232,7 @@ enum PoseLog {
     return bits
   }
 
-  /// `base` with each category taken up to the highest level any camera raised it to. Under `lock`.
+  /// Caller holds `lock`.
   private static func combined() -> Int {
     var bits = base
     for raised in raises.values {

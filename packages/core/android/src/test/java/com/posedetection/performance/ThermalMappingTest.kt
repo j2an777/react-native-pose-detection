@@ -4,11 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * Android's heat readings onto the four states the governor acts on. Written against the raw
- * status values rather than the PowerManager constants, so the numbers the platform documents are
- * the ones under test: NONE 0, LIGHT 1, MODERATE 2, SEVERE 3, CRITICAL 4, EMERGENCY 5, SHUTDOWN 6.
- */
+/** Raw statuses as documented: 0 NONE, 1 LIGHT, 2 MODERATE, 3 SEVERE, 4 CRITICAL, 5 EMERGENCY, 6 SHUTDOWN. */
 class ThermalMappingTest {
     @Test
     fun `light throttling is not heat worth acting on`() {

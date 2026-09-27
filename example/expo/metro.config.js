@@ -2,8 +2,7 @@ const path = require('node:path');
 
 const { getDefaultConfig } = require('expo/metro-config');
 
-// The package is consumed through the workspace symlink, so Metro has to watch the repository
-// root and resolve out of the hoisted node_modules as well as this app's own.
+// The package is a workspace symlink: watch the repo root and resolve its node_modules too.
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
 

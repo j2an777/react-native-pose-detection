@@ -3,8 +3,7 @@ import { PoseConfigError } from '../errors';
 import { isAngleJointName, isJointName } from '../types/joints';
 import type { Trigger, TriggerEmit } from '../types/triggers';
 
-// Deep enough for any real condition, shallow enough that a cyclic or generated config fails
-// here with a path rather than as a stack overflow inside the native evaluator.
+// Deep enough for any real condition; a cyclic one fails here with a path, not a stack overflow.
 const MAX_CONDITION_DEPTH = 8;
 
 const CONDITION_KEYS = [
@@ -24,10 +23,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * `JSON.stringify` throws on a BigInt and on a cyclic object. This function only ever builds an
- * error message, so it must not be the thing that fails while reporting someone else's mistake.
- */
+/** Never throws, unlike `JSON.stringify` on a BigInt or a cycle: it only builds a message. */
 function describe(value: unknown): string {
   try {
     const text = JSON.stringify(value);
@@ -37,8 +33,7 @@ function describe(value: unknown): string {
   }
 }
 
-// Own keys only, and an explicitly undefined value counts as absent. A condition built by
-// spreading optional fields carries `above: undefined`, and `in` would call that a bound.
+// Own keys only, and `undefined` is absent: spreading optional fields leaves `above: undefined`.
 function has(condition: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(condition, key) && condition[key] !== undefined;
 }
@@ -60,8 +55,7 @@ function checkKeys(
   }
 }
 
-// Two numeric bounds that exclude each other mean the condition can never hold. Catching it here
-// is the difference between a build-time message and a trigger that silently never fires.
+// Bounds that exclude each other are an error here, not a trigger that silently never fires.
 function checkContradiction(
   condition: Record<string, unknown>,
   path: string,
@@ -312,10 +306,7 @@ function checkCondition(
   }
 }
 
-/**
- * Collects everything wrong with a trigger list. Runs in JavaScript so a bad config fails at the
- * call site with a path, rather than reaching native and becoming a trigger that never fires.
- */
+/** Every problem in a trigger list, each with its path. Empty when the config is fine. */
 export function validateTriggers(triggers: readonly Trigger[]): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 

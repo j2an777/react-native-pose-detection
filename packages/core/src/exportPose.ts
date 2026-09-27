@@ -3,43 +3,23 @@ import type { OverlayConfig } from './types/camera';
 import { assertValidFileOptions } from './validation';
 
 export type ExportOptions = {
-  /**
-   * The same shape `<PoseCamera overlay>` takes, so one vocabulary configures the live skeleton
-   * and the painted one. `false` writes the file without painting anything, which is a way to get
-   * a normalized, size-capped copy and nothing else.
-   */
+  /** The shape `<PoseCamera overlay>` takes. `false` writes an unpainted, size-capped copy. */
   overlay?: boolean | OverlayConfig;
-  /**
-   * 1 to 5. Every pose found is painted, and `posesFound` counts them. Default 1.
-   *
-   * A ceiling rather than a promise: MediaPipe's landmarker is built around one primary subject and
-   * usually returns one body however high this goes. See guides/files.md before relying on it.
-   */
+  /** 1 to 5, default 1. Every pose found is painted, but this is a ceiling, not a promise. */
   maxPoses?: number;
   /**
-   * How sure the model has to be before it calls something a body, 0.1 to 1.
-   *
-   * Left out, it follows `maxPoses`: `0.5` for a single subject, which is MediaPipe's own, and
-   * `0.3` above that, which is where a second person actually appears rather than the first person
-   * twice. Give it a number to override that. Costs nothing either way.
+   * How sure the model must be to call something a body, 0.1 to 1. Default 0.5 at `maxPoses: 1`,
+   * 0.3 above it.
    */
   minConfidence?: number;
   /**
-   * Detection samples a second, not the video's frame rate. Default 10. Frames in between are
-   * painted with the pose detected most recently, which is what the live overlay does between
-   * inferences. Raising this costs inference time roughly linearly.
+   * Detections per second of video, not its frame rate. Default 10. Frames in between are painted
+   * with the latest pose, and the cost scales roughly linearly with this.
    */
   fps?: number;
   /** Long edge of the output. Default 1920. `0` keeps the source's own size. */
   maxSize?: number;
-  /**
-   * Where the file lands. `'cache'` (the default) is the app's caches directory, `'documents'` is
-   * its documents directory, and anything else is taken as a directory path or `file://` URI and
-   * created if it is missing.
-   *
-   * The result is an ordinary file inside your app's sandbox, so whatever you already use for
-   * files works on it unchanged: move it, upload it, hand it to a share sheet, delete it.
-   */
+  /** `'cache'` (default), `'documents'`, or a path or `file://` URI, created if missing. */
   directory?: 'cache' | 'documents' | (string & {});
   /** Without an extension. Defaults to the source's name with `-pose` appended. */
   fileName?: string;
@@ -58,14 +38,14 @@ export type ExportResult = {
   readonly durationMs: number;
   /** 1 for a still image, the encoded frame count for a video. */
   readonly frameCount: number;
-  /** How many frames a pose was found in. 0 means nothing was painted. */
+  /** Poses found in a photo, or sampled frames with a pose in a video. 0: nothing was painted. */
   readonly posesFound: number;
 };
 
 export type ExportTask = {
   /**
    * Rejects with `EXPORT_CANCELLED` after `cancel()`, and with `EXPORT_FAILED` if the file could
-   * not be read, painted or written. A cancelled export deletes its own partial file.
+   * not be read, painted or written. Either way the partial file is deleted.
    */
   readonly result: Promise<ExportResult>;
   cancel(): void;
@@ -74,24 +54,8 @@ export type ExportTask = {
 let nextTaskId = 1;
 
 /**
- * Paints the skeleton into a copy of an image or video and writes it into the app's sandbox.
- *
- * The painting is the same native renderer the live camera uses, so an exported frame and a live
- * one put a joint in the same place. Nothing about this runs on the camera's threads or its GPU:
- * an export uses its own CPU detector on a background queue below the camera's, so a long export
- * running beside a live preview costs the preview nothing but shared CPU time.
- *
- * A task rather than a bare promise, because a video takes as long as it takes and something has
- * to be able to stop it.
- *
- * ```ts
- * const task = exportPose(pickedUri, {
- *   overlay: { color: '#4da3ff', lineWidth: 4 },
- *   directory: 'documents',
- *   onProgress: setProgress,
- * });
- * const { uri } = await task.result;
- * ```
+ * Paints the skeleton into a copy of an image or video with the live camera's renderer. Its own
+ * detector runs below the camera's priority, so a live preview keeps its frames.
  */
 export function exportPose(uri: string, options?: ExportOptions): ExportTask {
   assertValidFileOptions(options);

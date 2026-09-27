@@ -1,9 +1,6 @@
 import Foundation
 
-/**
- Everything a condition can read about one frame. Reused across frames and mutated in place: this
- is on the inference path, and a per-frame allocation here is a per-frame allocation everywhere.
- */
+/// Reused across frames and mutated in place: it is on the inference path.
 final class FrameContext {
   var landmarks: [Float] = []
   var previousLandmarks: [Float]?
@@ -23,10 +20,7 @@ final class FrameContext {
     return landmarks[joint * Skeleton.landmarkStride + axis]
   }
 
-  /**
-   Normalized units per second, uncorrected for aspect, so it is in the same units as the
-   positions a threshold is written against. `NaN` when there is nothing to differ from.
-   */
+  /// Normalized units per second, uncorrected for aspect, like the positions thresholds use.
   func velocity(_ joint: Int, _ axis: Int) -> Float {
     guard let previous = previousLandmarks else { return .nan }
     if elapsedSeconds.isNaN || elapsedSeconds <= 0 { return .nan }
@@ -36,11 +30,6 @@ final class FrameContext {
   }
 }
 
-/**
- A parsed `Condition`. JavaScript validates the shape before native ever sees it, so this half is
- about evaluating quickly rather than about diagnosing: a config that fails to parse here is
- logged and treated as one that never matches.
- */
 protocol PoseCondition {
   func matches(_ frame: FrameContext) -> Bool
 }
@@ -49,11 +38,7 @@ let noJoint = -1
 let axisX = 0
 let axisY = 1
 
-/**
- `NaN` is how an absent bound is stored, and it is also what an unmeasurable value is. Both mean
- the same thing here: a comparison against `NaN` is false, so a condition over a value nobody could
- measure does not match, and a bound nobody set does not constrain.
- */
+/// NaN is an absent bound, which constrains nothing, or an unmeasurable value, which never matches.
 func withinBounds(
   _ value: Float,
   below: Float,
@@ -64,7 +49,7 @@ func withinBounds(
   if value.isNaN { return false }
   if !below.isNaN && value >= below { return false }
   if !above.isNaN && value <= above { return false }
-  // Inclusive, unlike below and above, because `between` names the range you want to be in.
+  // Inclusive, unlike below and above: `between` names the range to be in.
   if !betweenMin.isNaN && (value < betweenMin || value > betweenMax) { return false }
   return true
 }
@@ -91,10 +76,6 @@ struct AngleCondition: PoseCondition {
   }
 }
 
-/**
- A bound that names a joint is compared against that joint in the same frame, which is what keeps
- "wrist above shoulder" true at any distance from the camera.
- */
 struct LandmarkCondition: PoseCondition {
   let axis: Int
   let joint: Int
@@ -113,7 +94,7 @@ struct LandmarkCondition: PoseCondition {
 
 struct VelocityCondition: PoseCondition {
   let axis: Int
-  /// `noJoint` is `centerOfMass`, whose velocity is already computed for the wire.
+  /// `noJoint` means `centerOfMass`, whose velocity the wire already carries.
   let joint: Int
   let below: Float
   let above: Float
@@ -158,12 +139,10 @@ struct AnyCondition: PoseCondition {
   }
 }
 
-/// What an unparseable condition becomes. Never matching beats matching for the wrong reason.
 struct NeverCondition: PoseCondition {
   func matches(_ frame: FrameContext) -> Bool { return false }
 }
 
-/// The negation of `enter`, which is what returns a trigger with no `exit` to idle.
 struct NotCondition: PoseCondition {
   let inner: any PoseCondition
 

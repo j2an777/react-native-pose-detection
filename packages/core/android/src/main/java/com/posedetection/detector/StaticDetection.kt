@@ -23,30 +23,18 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** A file job's failure, carrying the code its promise rejects with. */
 internal class StaticDetectionError(
     val code: ErrorCode,
     message: String,
 ) : Exception(message)
 
-/**
- * The same detector, without a camera.
- *
- * Nothing here calibrates: a file has no frame budget to hit, so it always runs at full quality.
- * What it does answer to is heat, through [FilePacer], and to the camera, through [FileDetector]'s
- * choice of delegate.
- */
+/** Never calibrated: a file has no frame budget, so it always runs at full quality. */
 internal object StaticDetection {
     private val cancelled = ConcurrentHashMap<Int, AtomicBoolean>()
 
-    /** The same step an export reports progress in. */
+    /** As an export's: an event per frame is a bridge crossing nobody reads that fast. */
     private const val PROGRESS_STEP = 0.02f
 
-    /**
-     * Where photo and video detection run: one thread, below the camera's, and this package's own.
-     * Expo runs every module's async functions on one shared thread, so a video job there held up
-     * every other module in the app for as long as it ran, at the camera's priority.
-     */
     val executor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "pose-detection-files").apply {
@@ -59,7 +47,6 @@ internal object StaticDetection {
         cancelled[taskId]?.set(true)
     }
 
-    /** One entry per detected pose, the subject first, so a two-person photo decodes to two frames. */
     fun detectImage(
         context: Context,
         uri: String,
@@ -72,8 +59,7 @@ internal object StaticDetection {
                 ?: throw StaticDetectionError(ErrorCode.IMAGE_DECODE_FAILED, "could not read an image from $uri")
         val shape = shapeFor(options, angleJoints, selection)
 
-        // Constructed inside the try: requireModel and createFromOptions both throw, and a throw
-        // between decoding the bitmap and entering the try strands its pixels until GC.
+        // Built inside the try: both calls throw, and a throw outside it strands the bitmap until GC.
         var detector: PoseDetector? = null
         return try {
             detector =
@@ -99,11 +85,6 @@ internal object StaticDetection {
         }
     }
 
-    /**
-     * Sampled at `fps`, not at the video's own rate, and run through `VIDEO` mode with monotonic
-     * timestamps so temporal tracking behaves the way it does live. Each frame carries its real
-     * position in the video, which is what smoothing and velocity are measured against.
-     */
     @Suppress("LongParameterList")
     fun detectVideo(
         context: Context,
@@ -117,8 +98,7 @@ internal object StaticDetection {
         val flag = AtomicBoolean(false)
         cancelled[taskId] = flag
 
-        // Same reason as detectImage, and one more: `cancelled` belongs to an object, so a task id
-        // that never reaches the finally leaks a map entry for the life of the process.
+        // Built inside the try, so a throw cannot leak the task's entry in the process-wide map.
         var sampler: VideoFrameSampler? = null
         var detector: FileDetector? = null
         return try {
@@ -131,13 +111,10 @@ internal object StaticDetection {
             val frames = ArrayList<FloatArray>()
             val timestamps = ArrayList<Double>()
             var lastTimestamp = -1L
-            // Throttled as an export's is: a progress event per sampled frame is a crossing per
-            // frame for a number nobody reads that fast.
             var lastReported = 0f
             while (!flag.get()) {
                 val frame = sampler.next() ?: break
-                // VIDEO mode rejects a timestamp that does not move forward, and a variable frame
-                // rate clip can hand back two frames on the same millisecond.
+                // VIDEO mode needs increasing timestamps, and a variable-rate clip can repeat one.
                 val timestamp = maxOf(frame.timestampMs, lastTimestamp + 1)
                 lastTimestamp = timestamp
                 val result = detector.detect(BitmapImageBuilder(frame.bitmap).build(), timestamp)
@@ -176,10 +153,7 @@ internal object StaticDetection {
             angleJoints = if (options.angles) angleJoints else emptyArray(),
         )
 
-    /**
-     * The same block order the live path writes, because it is the same decoder on the other side.
-     * [velocity] holds x and y, or is null for a frame that has none.
-     */
+    /** The live path's block order, since one decoder reads both. [velocity] is x and y, or null. */
     @Suppress("LongParameterList")
     fun encode(
         landmarks: FloatArray,
@@ -257,7 +231,6 @@ internal object StaticDetection {
                 "No pose model is bundled. Run the CLI or prebuild first.",
             )
 
-    /** A file path, a `file://` URI or a `content://` one, for an extractor. */
     fun openExtractor(
         extractor: MediaExtractor,
         context: Context,
@@ -272,12 +245,7 @@ internal object StaticDetection {
     }
 }
 
-/**
- * The subject of a video, followed from one sampled frame to the next: the same rules the live
- * view applies. The largest body is the subject, smoothing and velocity are measured against real
- * timestamps, and both start over when the subject is lost, changes, or a gap opens (see
- * [PoseTrack]).
- */
+/** Follows a video's subject by the live view's rules; see [PoseTrack]. */
 internal class VideoTracker(
     fps: Int,
     smoothing: Boolean,
@@ -289,7 +257,6 @@ internal class VideoTracker(
     private val center = FloatArray(2)
     private val velocity = FloatArray(2)
 
-    /** The subject's frame, or null when nobody was found. */
     fun encode(
         result: PoseLandmarkerResult,
         shape: FrameShape,

@@ -25,11 +25,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 /** Printed before every line an automated run logs, so a device log can be filtered to them. */
 const LOG_TAG = 'POSE_DIAG';
 
-/**
- * What the camera settled on before the scenarios start working it, so a report says what its
- * numbers came from. Waits out calibration for up to ten seconds, then takes what it has: the
- * first run after an install can still be measuring. Null only if the camera never answered.
- */
+/** Waits up to 10 s for calibration, then takes what it has: a first run can still be measuring. */
 async function settledProfile(camera: React.RefObject<PoseCameraRef | null>) {
   const deadline = Date.now() + 10_000;
   let latest: ProfileState | null = null;
@@ -41,10 +37,7 @@ async function settledProfile(camera: React.RefObject<PoseCameraRef | null>) {
   return latest;
 }
 
-/**
- * `buffers` is the size the camera log says frames really arrive at, which can differ from the
- * analysis size asked for. Only iOS logs it.
- */
+/** `buffers` is the size frames really arrive at, from the camera log (iOS only). */
 function describeDevice(
   profile: ProfileState,
   ready: ReadyEvent | null,
@@ -65,16 +58,8 @@ function describeDevice(
 }
 
 /**
- * The device regression harness.
- *
- * Reached from a quiet link on the overview rather than the tab bar: it exists so the crashes in
- * docs/testing.md can be reproduced on a real phone, and it is not part of what this app is for.
- * The camera it drives is deliberately small; the scenarios care about lifecycle, not about what
- * the preview looks like.
- *
- * A launch can ask for a sweep, see `diagnosticsRequest`: the scenarios then run on their own, one
- * after another, and the reports land in `diagnostics.json` in the app's documents directory, where
- * `xcrun devicectl` or `adb` can collect them.
+ * The device regression harness for docs/testing.md. A sweep a launch asked for (see
+ * `diagnosticsRequest`) writes its reports to `diagnostics.json` in the documents directory.
  */
 export function DiagnosticsScreen({
   onClose,
@@ -100,8 +85,7 @@ export function DiagnosticsScreen({
   const cameraChanges = React.useRef(0);
   const lastReady = React.useRef<ReadyEvent | null>(null);
   const insets = useSafeAreaInsets();
-  // A sweep runs for minutes with nobody touching the phone, and a locked screen would stop the
-  // camera partway through it.
+  // A sweep runs for minutes untouched, and a screen lock would stop the camera partway.
   useKeepAwake();
 
   const onReady = React.useCallback((event: ReadyEvent) => {
@@ -120,8 +104,7 @@ export function DiagnosticsScreen({
   const remount = React.useCallback(
     () =>
       new Promise<void>((resolve, reject) => {
-        // A camera that never comes up fails the scenario that asked for it, rather than leaving
-        // the sweep waiting forever.
+        // A camera that never comes up fails its scenario rather than stalling the sweep.
         const timer = setTimeout(() => {
           ready.current = null;
           reject(new Error('the camera did not report ready within 10 s'));
@@ -230,8 +213,7 @@ export function DiagnosticsScreen({
   React.useEffect(() => {
     if (!autoRun) return;
     let cancelled = false;
-    // The camera log says once per mount what size frames really arrive at. It is listened to only
-    // until the scenarios start, so they run with logging off.
+    // Listens to the camera log for the real buffer size, and only until the scenarios start.
     let buffers: string | null = null;
     setLogLevel({ camera: 'info' });
     const subscription = addLogListener((entries) => {
@@ -244,8 +226,7 @@ export function DiagnosticsScreen({
       const collected: ScenarioReport[] = [];
       let ids: string[] = [];
       let device = null;
-      // Asks only if nobody has answered yet. Without the camera no scenario can pass, so a sweep
-      // without it reports that once instead of every scenario timing out.
+      // Prompts only when the system still will. Denied, the sweep fails once, not per scenario.
       const permission = await requestCameraPermission();
       if (permission.status !== 'granted') {
         const detail = `the camera permission is ${permission.status}: grant it, then run again`;
@@ -407,7 +388,7 @@ export function DiagnosticsScreen({
         ) : null}
       </ScrollView>
 
-      {/* Full screen, so on iOS it takes the camera's view out of the window, as a pushed screen does. */}
+      {/* Full screen: on iOS that takes the camera out of the window, as a pushed screen does. */}
       <Modal visible={covered} animationType="none" presentationStyle="fullScreen">
         <View style={styles.cover}>
           <Text style={styles.coverText}>Covering the camera</Text>

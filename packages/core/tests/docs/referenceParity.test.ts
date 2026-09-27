@@ -7,12 +7,8 @@ import ts from 'typescript';
 import { ERROR_CODES } from '../../src/types/events';
 
 /**
- * The reference guides are the contract as a consumer reads it, and nothing at runtime compares
- * them to the types: a prop renamed in `src/types/` leaves a page describing something that no
- * longer exists, and a prop added without a page is a feature nobody can find.
- *
- * The type side is read through the TypeScript compiler rather than by regex, so a member that
- * arrives through an intersection or a mapped type still counts.
+ * Nothing at runtime compares the reference pages to the types. Members are read through the
+ * compiler, not a regex, so one from an intersection or a mapped type still counts.
  */
 const CORE = resolve(__dirname, '../../..', 'packages/core');
 const REFERENCE = resolve(CORE, '../../guides/reference');
@@ -40,7 +36,7 @@ function membersOf(typeName: string): string[] {
   return checker.getPropertiesOfType(found).map((symbol) => symbol.getName());
 }
 
-/** Every reference page as one string: which page documents a member is not this test's business. */
+/** Every reference page as one string: which page documents a member does not matter here. */
 function reference(): string {
   return readdirSync(REFERENCE)
     .filter((name) => name.endsWith('.md'))
@@ -98,8 +94,7 @@ test('every error code has a row in the events reference', () => {
 
   assert.deepEqual(missing, [], 'these ErrorCodes are in the union but have no documented row');
 
-  // And nothing documented that the union dropped, which is the direction that leaves a consumer
-  // switching on a code native can never send.
+  // Nor a documented code the union dropped, which a consumer would switch on in vain.
   const stale = documented.filter((code) => !ERROR_CODES.includes(code as never));
   assert.deepEqual(stale, []);
 });

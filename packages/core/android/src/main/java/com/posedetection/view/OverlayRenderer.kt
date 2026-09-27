@@ -11,23 +11,7 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-/**
- * The skeleton, drawn onto any [Canvas].
- *
- * This is the only place the overlay is drawn. [OverlayView] owns one and hands it the screen's
- * canvas; the exporter owns one and hands it a canvas over the bitmap it is about to encode.
- * Because the geometry lives here rather than in either of them, a painted export and a live
- * preview of the same pose cannot disagree about where a joint goes. [OverlayProjection] makes the
- * same guarantee one level down, for the rectangle the pose is projected into.
- *
- * The draw path allocates nothing: preallocated float arrays go to `drawPoints` and `drawLines` in
- * one call each, and degree labels are formatted into a reusable char buffer. The paints and those
- * buffers belong to the renderer, so a view that keeps one keeps them across frames.
- *
- * @param density pixels per unit for widths, radii and text. A view passes the display's density,
- *   so a `lineWidth` of 3 is 3dp. An export passes a factor derived from the output size, because 3
- *   pixels on a 1080 pixel frame is a hair rather than a line: see `overlayScale`.
- */
+/** The draw path allocates nothing. [density]: the display's for a view, `overlayScale` for an export. */
 internal class OverlayRenderer(
     private val density: Float,
 ) {
@@ -62,7 +46,6 @@ internal class OverlayRenderer(
             color = Color.argb(140, 0, 0, 0)
         }
 
-    // Reused across frames.
     private val pointBuffer = FloatArray(Skeleton.LANDMARK_COUNT * 2)
     private val lineBuffer = FloatArray(Skeleton.CONNECTION_COUNT * 4)
     private val arcBounds = RectF()
@@ -71,7 +54,7 @@ internal class OverlayRenderer(
     private val screen = FloatArray(2)
     private val fontMetrics = Paint.FontMetrics()
 
-    // The frame being drawn, set at the top of draw so the helpers below do not each need it.
+    // The frame being drawn, set by draw() for the helpers.
     private var landmarks = EMPTY
     private var projection = OverlayProjection(0, 0, 0f, 0f, ContentFit.FILL)
     private var mirrored = false
@@ -136,7 +119,6 @@ internal class OverlayRenderer(
             val to = Skeleton.CONNECTIONS[index + 1]
             index += 2
 
-            // A segment with one bad endpoint is a line to a guess, so it is not drawn at all.
             if (!isDrawable(from) || !isDrawable(to)) continue
 
             project(from)
@@ -178,8 +160,7 @@ internal class OverlayRenderer(
             val distalX = screen[0]
             val distalY = screen[1]
 
-            // Taken in screen pixels, after the mirror and the fill, so the arc opens into the
-            // joint on both cameras instead of straddling the limb on the front one.
+            // In screen pixels, after mirror and fill, or the arc straddles the limb on the front camera.
             val bisector = Geometry.bisectorRadians(proximalX, proximalY, cx, cy, distalX, distalY)
             if (bisector.isNaN()) continue
 
@@ -188,8 +169,6 @@ internal class OverlayRenderer(
             arcPaint.color = spec.color ?: config.color
             arcBounds.set(cx - radius, cy - radius, cx + radius, cy + radius)
 
-            // The sweep is the angle itself, centered on the bisector, so the arc sits inside the
-            // two limb segments rather than crossing them.
             val start = Math.toDegrees(bisector.toDouble()).toFloat() - degrees / 2f
             canvas.drawArc(arcBounds, start, degrees, false, arcPaint)
 
@@ -227,10 +206,7 @@ internal class OverlayRenderer(
         canvas.drawText(labelChars, 0, length, lx, ly, labelPaint)
     }
 
-    /**
-     * Writes the label into the reusable buffer and returns its length. Whole degrees allocate
-     * nothing; decimals fall back to `String.format`, only when a consumer opts in.
-     */
+    /** Returns the length written to [labelChars]; only decimals allocate, through String.format. */
     private fun formatDegrees(
         degrees: Float,
         decimals: Int,
@@ -264,16 +240,13 @@ internal class OverlayRenderer(
             return digits + 1
         }
 
-        // Locale.US because a de-DE device would otherwise render "90,5" for the same build. The
-        // pattern is looked up rather than built: `"%.${decimals}f°"` rebuilt the same handful of
-        // strings on the draw path, once per labelled angle per frame.
+        // Locale.US, or a de-DE device renders "90,5". Patterns are looked up, not built per frame.
         val text = String.format(Locale.US, DECIMAL_PATTERNS[decimals], degrees)
         val length = min(text.length, labelChars.size)
         text.toCharArray(labelChars, 0, 0, length)
         return length
     }
 
-    /** Normalized frame coordinates to canvas pixels, through the projection it was given. */
     private fun project(joint: Int) {
         val base = joint * Skeleton.LANDMARK_STRIDE
         screen[0] = projection.x(landmarks[base + Skeleton.OFFSET_X], mirrored)

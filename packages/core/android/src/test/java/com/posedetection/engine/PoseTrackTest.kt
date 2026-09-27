@@ -5,7 +5,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** What a file job carries from one sampled frame to the next, and when it has to start over. */
 class PoseTrackTest {
     private val body = PoseBox(0.3f, 0.1f, 0.6f, 0.9f)
     private val someoneElse = PoseBox(0.7f, 0.1f, 0.95f, 0.9f)

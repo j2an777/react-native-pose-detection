@@ -1,7 +1,6 @@
 import ExpoModulesCore
 import UIKit
 
-/// The props, and what one batch of them does to the session.
 extension PoseCameraView {
   func setFacing(_ value: String) { propFacing = value }
   func setDelegate(_ value: String) { propDelegate = value }
@@ -10,12 +9,10 @@ extension PoseCameraView {
   func setDetection(_ value: Bool) { propDetection = value }
   func setMaxPoses(_ value: Int) { propMaxPoses = min(max(value, 1), 5) }
 
-  /// Baked into the landmarker at construction, so a change rebuilds it. See `applyDetectionState`.
   func setMinConfidence(_ value: Double?) {
     propMinConfidence = value.map { Float(min(max($0, 0.1), 1)) }
   }
 
-  /// The prop, or the value `maxPoses` implies when nobody has chosen one.
   func resolvedMinConfidence() -> Float {
     if let chosen = propMinConfidence { return chosen }
     return propMaxPoses > 1 ? PoseCameraView.multiPoseConfidence : PoseCameraView.minConfidence
@@ -36,7 +33,7 @@ extension PoseCameraView {
     propWorldLandmarks = config.worldLandmarks
   }
 
-  /// Already resolved and ordered by JavaScript. Reproducing that rule here would be a way to disagree.
+  /// Resolved and ordered by JavaScript; re-deriving it here could only disagree.
   func setAngleJoints(_ joints: [String]) { propAngleJoints = joints }
   func setSelection(_ indices: [Int]?) { propSelection = indices }
   func setProfile(_ value: Profile) { propProfile = value }
@@ -48,7 +45,6 @@ extension PoseCameraView {
 
   func setThermalPolicy(_ value: ThermalPolicy) { propThermalPolicy = value }
 
-  /// The id JavaScript reads this view's frames by, on its own thread. See `FrameStreams`.
   func setStreamId(_ id: Int?) {
     guard id != streamId else { return }
     if let previous = streamId {
@@ -67,12 +63,10 @@ extension PoseCameraView {
   }
 
   func setTriggers(_ specs: [TriggerSpec]) {
-    // Not deferred to `onPropsUpdated`: the engine carries counts across by id, so applying it
-    // twice would be harmless but applying it late would evaluate one frame against the old set.
+    // Not deferred to `onPropsUpdated`, which would evaluate a frame against the old set.
     triggers.setTriggers(specs)
   }
 
-  /// Runs once per prop batch. Only a resolution change takes the rebind path.
   func onPropsUpdated() {
     overlayView.config = pendingOverlayConfig
     applyOverlayEnabled()
@@ -81,12 +75,10 @@ extension PoseCameraView {
     smoothing.configure(minCutoff: propMinCutoff, beta: propBeta)
     applyPerformance(reason: nil)
 
-    // Only the props move geometry. What calibration or heat learns never does, which is what keeps
-    // an unrelated prop change from restarting the camera behind somebody's back.
+    // Only props move geometry, so calibration or heat never restarts the camera.
     let next = resolveGeometry()
     let geometryChanged = next != geometry
     adopt(next)
-    // Only 'auto' is documented to fall back to the other lens; a pinned one stays pinned.
     let pinnedFacing = propFacing == "front" || propFacing == "back"
     camera.facingFallbackAllowed = !pinnedFacing
 
@@ -105,13 +97,11 @@ extension PoseCameraView {
 
     applyDetectionState()
 
-    // 'auto' takes whatever the device could bind, the fallback lens included, and it is also what
-    // `switchCamera()` leaves behind, so only a pinned facing is reconciled here.
+    // 'auto' keeps whatever lens is bound, including one `switchCamera()` chose.
     guard pinnedFacing else { return }
     let target = resolveFacing()
     guard target != camera.targetFacing else { return }
-    // Reconciling a prop is not the interactive switch, and a paused session has nothing to switch,
-    // so the value is parked for the next bind instead of failing a switch nobody asked for.
+    // A paused session parks the facing instead of failing a switch nobody asked for.
     if camera.isBound {
       setFacingInternal(target, onDone: nil)
     } else {
@@ -119,7 +109,6 @@ extension PoseCameraView {
     }
   }
 
-  /// Hidden is also idle: no result is copied over or rendered while nobody can see it.
   func applyOverlayEnabled() {
     overlayView.isHidden = !overlayEnabled
     guard overlayEnabled != overlayOn.value else { return }
@@ -131,10 +120,7 @@ extension PoseCameraView {
     return propFacing == "back" ? .back : .front
   }
 
-  /**
-   The layout is rebuilt on every props batch but only adopted when it differs: a re-render that
-   changes nothing about `data` would otherwise clear frames that were waiting to be flushed.
-   */
+  /// Adopted only when it differs: adopting clears frames still waiting to be flushed.
   func applyFrameLayout() {
     let indices = propLandmarks ? (propSelection ?? FrameShape.allJoints) : []
     let next = FrameShape(jointIndices: indices, worldLandmarks: propWorldLandmarks, angleJoints: propAngleJoints)
@@ -145,10 +131,7 @@ extension PoseCameraView {
     frames.setLayout(next)
   }
 
-  /**
-   Runs the governor and adopts its decision. `reason` is what `onPerformanceChange` reports; nil
-   means this is a props update rather than something the engine decided, and fires no event.
-   */
+  /// `reason` goes to `onPerformanceChange`; nil, for a props update, fires no event.
   func applyPerformance(reason: String?) {
     let next = RateGovernor.decide(RateRequest(
       profile: propProfile,
@@ -167,7 +150,6 @@ extension PoseCameraView {
     emitPerformanceChange(reason: reason)
   }
 
-  /// The presets the props and profile ask for, on this device. Main thread only.
   func resolveGeometry() -> CameraGeometry {
     return GeometryResolver.resolve(
       profile: propProfile,
@@ -177,7 +159,7 @@ extension PoseCameraView {
     )
   }
 
-  /// Records the presets and sizes the camera binds at next. Does not rebind on its own.
+  /// Does not rebind; the camera picks the sizes up at its next bind.
   func adopt(_ next: CameraGeometry) {
     geometry = next
     let preview = CameraSource.previewSize(for: next.preview)

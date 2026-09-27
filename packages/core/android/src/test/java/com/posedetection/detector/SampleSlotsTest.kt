@@ -4,9 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** Samples in time order at the start of each slot, whatever order a decoder returns frames in. */
 class SampleSlotsTest {
-    /** Feeds frames in the order given and returns the samples' times, as the sampler would. */
     private fun sample(
         framesMs: List<Long>,
         stepMs: Long = 100,

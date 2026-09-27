@@ -115,15 +115,8 @@ const RN_CONFIG_NAMES = [
 ];
 
 /**
- * The Android project and application module, found the way React Native's own CLI finds them:
- * `project.android.sourceDir` and `project.android.appName` in `react-native.config.js`, with
- * `android` and `app` when they are not set, and `app` again when the named module does not exist.
- * An app that renamed its module builds that one, and a model copied into `android/app` there is
- * never packaged: the app fails with `MODEL_NOT_FOUND` while `doctor`, reading the same wrong
- * folder, reports it installed.
- *
- * Loading the config runs it, as React Native's CLI does, and one that cannot be loaded leaves the
- * defaults with a warning rather than stopping the command.
+ * Found as React Native's CLI finds it, from react-native.config.js: a model copied into
+ * `android/app` of an app with a renamed module is never packaged.
  */
 async function readAndroidProject(projectRoot: string): Promise<AndroidProject> {
   let android: { sourceDir?: unknown; appName?: unknown } | undefined;
@@ -217,9 +210,8 @@ async function fetchModelCommand(flags: Flags): Promise<number> {
 
   if (flags.android) {
     const android = await readAndroidProject(projectRoot);
-    // The guard belongs here rather than in installModelFile: the config plugin installs during
-    // prebuild, where android/ legitimately does not exist yet and mkdir -p is the right thing.
-    // Run from anywhere else, that same mkdir fabricates a four-level tree nobody asked for.
+    // Here, not in installModelFile: prebuild rightly creates android/, but run from the wrong
+    // directory the CLI would fabricate a four-level tree.
     if (await directoryExists(join(projectRoot, android.sourceDir))) {
       const target = await installModelFile(
         cachePath,
@@ -262,7 +254,6 @@ async function readIfPresent(filePath: string): Promise<string | null> {
   }
 }
 
-/** Exactly one model in the directory, and its bytes matching the manifest. */
 async function checkInstalledModel(dir: string, shortDir: string): Promise<Check[]> {
   const present = await findInstalledModels(dir);
 
@@ -273,8 +264,7 @@ async function checkInstalledModel(dir: string, shortDir: string): Promise<Check
 
   const fileName = present[0] as string;
   if (!KNOWN_MODEL_FILE_PATTERN.test(fileName)) {
-    // The native side loads any pose_landmarker_*.task, so a hand-placed one is the model that
-    // runs, and nothing here can say what it should hash to.
+    // Native loads any pose_landmarker_*.task, so this one runs with no hash to check it against.
     return [
       fail(
         'model installed',
@@ -323,7 +313,6 @@ async function checkMinSdk(projectRoot: string, android: AndroidProject): Promis
 
 const PBX_UUID = '[0-9A-Fa-f]{12,32}';
 
-/** Everything between the `Begin`/`End` comments the pbxproj writers emit around each section. */
 function pbxSection(pbxproj: string, name: string): string {
   const start = pbxproj.indexOf(`/* Begin ${name} section */`);
   const end = pbxproj.indexOf(`/* End ${name} section */`);
@@ -349,7 +338,6 @@ function pbxObject(section: string, uuid: string): string | null {
   return null;
 }
 
-/** Every uuid referenced from an object body, in order. */
 function pbxReferences(body: string): string[] {
   return [...body.matchAll(new RegExp(`(${PBX_UUID}) /\\*`, 'g'))].map(
     (match) => match[1] as string,
@@ -368,7 +356,6 @@ function applicationTarget(pbxproj: string): string | null {
   return null;
 }
 
-/** The XCConfigurationList a target or the project itself points at. */
 function buildConfigurationList(body: string | null): string | undefined {
   return new RegExp(`buildConfigurationList = (${PBX_UUID})`).exec(body ?? '')?.[1];
 }
@@ -390,10 +377,7 @@ function deploymentTargetsOf(pbxproj: string, listUuid: string | undefined): num
   return values;
 }
 
-/**
- * The pbxproj holds what Xcode actually builds against. Only the app target counts: an extension
- * pinned lower is no reason to fail a correct app.
- */
+/** Only the app target counts: an extension pinned lower is no reason to fail a correct app. */
 function checkDeploymentTarget(pbxproj: string | null): Check {
   const label = 'iOS deployment target 15.1';
   if (pbxproj === null) return skip(label, 'no Xcode project, run prebuild first');
@@ -444,8 +428,7 @@ async function checkXcodeRegistration(
 
     if (phase.includes(fileName)) return pass(label, `${fileName} is a build resource`);
 
-    // An empty phase is an answer. A phase with entries but no comments is not: some writers
-    // strip them, and guessing from uuids alone would produce a failure nobody can act on.
+    // Entries without name comments (some writers strip them) cannot be read: skip, not fail.
     const entries = phase.match(new RegExp(PBX_UUID, 'g')) ?? [];
     if (entries.length > 0 && !phase.includes('/*')) {
       return skip(label, 'the build phase lists no file names to read');
@@ -466,8 +449,7 @@ async function doctorCommand(): Promise<number> {
   const hasAndroid = await directoryExists(join(projectRoot, android.sourceDir));
   const hasIos = await directoryExists(join(projectRoot, 'ios'));
 
-  // An app built for one platform has one native project, and the other one missing is nothing
-  // to fix. Neither is a directory doctor can say nothing about, which is not a pass either.
+  // One platform missing is normal; both missing is the wrong directory, which is not a pass.
   if (!hasAndroid && !hasIos) {
     return report([
       fail(
@@ -519,9 +501,7 @@ async function doctorCommand(): Promise<number> {
     const manifest = await readIfPresent(
       join(projectRoot, android.sourceDir, android.appName, 'src', 'main', 'AndroidManifest.xml'),
     );
-    // Absent from the app manifest is not a failure: this package declares the permission in
-    // its own manifest, and the merger adds it. Reporting that as broken is how doctor gets
-    // ignored.
+    // Absent is not a failure: this package's own manifest declares it, and the merger adds it.
     checks.push(
       manifest === null
         ? skip('android.permission.CAMERA', 'no AndroidManifest.xml, run prebuild first')
@@ -545,7 +525,6 @@ async function doctorCommand(): Promise<number> {
   return report(checks);
 }
 
-/** Prints every check, and exits 1 when any of them failed. */
 function report(checks: readonly Check[]): number {
   for (const check of checks) {
     log.line(`${SYMBOL[check.status]} ${check.label.padEnd(27)} ${check.detail}`);
@@ -598,7 +577,7 @@ export async function run(argv: readonly string[]): Promise<number> {
     case 'clear-cache': {
       const flags = parseFlags(command, rest, ['--cache-dir']);
       if (flags.positionals.length > 0) {
-        // `clear-cache full` reads as clearing one variant, and it never did that.
+        // `clear-cache full` reads as clearing one variant, which it does not do.
         throw new Error(
           `clear-cache takes no arguments, got: ${flags.positionals.join(' ')}. It clears the ` +
             `whole cache.`,

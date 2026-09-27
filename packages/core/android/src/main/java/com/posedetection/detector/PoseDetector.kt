@@ -16,16 +16,7 @@ import com.posedetection.engine.Upright
 
 internal enum class DelegateRequest { AUTO, GPU, CPU }
 
-/**
- * The delegates a camera builds, in order. The first one that builds answers frames at once, and a
- * later one replaces it when it is ready.
- *
- * `auto` starts on the CPU and moves to the GPU. The GPU is the faster and cooler of the two once
- * running, but the slower to build: on a Redmi Note 12 it runs the full model in 89 ms against the
- * CPU's 122 ms at half the CPU time, and takes 1.9 s to build against 0.7 s. Starting on the GPU
- * left the camera up and the skeleton missing for most of two seconds. A GPU known not to work
- * here is not built at all.
- */
+/** `auto` answers on the CPU while the GPU builds: 1.9 s to the CPU's 0.7 s on a Redmi Note 12. */
 internal object StartPlan {
     private val CPU_ONLY = listOf(Delegate.CPU)
     private val GPU_ONLY = listOf(Delegate.GPU)
@@ -46,39 +37,18 @@ internal class PoseDetector private constructor(
     private val landmarker: PoseLandmarker,
     val delegate: Delegate,
     val modelFileName: String,
-    /** Baked in at construction, and what decides whether a parked landmarker fits a new camera. */
     val maxPoses: Int,
     val minConfidence: Float,
 ) {
-    /**
-     * VIDEO mode rejects a timestamp that does not strictly increase. Camera timestamps can repeat
-     * within a millisecond, so the value is clamped.
-     *
-     * Written on whichever thread runs the landmarker, read on main when a switch completes. A
-     * stale read there costs one dropped frame.
-     */
+    /** Clamped: VIDEO mode rejects a timestamp that does not increase, and camera ones can repeat. */
     @Volatile
     var lastTimestampMs = 0L
         private set
 
-    /**
-     * Held for every inference and for the close. A landmarker is handed between threads, from the
-     * build thread to a camera's analysis thread and from one camera to the next through
-     * [DetectorCache], and a camera going away parks it at once rather than after the frame it may
-     * still be running: whoever runs it next waits here for that frame to finish instead.
-     */
+    /** A camera parks this without waiting for its running frame, so whoever runs it next waits here. */
     private val lock = Any()
 
-    /**
-     * One camera frame, answered before this returns, on the analysis thread.
-     *
-     * VIDEO mode rather than LIVE_STREAM, which tracks across frames the same way. LIVE_STREAM
-     * hands every result back with a copy of the frame it came from, a new bitmap the size of the
-     * analysis buffer, for a caller that only reads its size. On a Redmi Note 12 that was 17 MB a
-     * second for the collector at ten frames, and moving to VIDEO took a fifth off the process's
-     * CPU. Answered in place, a frame also never waits behind another: CameraX drops what arrives
-     * while this runs, and the next frame converted is the newest one.
-     */
+    /** VIDEO, not LIVE_STREAM, which copies each frame back: 17 MB/s of garbage at 10 fps. */
     fun detect(
         image: MPImage,
         rotationDegrees: Int,
@@ -90,20 +60,7 @@ internal class PoseDetector private constructor(
             landmarker.detectForVideo(image, rotationOptions(rotationDegrees), timestamp)
         }
 
-    /**
-     * One inference on a blank frame, before the camera's first. It does three jobs:
-     *
-     * - The first inference through a freshly built graph costs several times what the rest do,
-     *   and this is where it is paid rather than on the first frame somebody is watching.
-     * - On the GPU it is the check that the delegate works here. Construction succeeds on devices
-     *   whose GPU then fails on the first real frame, and VIDEO mode answers synchronously, so the
-     *   failure throws here instead of on the camera's thread.
-     * - A blank frame finds nobody, which ends any track: a landmarker taken back from
-     *   [DetectorCache] starts from nobody, not from somebody who stood there a minute ago.
-     *
-     * It has to run before the analyzer can reach the landmarker. Run after the first camera
-     * frame, it ended the track that frame had just started, and the model found the person twice.
-     */
+    /** Pays the slow first inference, proves a GPU works and ends any track; before any camera frame. */
     fun warmUp() {
         val blank = Bitmap.createBitmap(WARM_UP_SIZE, WARM_UP_SIZE, Bitmap.Config.ARGB_8888)
         try {
@@ -114,7 +71,6 @@ internal class PoseDetector private constructor(
         }
     }
 
-    /** Whether this landmarker is what a camera asking for these settings would have built. */
     fun fits(
         modelFileName: String,
         request: DelegateRequest,
@@ -137,7 +93,6 @@ internal class PoseDetector private constructor(
         }
     }
 
-    /** IMAGE and VIDEO mode are synchronous, so there is no result listener to route. */
     fun detectImage(image: MPImage): PoseLandmarkerResult = landmarker.detect(image)
 
     fun detectVideo(
@@ -146,11 +101,7 @@ internal class PoseDetector private constructor(
     ): PoseLandmarkerResult = landmarker.detectForVideo(image, timestampMs)
 
     companion object {
-        /**
-         * A detector for a file rather than a camera. The CPU unless the caller has decided
-         * otherwise: a photo is one inference, and compiling the GPU's shaders costs more than
-         * running it. See [FileDetector] for when a video gets the GPU.
-         */
+        /** CPU by default: for one photo, compiling the GPU's shaders costs more than the inference. */
         @Suppress("LongParameterList")
         fun createForStillInput(
             context: Context,
@@ -178,12 +129,7 @@ internal class PoseDetector private constructor(
                 .list("")
                 ?.firstOrNull { it.startsWith("pose_landmarker_") && it.endsWith(".task") }
 
-        /**
-         * A camera's landmarker on exactly [delegate], built and warmed up, so the first frame the
-         * analyzer hands it is an ordinary one. Throws when the delegate cannot build here, or
-         * builds and then cannot run, which is how a GPU that does not work is found. Blocks for
-         * as long as the build takes, which on a low-end GPU is seconds, so never on main.
-         */
+        /** Blocks for seconds on a low-end GPU, so never on main; throws if [delegate] cannot run here. */
         fun createForCamera(
             context: Context,
             modelFileName: String,
@@ -240,13 +186,7 @@ internal class PoseDetector private constructor(
             return PoseLandmarker.createFromOptions(context, options)
         }
 
-        /**
-         * Built once. The builder, the AutoValue instance and the boxed rotation it holds were
-         * three allocations per frame for a value with four possible states that changes when the
-         * device turns, not when a frame arrives.
-         *
-         * See [mediaPipeDegrees] for the sign.
-         */
+        /** Built once: per frame this is three allocations for a value with four states. */
         private val ROTATION_OPTIONS =
             Array(QUARTER_TURNS) { quarter ->
                 ImageProcessingOptions
@@ -258,14 +198,7 @@ internal class PoseDetector private constructor(
         fun rotationOptions(rotationDegrees: Int): ImageProcessingOptions =
             ROTATION_OPTIONS[Upright.quarterOf(rotationDegrees)]
 
-        /**
-         * What MediaPipe is handed for a buffer CameraX says needs [rotationDegrees] clockwise to
-         * stand upright: the same turn, negated, because MediaPipe turns the image the other way by
-         * the amount it is given. A frame dumped on a Redmi Note 12 settles it. Handed +270 for its
-         * front camera, the model found the face and put the shoulders above the head: a person
-         * upside down, which it finds late and draws scrambled, and whose landmarks still gather
-         * around a close face, which is how that got past a look at the screen.
-         */
+        /** CameraX's clockwise turn, negated: MediaPipe turns the image the other way by what it is given. */
         fun mediaPipeDegrees(rotationDegrees: Int): Int = -(Upright.quarterOf(rotationDegrees) * DEGREES_PER_QUARTER)
 
         private const val QUARTER_TURNS = 4

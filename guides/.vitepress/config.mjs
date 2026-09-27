@@ -1,12 +1,6 @@
-// The documentation site: guides/ built with VitePress and published to GitHub Pages by
-// .github/workflows/docs-site.yml. Plain JavaScript that imports nothing from VitePress, so a pinned
-// `npx vitepress` builds it without adding VitePress to the repository's own dependencies:
-//
-//   npx vitepress@1.6.4 dev guides
-//
-// The pages are the same files GitHub renders. Links that leave guides/ for the rest of the
-// repository are rewritten to GitHub here, so they work in both places and the build still fails on
-// a link that is dead in the site itself.
+// The docs site, built from guides/ and published by .github/workflows/docs-site.yml. It imports
+// nothing from VitePress, so no dependency is added: `npx vitepress@1.6.4 dev guides`. Links that
+// leave guides/ are rewritten to GitHub, so they work in both places.
 
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -21,10 +15,7 @@ const HOME_DESCRIPTION =
   'On-device pose estimation, body tracking, joint angles and rep counting for React Native and ' +
   'Expo, powered by MediaPipe, with a native skeleton overlay and zero runtime dependencies.';
 
-/**
- * Descriptions for pages whose first paragraph says something true but makes a poor search result.
- * Kept here rather than as frontmatter, which GitHub would render as a table above the page.
- */
+/** Pages whose first paragraph is a poor search result. Not frontmatter, which GitHub renders. */
 const DESCRIPTIONS = {
   'getting-started.md':
     'Add real-time pose detection to a React Native or Expo app: install, grant the camera, and see a ' +
@@ -55,11 +46,11 @@ function outside(href, relativePath) {
   return `${REPOSITORY}/${kind}/main/${file}${anchor ? `#${anchor}` : ''}`;
 }
 
-/** Rewrites links and images that leave guides/, using the source path VitePress passes in `env`. */
+/** Rewrites links and images that leave guides/, by the source path VitePress passes in `env`. */
 function repositoryLinks(md) {
   const rewrite = (token, attribute, env) => {
     const value = token.attrGet(attribute);
-    // The page's path inside guides/. The one rewrite, README to index, stays in the same folder.
+    // The only rewrite, README to index, stays in its folder, so relative links still resolve.
     const { relativePath } = env;
     if (!value || !relativePath) return;
     const url = outside(value, relativePath);
@@ -94,8 +85,7 @@ function firstParagraph(source) {
     }
     if (fenced) continue;
     const text = line.trim();
-    // Headings, tables, HTML, quotes, images and list items are not prose; a paragraph that opens
-    // in bold is.
+    // Headings, tables, HTML, quotes, images and list items are not prose; text opening in bold is.
     const prose = text !== '' && !/^(#|\||<|>|!\[|[-*+] |\d+\. )/.test(text);
     if (prose) paragraph.push(text);
     else if (paragraph.length > 0) break;

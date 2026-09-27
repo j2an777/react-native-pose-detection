@@ -1,28 +1,11 @@
 import ExpoModulesCore
 import UIKit
 
-/**
- The orchestrator. Owns the preview, the overlay, the camera, the detector, and the engine, and is
- the only thing that knows how all of them fit together.
-
- Threading, which everything here depends on:
-
- - **main** holds the props, the view tree, and every field not wrapped in `Guarded`.
- - **`analysisQueue`** receives sample buffers and calls `detectAsync` on the same thread, so a
-   buffer never escapes the callback it arrived in. The detector is also built there, because
-   building the heavy model takes seconds.
- - **MediaPipe's callback queue** delivers results, which is where the frame is encoded.
- - **the session queue**, inside `CameraSource`, owns the capture session.
- */
+/// Threads: main owns every unguarded field unless marked; `analysisQueue` takes buffers and
+/// runs detect; MediaPipe's callback queue encodes results; `CameraSource` owns the session queue.
 public class PoseCameraView: ExpoView {
-  /**
-   Confidence for one subject and for several, which is one decision rather than two.
-
-   0.6 keeps a single subject cleanly tracked and keeps scenery from being offered as a body. It
-   also means the model returns one pose whatever `maxPoses` says, so asking for more than one
-   drops to 0.3, which is measured to be where a second person actually appears rather than the
-   first person twice. See guides/reference/pose-camera.md.
-   */
+  /// 0.6 keeps scenery from reading as a body but returns one pose whatever `maxPoses` says; 0.3
+  /// is where a second person was measured to appear. See guides/reference/pose-camera.md.
   static let minConfidence: Float = 0.6
   static let multiPoseConfidence: Float = 0.3
   static let millisPerSecond = 1_000.0
@@ -33,25 +16,21 @@ public class PoseCameraView: ExpoView {
 
   static let fpsWindowMs: Int64 = 1_000
 
-  /// No result for this long means `getState().fps` reports zero rather than the last live value.
+  /// After this long without a result, `getState().fps` reports zero.
   static let fpsStaleAfterMs: Int64 = 2_000
 
-  /// The first window publishes early: a readout at zero for a full second next to a skeleton
-  /// that is visibly tracking reads as broken. Enough frames that the division means something.
+  /// The first window publishes early, so the readout is not stuck at zero for a second.
   static let fpsFirstWindowMs: Int64 = 250
   static let fpsFirstWindowFrames = 3
 
-  /// A sensor frame this close to its due time counts as on time. Sensor clocks jitter by a few
-  /// milliseconds, and a strict compare would drop a frame that is early by one.
+  /// Sensor clocks jitter, so a frame a few milliseconds early still counts as on time.
   static let pacingJitterMs = 5.0
 
-  /// How long a landmarker nobody is using is kept before its memory is given back: long enough
-  /// that toggling detection or the camera, or a restart for new geometry, skips the build.
+  /// Long enough that toggling detection or the camera, or a geometry restart, skips a rebuild.
   static let parkedReleaseSeconds: TimeInterval = 60
-  /// The same for a view that has gone away: the app in the background, or the view off screen.
+  /// How long a backgrounded or detached view keeps its landmarker.
   static let awayReleaseSeconds: TimeInterval = 30
 
-  /// Three GPU failures inside a second is a delegate that does not work on this device.
   static let gpuFailureLimit = 3
   static let gpuFailureWindowMs: Int64 = 1_000
 
@@ -75,7 +54,6 @@ public class PoseCameraView: ExpoView {
   let previewView = PreviewView(frame: .zero)
   let overlayView = OverlayView(frame: .zero)
 
-  /// One serial queue. Sample buffers arrive here and inference runs here.
   let analysisQueue = DispatchQueue(label: "com.posedetection.analysis", qos: .userInitiated)
 
   private(set) lazy var camera = CameraSource(
@@ -84,47 +62,33 @@ public class PoseCameraView: ExpoView {
     delegate: self
   )
 
-  /// Written on main, read on the analysis queue, so a teardown is seen on the next frame.
   let detector = Guarded<PoseDetector?>(nil)
 
-  /**
-   False while detection is off, the camera is paused, or the view is away: frames stop reaching
-   the landmarker, which is kept for a while so turning it back on costs nothing. Read per frame.
-   */
+  /// False while detection is off, paused or away; the landmarker stays built meanwhile.
   let feeding = Guarded(true)
 
-  /// Frees a parked landmarker once it has gone unused long enough to be worth its memory back.
   var releaseTimer: Timer?
 
-  /// Set when the GPU failed at runtime, so the rebuild is reported once it has landed on the CPU.
   var fellBackToCpu = false
 
-  /// Callback-queue only. When the GPU last failed, which is how a broken delegate is noticed.
+  /// Callback queue only.
   var gpuFailureTimes = [Int64]()
 
   var modelPath: String?
 
-  /**
-   In-flight construction state, main thread only. `detectorGeneration` is bumped by every teardown
-   so a build landing afterwards is dropped rather than installed. `maxPoses` and the delegate are
-   baked in at construction, so the last two force a rebuild when they change.
-   */
+  /// Main thread only. A teardown bumps `detectorGeneration` so a build that lands late is dropped.
   var detectorPending = false
   var detectorGeneration = 0
   var detectorRequest: DelegateRequest?
   var detectorMaxPoses = 0
   var detectorMinConfidence: Float = 0
 
-  /// Survives `releaseDetector` so `getState` reports the pipeline, not instance liveness.
+  /// Survives `releaseDetector`: `getState` reports the pipeline, not whether it is built.
   var resolvedDelegate: String?
 
-  /// A dead delegate fails every frame, and 30 identical events a second helps nobody.
   let lastDetectionErrorMs = Guarded<Int64>(0)
 
-  /**
-   A rebind only attaches the new input. The switch is reported once the new camera delivers a
-   frame, with `switchTimer` resolving one that never does.
-   */
+  /// A switch is reported on the new camera's first frame, or by `switchTimer` if none comes.
   let awaitingFirstFrame = Guarded<Bool>(false)
   var pendingSwitchDone: (() -> Void)?
   var switchTimer: Timer?
@@ -139,16 +103,11 @@ public class PoseCameraView: ExpoView {
   var hasPreviousLandmarks = false
   var previousComX = Float.nan
   var previousComY = Float.nan
-  /// The primary pose's box on the frame before, which is how a change of person is noticed.
   var previousBox: PoseBox?
 
   let frames = FrameRingBuffer()
 
-  /**
-   What JavaScript reads synchronously, registered under the id `<PoseCamera>` passes as a prop. Its
-   live reading is built from thread-safe values only, never from the view, so it can run on the
-   JavaScript thread. See `FrameStreams`.
-   */
+  /// Read on the JavaScript thread: its closures capture thread-safe values only, never the view.
   private(set) lazy var stream = FrameStream(
     frames: frames,
     readDetecting: { [feeding, detector] in feeding.value && detector.value != nil },
@@ -166,88 +125,62 @@ public class PoseCameraView: ExpoView {
   let triggers = TriggerEngine()
   let smoothing = OneEuroFilter()
 
-  /**
-   Callback-queue only, with the landmarker whose results it has seen: a different one has filters
-   of its own that start over, so this starts over with them.
-   */
+  /// Callback queue only. Starts over with each new landmarker, whose filters start over too.
   let visibilityClock = VisibilityClock()
   var clockedWith: ObjectIdentifier?
-  /// Whether this frame's visibility was re-timed, which the world landmarks then take too.
   var visibilityClocked = false
   let calibrator = Calibrator()
   let thermalMonitor = ThermalMonitor()
 
-  /// What the governor last decided. Read on the analysis queue, written on main.
   let rate = Guarded(RateDecision(fps: 30, limitedBy: .camera))
 
-  /// The current profile's idle rates, read on the analysis queue for every frame.
   let idleRates = Guarded<IdleRates?>(Budgets.of(.auto).idle)
 
-  /// The idle rate in force right now, or nil while a pose is recent. Written on the analysis queue.
+  /// nil while a pose is recent. Written on the analysis queue.
   let idleFps = Guarded<Int?>(nil)
 
-  /// What the camera delivers once pinned. Written from the session queue, read everywhere.
   let cameraFps = Guarded(30)
 
-  /// Preview and analysis presets for this session. Main thread only, and fixed while it runs.
   var geometry = CameraGeometry(preview: "720p", analysis: "480p")
 
-  /// Read once: installed memory does not change while the app runs.
   let memoryGiB = GeometryResolver.deviceMemoryGiB()
 
-  /**
-   The size of the buffer the last dispatched frame carried, in display orientation. The result
-   callback needs it for the aspect correction and MediaPipe hands back only landmarks, so it is
-   recorded at dispatch. It changes on a rotation or a rebind, never between two frames of one
-   session, so a result that reads it a frame late reads the same value.
-   */
+  /// Recorded at dispatch, since results carry no size. Changes only on a rotation or rebind, so a
+  /// result that reads it a frame late still gets its own size.
   let frameSize = Guarded(CaptureSize(width: 0, height: 0))
 
-  /// Heat and power, main thread only. Sampled on a timer and on the OS's notifications, never on
-  /// the frame path.
   var thermal = ThermalHysteresis()
   var lowPower = false
   var heatTimer: Timer?
 
-  /// Frame pacing: when the next inference is due. Analysis queue only, unlike `lastPoseMs`.
+  /// Analysis queue only.
   var nextDetectDueMs = 0.0
 
-  /// Written on the callback queue, read on the analysis queue to decide idle-search.
   let lastPoseMs = Guarded<Int64>(0)
 
-  /**
-   Measured on the result callback, so `getState().fps` is what the model completed rather than
-   what it was handed. The two differ exactly when the device cannot keep up, which is the moment
-   the number matters. The window fields belong to the callback queue; the totals are shared.
-   */
+  /// Counted per result, so fps is what the model completed. Window fields: callback queue only.
   var framesInWindow = 0
   var fpsWindowStartMs: Int64 = 0
   let measuredFps = Guarded<Int>(0)
   let lastResultMs = Guarded<Int64>(0)
 
-  /// Reused across frames: this is the inference path, and an allocation here is one everywhere.
   let frameContext = FrameContext()
   var firings = [TriggerFiring]()
 
-  /// Reassigned on main when the layout changes, read on the callback queue.
   let frameLayout = Guarded<FrameShape?>(nil)
 
-  /// Velocity is a difference, so it needs the frame before this one.
   let previousFrameMs = Guarded<Double>(0)
 
-  /// At most one tick in flight. Without it a stalled JavaScript side queues one per frame.
+  /// At most one tick in flight, so a stalled JavaScript side does not queue one per frame.
   let tickPending = Guarded<Bool>(false)
 
-  /// Last emission, so `throttled` and `batched` can decide whether this frame is due.
   let lastEmitMs = Guarded<Int64>(0)
 
   var logTimer: Timer?
 
-  /// One token per notification this view registered, so detaching removes exactly those.
   var observerTokens = [NSObjectProtocol]()
 
-  // Props. Applied together in `onPropsUpdated` rather than one at a time, so a render that
-  // changes three of them rebinds the session once.
+  // Props, applied together in `onPropsUpdated` so one render rebinds the session at most once.
   var propFacing = "auto"
   var propDelegate = "auto"
   var propActive = true
@@ -258,7 +191,7 @@ public class PoseCameraView: ExpoView {
   var propPreview = "auto"
   var propAnalysis = "auto"
   var overlayEnabled = true
-  /// `overlayEnabled` for the callback queue: while it is off, results are not handed to the overlay.
+  /// `overlayEnabled`, readable from the callback queue.
   let overlayOn = Guarded(true)
   var pendingOverlayConfig = OverlayConfig()
   var propMode = DataMode.off
@@ -286,15 +219,13 @@ public class PoseCameraView: ExpoView {
     addSubview(previewView)
     addSubview(overlayView)
 
-    // The camera's delivered rate is the governor's ceiling, known only once a lens is bound.
     camera.onFrameRate = { [weak self] fps in
       guard let self = self, fps != self.cameraFps.value else { return }
       self.cameraFps.value = fps
       self.applyPerformance(reason: nil)
     }
 
-    // Props have not arrived yet. Without this a frame landing first would find no layout and be
-    // dropped, and `snapshotFrame()` would answer empty for reasons nobody could see.
+    // Before props arrive, so a first frame is not dropped for want of a layout.
     applyFrameLayout()
   }
 
@@ -305,8 +236,7 @@ public class PoseCameraView: ExpoView {
   }
 
   deinit {
-    // ARC gives what Android needed `OnViewDestroys` for. The observers, the timers and the
-    // session all go here, so a view that is released without ever being detached still lets go.
+    // Also covers a view released without ever being detached.
     removeObservers()
     if let id = streamId {
       FrameStreams.shared.unregister(stream, id: id)

@@ -6,7 +6,6 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** How a synchronous read on the JavaScript thread finds a view's frames, and what it gets when it cannot. */
 class FrameStreamsTest {
     private fun stream() = FrameStream(FrameRingBuffer()) { mapOf("fps" to 30) }
 

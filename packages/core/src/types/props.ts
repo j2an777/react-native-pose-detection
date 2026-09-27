@@ -19,10 +19,7 @@ import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from
 import type { LogEntry, LogLevelConfig } from './logging';
 import type { Trigger, TriggerEvent } from './triggers';
 
-/**
- * Every axis defaults to `'auto'`. Setting one pins it and calibration leaves it alone, the rest
- * keep adapting. See the precedence chain in guides/performance.md.
- */
+/** Each axis you set is pinned; those left `'auto'` keep adapting. See guides/performance.md. */
 export type PoseCameraProps = {
   style?: StyleProp<ViewStyle>;
 
@@ -31,43 +28,28 @@ export type PoseCameraProps = {
   delegate?: DelegateRequest;
   targetFps?: 'auto' | number;
   resolution?: 'auto' | ResolutionPreset;
-  /** What the model sees. Independent of `resolution`, which only affects the preview. */
+  /** What the model sees. Independent of `resolution`, which only sizes the preview. */
   analysisResolution?: 'auto' | AnalysisResolutionPreset;
   thermalPolicy?: ThermalPolicy;
   /**
-   * 1 to 5. Triggers evaluate against the primary pose, which is the largest body in frame.
-   *
-   * A ceiling rather than a promise. MediaPipe returns a second body only when it is separate and
-   * mostly whole, and only at a lower confidence than one subject wants, which is why raising this
-   * also lowers `minConfidence` unless you have set that yourself.
+   * 1 to 5, default 1. Frames and triggers use the primary pose, the largest body found. Above 1,
+   * `minConfidence` defaults to 0.3, low enough for a second body to be found at all.
    */
   maxPoses?: number;
   /**
-   * How sure the model has to be before it calls something a body, 0.1 to 1.
-   *
-   * Left out, it comes from `maxPoses`, because the two are one decision: `0.6` at `maxPoses: 1`,
-   * high enough that scenery is not offered as a body and the one subject is tracked well, and
-   * `0.3` above that, which is where the model starts returning a second person rather than the
-   * same one twice.
-   *
-   * Set it to take that decision yourself. Lower finds bodies that are distant, cropped or half
-   * hidden, at the cost of false ones; higher tracks one subject more surely.
-   *
-   * Changing it rebuilds the landmarker, so it belongs in state that settles rather than state that
-   * changes every frame.
+   * How sure the model must be to call something a body, 0.1 to 1. Default 0.6 at `maxPoses: 1`,
+   * 0.3 above it. A change rebuilds the landmarker, so keep it in state that settles.
    */
   minConfidence?: number;
-  /**
-   * `'auto'` (the default) is off for one pose and on for several. MediaPipe already runs a One
-   * Euro filter on a single tracked body, so a second pass there only adds lag; with more than one
-   * body it runs none, and this one takes its place with the same constants. `true` or a config
-   * turns it on regardless, `false` off.
-   */
+  /** `'auto'` (default): off for one pose, which MediaPipe already smooths, on for several. */
   smoothing?: 'auto' | boolean | SmoothingConfig;
 
   /** Camera on or off. The lowest power state short of unmounting. */
   active?: boolean;
-  /** Inference on or off. `false` releases GPU resources, the preview keeps running. */
+  /**
+   * Inference on or off; the preview keeps running. `false` stops inference at once and frees the
+   * landmarker after a minute unused, so turning it back on within that minute is instant.
+   */
   detection?: boolean;
   overlay?: boolean | OverlayConfig;
 
@@ -75,8 +57,8 @@ export type PoseCameraProps = {
   triggers?: readonly Trigger[];
 
   /**
-   * Raises the level on top of `setLogLevel()` while this camera is mounted, and gives it back on
-   * unmount. The level is global, so the raise covers everything that logs meanwhile.
+   * Raises the level on top of `setLogLevel()` while this camera is mounted. The level is global,
+   * so the raise covers everything that logs meanwhile.
    */
   logLevel?: LogLevelConfig;
 
@@ -85,56 +67,45 @@ export type PoseCameraProps = {
   onCameraChange?: (event: CameraChangeEvent) => void;
   onPerformanceChange?: (event: PerformanceEvent) => void;
   onTrigger?: (event: TriggerEvent) => void;
-  /** `data.mode` of `'throttled'` or `'live'`. */
+  /** Fires when `data.mode` is `'throttled'` or `'live'`. */
   onPose?: (frame: PoseFrame) => void;
-  /** `data.mode` of `'batched'`. */
+  /** Fires when `data.mode` is `'batched'`. */
   onPoseBatch?: (frames: readonly PoseFrame[]) => void;
   /**
-   * Frames the native ring buffer dropped because this consumer could not keep up. Reported per
-   * delivery, so a steady trickle here means the callback is doing too much work.
+   * Frames the native ring buffer dropped since the last delivery. A steady trickle means the frame
+   * callback is doing too much work.
    */
   onFramesDropped?: (count: number) => void;
   /** Log batches while this camera is mounted, at whatever level is in force. */
   onLog?: (entries: readonly LogEntry[]) => void;
 };
 
+/** Everything but `getState` and `setProfile` returns a promise; await it to see a failure. */
 export type PoseCameraRef = {
   /** Resolves once the session is stable again, not when the switch begins. */
   switchCamera(): Promise<void>;
   setFacing(facing: Facing): Promise<void>;
 
-  /**
-   * These reach native over the same asynchronous path as everything else, so they return a
-   * promise. Ignoring it is fine and common; awaiting it is how you see a failure.
-   */
+  /** Stops the capture session and parks the landmarker; `resume()` within a minute is instant. */
   pause(): Promise<void>;
   resume(): Promise<void>;
-  /** Resumes at once while the landmarker is still parked, see `stopDetection`. */
+  /** Instant within a minute of `stopDetection()`; after that the landmarker is rebuilt. */
   startDetection(): Promise<void>;
-  /**
-   * Stops frames reaching the landmarker at once, and frees it after a minute unused. A
-   * `startDetection()` inside that minute is instant rather than a rebuild.
-   */
+  /** Stops inference at once and frees the landmarker after a minute unused. Preview unaffected. */
   stopDetection(): Promise<void>;
+  /** Drawing only; inference continues. */
   setOverlayEnabled(enabled: boolean): Promise<void>;
 
   /** Applies a profile now, rather than at the next render. See guides/performance.md. */
   setProfile(profile: Profile): void;
-  /**
-   * Asynchronous because it reads the calibration on the main thread: the phase, the source and
-   * the measured p50 are on no event, so JavaScript has nothing to mirror them from.
-   */
+  /** Async because it reads the calibration on native's main thread, which no event mirrors. */
   getProfile(): Promise<ProfileState>;
-  /**
-   * The state mirrored from the events that carry it, with `fps` and `limitedBy` read live.
-   * Synchronous and never a trip across the bridge.
-   */
+  /** Synchronous: the state the events carry, with `fps` and `limitedBy` read live from native. */
   getState(): CameraState;
 
   /**
-   * The current frame regardless of `data.mode`. `null` when no pose is present. Read
-   * synchronously underneath, so the promise is already settled when it is returned. See
-   * [ADR 0008](../../../docs/adr/0008-frames-are-drained-not-pushed.md).
+   * The current frame regardless of `data.mode`, or `null` with no pose. Read synchronously, so the
+   * promise is already settled when returned. See ADR 0008.
    */
   snapshot(): Promise<PoseFrame | null>;
 };

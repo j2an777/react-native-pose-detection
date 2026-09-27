@@ -1,7 +1,6 @@
 import XCTest
 @testable import PoseEngine
 
-/// How a synchronous read on the JavaScript thread finds a view's frames, and what it gets when it cannot.
 final class FrameStreamsTests: XCTestCase {
   private func makeStream() -> FrameStream {
     let frames = FrameRingBuffer()

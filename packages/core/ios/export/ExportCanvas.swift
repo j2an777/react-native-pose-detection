@@ -1,25 +1,14 @@
 import CoreGraphics
 
-/**
- The size an export writes at: the source's displayed frame, capped to a long edge.
-
- Capping is the single biggest lever on how long an export takes and how large the file is, and
- 1920 is the default because a painted copy is something to review or share rather than a master.
- The aspect ratio is never changed, so the skeleton drawn against the source's proportions still
- lands on the body.
-
- Both axes come back even. H.264 encodes in macroblocks, and an odd dimension is rejected outright
- by the encoder on some devices and silently rounded on others, which is the worse of the two
- because it moves every pixel half a step away from where the skeleton was projected.
- */
+/// Capped on the long edge with the aspect kept. Both axes even: H.264 rejects an odd size on some
+/// devices and silently rounds it on others, shifting every pixel off the projected skeleton.
 func exportCanvasSize(display: CGSize, maxSize: Int) -> CGSize {
   let longEdge = max(display.width, display.height)
   guard longEdge > 0, display.width > 0, display.height > 0 else {
     return CGSize(width: 2, height: 2)
   }
 
-  // Only ever down. Painting a 480p clip at 1920 would cost four times the encode for four times
-  // the pixels of the same picture.
+  // Never up: a bigger copy of the same picture only costs encode time.
   let scale = maxSize > 0 ? min(1, CGFloat(maxSize) / longEdge) : 1
   return CGSize(
     width: even(display.width * scale),
@@ -32,22 +21,11 @@ private func even(_ value: CGFloat) -> CGFloat {
   return rounded - rounded.truncatingRemainder(dividingBy: 2)
 }
 
-/// A phone screen is around this many points across, which is the size the overlay defaults were
-/// chosen to look right at.
+/// About a phone screen's width in points, where the overlay defaults were tuned.
 private let referenceEdge: CGFloat = 400
 
-/**
- How much to multiply the overlay's widths and radii by when painting into `canvas`.
-
- A live preview draws in points on a screen a few hundred points wide, so a `lineWidth` of 3 is a
- clearly visible line. An export draws in pixels, where 3 on a 1080 pixel frame is a hair. Scaling
- by the canvas's short edge against a nominal phone width means one config produces a skeleton that
- looks the same in the preview and in the file, at any output size, which is the whole promise of
- configuring both with the same numbers.
-
- The short edge rather than the long one, so a clip and the portrait video of the same scene do not
- come back with different weights of line.
- */
+/// Multiplies overlay widths and radii so a config drawn in pixels looks as it does in points on a
+/// screen. By the short edge, so landscape and portrait get the same weight of line.
 func overlayScale(canvas: CGSize) -> CGFloat {
   let shortEdge = min(canvas.width, canvas.height)
   guard shortEdge > 0 else { return 1 }

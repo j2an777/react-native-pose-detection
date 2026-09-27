@@ -7,7 +7,7 @@ import android.os.PowerManager
 import com.posedetection.LogCategory
 import com.posedetection.PoseLog
 
-/** Where a calibration outlives the process. An interface so the logic can be tested without a Context. */
+/** An interface so the calibrator is testable without a Context. */
 internal interface CalibrationStore {
     fun read(key: String): String?
 
@@ -17,21 +17,9 @@ internal interface CalibrationStore {
     )
 }
 
-/**
- * What this device's inference costs, in the order `guides/performance.md` describes it.
- *
- * 1. Measured: the median dispatch-to-result time over the last 60 frames that had a pose, first
- *    published after 15, so a session knows what its device costs within about half a second.
- * 2. Cached, so the second launch starts where the first one finished.
- *
- * Before either, the governor runs at the camera's rate. An unknown device is not a slow one, and
- * half a second at the camera's rate costs less than a start that looks slow to the person
- * watching. The memory and core probe that used to guess a rate now only names a tier until a
- * measurement replaces it.
- */
+/** This device's measured inference cost, cached per device and model. See `guides/performance.md`. */
 internal class Calibrator(
     private val store: CalibrationStore,
-    /** Hardware model and OS version, the part of the cache key that is not the model file. */
     private val deviceKey: String,
     private val memoryGiB: () -> Float,
     private val cores: () -> Int,
@@ -55,11 +43,11 @@ internal class Calibrator(
     var source = Source.STATIC
         private set
 
-    /** The published median, or 0 before one exists. What the governor divides by. */
+    /** The published median, or 0 before one exists. */
     var p50InferenceMs = 0f
         private set
 
-    /** What the GPU check decided for this device and model last time, or null if it never ran here. */
+    /** The GPU check's latest verdict for this device and model, or null if it never ran. */
     var gpuVerdict: Boolean? = null
         private set
 
@@ -71,11 +59,7 @@ internal class Calibrator(
     private var lastChangeMs = 0L
     private var modelFileName: String? = null
 
-    /**
-     * Loads what this device and model are known to cost. Runs on every session start and does
-     * nothing when the model has not changed: a camera restart is not a new device, and throwing
-     * the measurement away there sent the rate back to a guess every time a prop rebound the session.
-     */
+    /** A no-op for the same model: a camera restart is not a new device, so the measurement stands. */
     fun start(modelFileName: String) {
         if (modelFileName == this.modelFileName) return
         this.modelFileName = modelFileName
@@ -110,10 +94,8 @@ internal class Calibrator(
     }
 
     /**
-     * One frame's cost, dispatch to result. That span breathes with load: a rate the device cannot
-     * hold shows up as queue wait long before it shows up as heat, which is what closes the loop.
-     * Returns true when the published median or the tier moved, or when the measurement settled,
-     * which the caller answers by re-running the governor and persisting.
+     * Dispatch to result, so a rate the device cannot hold shows here as queue wait before heat.
+     * True when the median or tier moved or the measurement settled: re-run the governor, persist.
      */
     fun record(
         inferenceMs: Float,
@@ -126,14 +108,11 @@ internal class Calibrator(
         if (sampleCount < WINDOW) sampleCount += 1
         sinceMedian += 1
 
-        // The first estimate lands at FIRST_ESTIMATE samples, then one every MEDIAN_STRIDE.
         if (sampleCount < FIRST_ESTIMATE || sinceMedian < MEDIAN_STRIDE) return false
         sinceMedian = 0
         val candidate = median()
 
-        // Hysteresis: a rate that just moved is given time to show what it costs before it moves
-        // again, or a device sitting between two answers oscillates between them forever. The
-        // window itself is kept: inference cost does not become untrue because the rate changed.
+        // Cooldown, or a device between two answers oscillates. The samples stay valid across it.
         if (lastChangeMs != 0L && nowMs - lastChangeMs < COOLDOWN_MS) return false
 
         val nextTier = AutoTuner.tier(candidate)
@@ -160,7 +139,7 @@ internal class Calibrator(
         return true
     }
 
-    /** Only a settled, measured answer is worth persisting. A guess is not worth a second launch. */
+    /** Only a settled measurement: a guess must not seed the next launch. */
     fun persist() {
         val model = modelFileName ?: return
         if (phase != Phase.SETTLED || source != Source.MEASURED) return
@@ -191,16 +170,15 @@ internal class Calibrator(
         return scratch[count / 2]
     }
 
-    /** A verdict this calibrator never saw is kept rather than erased: a file job may have recorded it. */
+    /** Keeps a stored verdict this calibrator never saw: a file job may have recorded it. */
     private fun write(model: String) {
         val verdict = gpuVerdict ?: readCache(model)?.gpu
         store.write(cacheKey(model), "${tier.name}|$p50InferenceMs|${verdictName(verdict)}")
     }
 
-    /** The GPU verdict alone, for a file job, without touching this calibrator's own state. */
     fun cachedGpu(model: String): Boolean? = readCache(model)?.gpu
 
-    /** Records a file job's verdict beside whatever the camera measured, which it leaves as it was. */
+    /** A file job's verdict, stored without touching this calibrator or the camera's measurement. */
     fun storeGpu(
         usable: Boolean,
         model: String,
@@ -239,25 +217,17 @@ internal class Calibrator(
         return Cached(tier, p50, gpu)
     }
 
-    /**
-     * Device, OS version, model and MediaPipe version. Any of them changing invalidates by producing
-     * a different key rather than by anything having to notice and clear the old one. Versioned: the
-     * first version cached a rate under a model that no longer exists.
-     */
+    /** Any part changing makes a new key, so nothing has to clear the old one. `v2` retired v1's rates. */
     private fun cacheKey(model: String): String = "v2|$deviceKey|$model|${MediaPipeVersion.PINNED}"
 
     companion object {
         /** Two seconds at 30 fps, which is long enough for a median to mean something. */
         const val WINDOW = 60
 
-        /** Half a second at 30 fps: enough that one slow frame cannot decide it, soon enough to matter. */
+        /** Half a second at 30 fps: one slow frame cannot decide it, yet it lands soon. */
         const val FIRST_ESTIMATE = 15
 
-        /**
-         * The median is a copy and a sort, so it is refreshed every quarter window rather than
-         * every frame. Inference cost does not change in fifteen frames; recomputing inside that
-         * span is work on the hot path for a number that comes out the same.
-         */
+        /** A median is a copy and a sort, so it refreshes every quarter window, not every frame. */
         const val MEDIAN_STRIDE = 15
 
         const val COOLDOWN_MS = 3_000L
@@ -276,7 +246,6 @@ internal class Calibrator(
 
         private const val CACHE_FIELDS = 3
 
-        /** The rate a median implies at the default duty, capped where more stops meaning anything. */
         fun implied(p50Ms: Float): Int =
             minOf(RateGovernor.capacity(COMPARISON_DUTY, p50Ms) ?: COMPARISON_CEILING_FPS, COMPARISON_CEILING_FPS)
     }
@@ -287,7 +256,6 @@ internal object MediaPipeVersion {
     const val PINNED = "0.10.35"
 }
 
-/** A calibration backed by this app's shared preferences, for this device. */
 internal fun calibratorFor(context: Context): Calibrator {
     val preferences = context.getSharedPreferences("react-native-pose-detection", Context.MODE_PRIVATE)
     val store =
@@ -309,7 +277,6 @@ internal fun calibratorFor(context: Context): Calibrator {
     )
 }
 
-/** What the device reports, which is a little under what it was sold as. */
 internal fun deviceMemoryGiB(context: Context): Float {
     val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return 0f
     val info = ActivityManager.MemoryInfo()
@@ -319,14 +286,7 @@ internal fun deviceMemoryGiB(context: Context): Float {
 
 internal const val BYTES_PER_GIB = 1_073_741_824f
 
-/**
- * How Android's heat readings map onto the four states the governor acts on. Kept apart from
- * [ThermalMonitor] so the mapping is testable without a PowerManager.
- *
- * Android names more states than iOS, and shifts them one hotter: its LIGHT is iOS's `nominal`
- * range, and SEVERE is what `serious` means. Mapping SEVERE to critical once paused detection on
- * phones that sit there for minutes of ordinary camera use.
- */
+/** Android runs one state hotter than iOS: LIGHT is still `nominal`, and SEVERE only `serious`. */
 internal object ThermalMapping {
     /** Forecast headroom past these counts as the state named, before the status catches up. */
     const val HEADROOM_FAIR = 0.85f
@@ -350,10 +310,7 @@ internal object ThermalMapping {
         }
 }
 
-/**
- * The OS thermal status, the forecast of where it is heading, and Battery Saver. Read on a timer on
- * the main thread, once a second, which is also the most often the forecast may be asked for.
- */
+/** Read once a second on main, which is also the most often Android allows the headroom forecast. */
 internal class ThermalMonitor(
     private val context: Context,
 ) {
@@ -362,11 +319,9 @@ internal class ThermalMonitor(
 
     fun readThermal(): ThermalState {
         val power = power ?: return ThermalState.NOMINAL
-        // No thermal API before Q. Reporting NOMINAL is honest: nothing was read.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return ThermalState.NOMINAL
         val status = ThermalMapping.fromStatus(power.currentThermalStatus)
 
-        // The forecast lets the governor back off before the status says the device is throttling.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val headroom = runCatching { power.getThermalHeadroom(HEADROOM_FORECAST_SECONDS) }.getOrDefault(Float.NaN)
             ThermalMapping.fromHeadroom(headroom)?.let { lastHeadroom = it }
@@ -375,7 +330,6 @@ internal class ThermalMonitor(
         return status
     }
 
-    /** Battery Saver is the person asking for less work, read apart from heat. */
     fun readLowPower(): Boolean = runCatching { power?.isPowerSaveMode ?: false }.getOrDefault(false)
 
     companion object {

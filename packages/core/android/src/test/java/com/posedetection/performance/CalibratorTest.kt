@@ -6,11 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The measured half of the governor: what this device's inference costs, how soon it is known, and
- * what survives a restart and a relaunch. The twin of the iOS suite, runnable here now that the
- * store is an interface rather than a Context.
- */
+/** The twin of the iOS suite. */
 class CalibratorTest {
     private val model = "pose_landmarker_full.task"
 
@@ -34,7 +30,7 @@ class CalibratorTest {
         cores: Int = 8,
     ) = Calibrator(store, "test|34", { memoryGiB }, { cores })
 
-    /** Feeds a steady inference cost at a camera-like cadence, returning whether anything moved. */
+    /** Returns whether anything moved, and the time after the last sample. */
     private fun feed(
         calibrator: Calibrator,
         ms: Float,
@@ -94,7 +90,7 @@ class CalibratorTest {
         calibrator.start(model)
 
         val (_, first) = feed(calibrator, 20f, 15, 1_000)
-        // Past the cooldown and a full window: nothing left to move is what settled means.
+        // Past the cooldown and a full window, so nothing is left to move.
         val (settled, second) = feed(calibrator, 20f, 120, first)
         assertTrue("settling is reported once so it can be persisted", settled)
         assertEquals(Calibrator.Phase.SETTLED, calibrator.phase)

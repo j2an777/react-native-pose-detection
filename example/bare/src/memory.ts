@@ -1,14 +1,6 @@
-/**
- * React Native exposes no memory API, and the memory that matters here is native anyway: the
- * camera's buffers, MediaPipe's arena and the overlay's layers are all outside the JavaScript
- * heap, so a JS number would move by kilobytes while a real leak moved by megabytes.
- *
- * Hermes may grow `performance.memory` later, so it is read when present, and the scenario
- * reports say plainly when it is not rather than printing a zero.
- */
+/** JS heap only (camera and model memory is native), or null where Hermes does not expose it. */
 export function jsHeapBytes(): number | null {
-  // Read off a cast of `globalThis` rather than `globalThis.performance`: the two example apps
-  // extend different base tsconfigs and only one of them declares that global.
+  // A cast of `globalThis`: only one of the two apps' base tsconfigs declares `performance`.
   const root = globalThis as { performance?: { memory?: { usedJSHeapSize?: unknown } } };
   const used = root.performance?.memory?.usedJSHeapSize;
   return typeof used === 'number' ? used : null;

@@ -34,7 +34,7 @@ class VisibilityClockTest {
 
     private fun visibility(landmarks: FloatArray): Float = landmarks[Skeleton.OFFSET_VISIBILITY]
 
-    /** Feeds [models] through MediaPipe's filter at [intervalMs] and then the clock, returning what comes out. */
+    /** Through MediaPipe's filter at [intervalMs], then the clock. */
     private fun run(
         models: List<Float>,
         intervalMs: Double,
@@ -66,7 +66,6 @@ class VisibilityClockTest {
 
     @Test
     fun `at 10 fps a frame moves as far as three do at 30`() {
-        // A hand raised into view: the model goes from 0.1 to 0.9 and stays there.
         val at10 = run(listOf(0.1f, 0.9f, 0.9f, 0.9f), 100.0)
 
         val at30 = MediaPipeFilter()
@@ -81,8 +80,7 @@ class VisibilityClockTest {
     fun `a raised hand crosses the overlay's 0_5 in the time it takes at 30 fps`() {
         val models = listOf(0.1f) + List(12) { 0.95f }
         val at10 = run(models, 100.0)
-        // Seven frames at 30 fps is 233 ms, so the third frame at 10 fps, 200 ms in, is still short
-        // of it and the fourth, 300 ms in, is past it. Unclocked it took seven 10 fps frames.
+        // At 30 fps it crosses after seven frames, 233 ms: between the 10 fps frames at 200 and 300 ms.
         assertTrue("${at10[2]}", at10[2] < 0.5f)
         assertTrue("${at10[3]}", at10[3] > 0.5f)
     }
@@ -111,12 +109,11 @@ class VisibilityClockTest {
         val before = run(listOf(0.2f, 0.95f, 0.95f, 0.95f), 100.0).last()
         clock.handOver()
 
-        // The new landmarker's filter starts over, from its own first frame.
         val landmarks = frame(0.6f)
         clock.apply(landmarks, 400.0)
         assertEquals(before, visibility(landmarks), 0f)
 
-        // And the next frame is inverted against that new filter, not the old one.
+        // The next frame is inverted against the new filter, not the old one.
         val next = frame(0.1f * 0.95f + 0.9f * 0.6f)
         clock.apply(next, 500.0)
         val expected = before + VisibilityClock.weight(100.0) * (0.95f - before)

@@ -2,18 +2,8 @@ import type { AngleJointName } from '../types/joints';
 import { ANGLE_JOINT_NAMES } from '../types/joints';
 
 /**
- * Layout of the buffer `drainFrames()` returns. See
- * [ADR 0008](../../../docs/adr/0008-frames-are-drained-not-pushed.md).
- *
- * ```text
- * Float64  [0, HEADER_FLOAT64S)          header
- * Float64  2 per frame                   timestamp, processingMs
- * Float32  frameCount * floatsPerFrame   body
- * ```
- *
- * Every block length is derivable from the header alone, so a drain arriving after the props that
- * shaped it changed is decoded correctly or rejected, never misread. Timestamps are Float64: a
- * Float32 mantissa runs out after about 4.6 hours of monotonic uptime.
+ * `drainFrames()` buffer: Float64 header, Float64 timestamp and processingMs per frame (Float32
+ * loses whole milliseconds after 4.6 hours up), then the Float32 body. See ADR 0008.
  */
 export const HEADER_FLOAT64S = 6;
 
@@ -41,10 +31,7 @@ export function expectedByteLength(frameCount: number, floatsPerFrame: number): 
   );
 }
 
-/**
- * Angles a frame carries, in `ANGLE_JOINT_NAMES` order. Both sides apply this rule to the same
- * inputs, so the order agrees without crossing the bridge to say so.
- */
+/** Angles a frame carries, in `ANGLE_JOINT_NAMES` order. Native takes this list as given. */
 export function resolveAngleJoints(referenced: ReadonlySet<string>): AngleJointName[] {
   return ANGLE_JOINT_NAMES.filter((joint) => referenced.has(joint));
 }

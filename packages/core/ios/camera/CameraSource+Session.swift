@@ -1,17 +1,10 @@
 import AVFoundation
 import UIKit
 
-/**
- The half of `CameraSource` that touches the capture session, split out so each file stays one
- concern: `CameraSource.swift` is the lifecycle the view drives, this is how a session is built,
- rebound and pointed the right way up.
-
- Everything under "Session queue only" runs on `sessionQueue` and nowhere else.
- */
 extension CameraSource {
   // MARK: - Session queue only
 
-  /// What one start asked for, captured on main so the session queue reads none of main's fields.
+  /// Captured on main so the session queue reads none of main's fields.
   struct SessionRequest {
     let target: Facing
     let previewSize: CaptureSize
@@ -21,13 +14,8 @@ extension CameraSource {
     let token: Int
   }
 
-  /**
-   Builds a session and starts it, returning the lens bound, which is not the one asked for when
-   `auto` fell back. A start that was superseded while it configured leaves the session built but
-   not running, so `resume()` has something to start.
-   */
+  /// Returns the lens bound. A superseded start leaves a built, stopped session for `resume()`.
   func configure(_ request: SessionRequest) throws -> Facing {
-    // What an earlier start left behind: a session a pause stopped, or one that never ran.
     if let previous = session {
       output?.setSampleBufferDelegate(nil, queue: nil)
       if previous.isRunning { previous.stopRunning() }
@@ -46,8 +34,6 @@ extension CameraSource {
     session.addInput(deviceInput)
 
     let videoOutput = AVCaptureVideoDataOutput()
-    // A slow frame is dropped rather than queued, so the pipeline degrades in latency instead of
-    // falling behind forever. The counterpart of STRATEGY_KEEP_ONLY_LATEST on Android.
     videoOutput.alwaysDiscardsLateVideoFrames = true
     videoOutput.videoSettings = videoSettings(request.analysisSize)
     guard session.canAddOutput(videoOutput) else {
@@ -75,13 +61,11 @@ extension CameraSource {
       return resolved.facing
     }
 
-    // Before the layer is attached: assigning `previewLayer.session` opens its own configuration
-    // block, and doing that from main while this queue is inside `startRunning` puts two on one
-    // session, which AVFoundation aborts on. A simulator hid the overlap; an iPhone 15 did not.
+    // Before the layer attaches: setting its session from main during `startRunning` nests two
+    // configuration blocks on one session, which AVFoundation aborts on.
     session.startRunning()
 
-    // A pause that landed while `startRunning` blocked. Honoured here rather than left to find a
-    // camera running behind a view that asked for it off.
+    // A pause that landed while `startRunning` blocked.
     if !isCurrent(request.token) {
       session.stopRunning()
       PoseLog.debug(.camera, "start superseded while starting, session stopped again")
@@ -109,7 +93,6 @@ extension CameraSource {
       }
       let next = try AVCaptureDeviceInput(device: device)
       guard session.canAddInput(next) else {
-        // Put the old one back, so a failed swap leaves the session with a camera rather than none.
         if let existing = input, session.canAddInput(existing) { session.addInput(existing) }
         throw CameraError("this device will not accept the \(target.nameForJs) camera")
       }
@@ -123,19 +106,11 @@ extension CameraSource {
       throw error
     }
     session.commitConfiguration()
-    // The new lens starts at its own default frame durations, so it is pinned the same way.
     pinFrameRate(device)
   }
 
-  /**
-   Pins the sensor to a steady `CameraSource.pinnedFps`, and reports what the device actually runs
-   at to `onFrameRate`, which the governor takes as its ceiling.
-
-   Left alone, auto-exposure may lengthen frames in a dim room, which halves the camera's rate and
-   the skeleton's with it. Holding the minimum frame duration too trades a little exposure in the
-   dark for a rate the pipeline can count on; detection copes with a noisier frame far better than
-   with half as many. A format that cannot hold the rate keeps the fastest it has.
-   */
+  /// Holds the max frame duration too, so auto-exposure cannot halve the rate in a dim room;
+  /// detection copes with a noisier frame far better than with half as many.
   func pinFrameRate(_ device: AVCaptureDevice) {
     let ranges = device.activeFormat.videoSupportedFrameRateRanges
     let fastest = ranges.map(\.maxFrameRate).max() ?? Double(CameraSource.pinnedFps)
@@ -164,7 +139,7 @@ extension CameraSource {
   func applyOrientation(_ orientation: AVCaptureVideoOrientation) {
     guard let connection = output?.connection(with: .video) else { return }
     CaptureRotation.apply(orientation, to: connection)
-    // Never mirrored: the landmarks have to describe the real world.
+    // Never mirrored: landmarks describe the real world; the overlay flips at draw time.
     CaptureRotation.mirror(false, on: connection)
   }
 

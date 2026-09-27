@@ -1,13 +1,9 @@
 import XCTest
 @testable import PoseEngine
 
-/**
- These assert the buffer `src/frames/decodeFrames.ts` will be handed. The checks below are the ones
- that decoder performs, restated: if a change here passes and that decoder would reject it, the two
- have diverged and this suite is where it should surface, not on a device.
- */
+/// Restates `src/frames/decodeFrames.ts`'s checks, so a divergence fails here, not on a device.
 final class FrameRingBufferTests: XCTestCase {
-  /// Mirrors the ring buffer's own capacity. A change there should fail these tests.
+  /// Mirrors the ring buffer's capacity, so changing that fails these tests.
   private let capacity = 64
 
   private func shape(
@@ -24,7 +20,7 @@ final class FrameRingBufferTests: XCTestCase {
     return frames
   }
 
-  /// A frame whose every float is `seed + index`, so a misplaced block is visible as a wrong number.
+  /// Every float distinct, so a misplaced block reads as a wrong number.
   private func frame(_ shape: FrameShape, _ seed: Float) -> [Float] {
     return (0..<shape.floatsPerFrame).map { seed + Float($0) }
   }
@@ -44,7 +40,6 @@ final class FrameRingBufferTests: XCTestCase {
     return raw.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: Float.self) }
   }
 
-  /// The block arithmetic `decodeFrames` rejects a buffer over.
   private func assertBlocksAddUp(_ raw: Data, file: StaticString = #filePath, line: UInt = #line) {
     let floatsPerFrame = Int(header(raw, Wire.indexFloatsPerFrame))
     let jointCount = Int(header(raw, Wire.indexJointCount))
@@ -95,8 +90,7 @@ final class FrameRingBufferTests: XCTestCase {
     let frames = buffer(shape)
     frames.submit(frame(shape, 1), timestampMs: 10, processingMs: 2, buffered: true)
 
-    // A little-endian read of the header only agrees with the native read on a little-endian
-    // platform, which every Apple target is. Storing through `storeBytes` writes native order.
+    // Every Apple target is little-endian, and `storeBytes` writes native order.
     let raw = frames.drain()
     let native = header(raw, Wire.indexFrameCount)
     let little = raw.withUnsafeBytes { $0.loadUnaligned(as: UInt64.self) }
@@ -275,7 +269,6 @@ final class FrameRingBufferTests: XCTestCase {
     let frames = buffer(shape(angles: ["leftKnee"]))
     frames.submit(frame(shape(angles: ["leftKnee"]), 1), timestampMs: 1, processingMs: 0, buffered: true)
 
-    // A re-render that changes nothing about data must not throw away a pending flush.
     frames.setLayout(shape(angles: ["leftKnee"]))
 
     XCTAssertEqual(header(frames.drain(), Wire.indexFrameCount), 1)

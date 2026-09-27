@@ -16,11 +16,8 @@ enum DataMode {
   }
 }
 
-/**
- The layout of `src/frames/wire.ts`, restated. Every block length is derivable from the header, so a drain
- that arrives after the props that shaped it changed is decoded correctly or rejected. Any
- divergence from the TypeScript constants is a bug even when each side looks right alone.
- */
+/// `src/frames/wire.ts` restated: Float64 header, Float64 meta per frame, then Float32 frames.
+/// The header alone sizes every block. `wireParity.test.ts` keeps the constants in step.
 enum Wire {
   static let headerFloat64s = 6
 
@@ -47,7 +44,6 @@ enum Wire {
       + frameCount * floatsPerFrame * bytesPerFloat32
   }
 
-  /// Where the Float32 body starts, which is where the header and every frame's metadata end.
   static func bodyOffset(frameCount: Int) -> Int {
     return (headerFloat64s + frameCount * frameMetaFloat64s) * bytesPerFloat64
   }
@@ -62,11 +58,7 @@ struct DataSettings {
   let worldLandmarks: Bool
 }
 
-/**
- What `data.*` asked for, resolved once per props update rather than per frame. `jointIndices`
- holds exactly the joints the buffer carries, in the order `data.select` named them, and is empty
- when `data.landmarks` is false.
- */
+/// `data.*` resolved once per props update. `jointIndices` is empty when `data.landmarks` is false.
 final class FrameShape {
   static let allJoints = Array(0..<Skeleton.landmarkCount)
   private static let emptyTriple = [0, 0, 0]
@@ -82,12 +74,7 @@ final class FrameShape {
   let floatsPerFrame: Int
   let flags: Int
 
-  /**
-   The buffer one frame is encoded into, sized for this shape and owned by it. It lives here rather
-   than beside the shape so that adopting a new layout is a single reference swap. Two fields left
-   a window where an old shape could be read with a new, longer scratch, and the frame written into
-   it would carry zeros past the old cursor.
-   */
+  /// Per-frame encode buffer. Kept on the shape so the two can never be read out of step.
   var scratch: [Float]
 
   init(jointIndices: [Int], worldLandmarks: Bool, angleJoints: [String]) {
@@ -112,17 +99,10 @@ final class FrameShape {
   }
 }
 
-/**
- Builds the buffer JavaScript decodes. The live ring buffer and the static-input path both write
- through this, so the layout exists once: a second copy of these offsets is how the two would come
- to disagree while each looked right on its own.
-
- Native byte order throughout, which on every Apple target is little-endian, and which is what
- `storeBytes` writes. JavaScript reads this memory through typed arrays in the same process, and
- those use the platform's order and cannot be told otherwise.
- */
+/// The only encoder: the live ring buffer and the static-input path both write through it.
+/// Native byte order (little-endian on Apple), which JS typed arrays in-process also use.
 enum WireWriter {
-  /// A header sized for `frameCount` frames, with the body left zeroed for the caller to fill.
+  /// Sized for `frameCount` frames; only the header is written.
   static func allocate(shape: FrameShape, frameCount: Int, droppedCount: Int) -> Data {
     var buffer = Data(count: Wire.byteLength(frameCount: frameCount, floatsPerFrame: shape.floatsPerFrame))
     buffer.withUnsafeMutableBytes { raw in
@@ -142,7 +122,6 @@ enum WireWriter {
     return Data(count: Wire.headerFloat64s * Wire.bytesPerFloat64)
   }
 
-  /// The two Float64s that precede the body for one frame: when it was taken, and what it cost.
   static func writeMeta(into buffer: inout Data, frameIndex: Int, timestampMs: Double, processingMs: Double) {
     buffer.withUnsafeMutableBytes { raw in
       guard let base = raw.baseAddress else { return }
@@ -152,7 +131,7 @@ enum WireWriter {
     }
   }
 
-  /// One frame's Float32 block, copied out of `source` starting at `sourceOffset`.
+  /// `sourceOffset` and `count` are in floats, not bytes.
   static func writeFrame(
     into buffer: inout Data,
     frameCount: Int,

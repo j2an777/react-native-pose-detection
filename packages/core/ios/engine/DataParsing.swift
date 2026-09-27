@@ -3,7 +3,7 @@ import Foundation
 let defaultThrottleMs: Int64 = 100
 let defaultFlushMs: Int64 = 500
 
-/// `data.angles` and `data.select` are not read here: they arrive resolved, as their own props.
+/// Skips `data.angles` and `data.select`: they arrive resolved, as their own props.
 func parseData(_ raw: [String: Any]?) -> DataSettings {
   guard let raw = raw else {
     return DataSettings(
@@ -17,7 +17,6 @@ func parseData(_ raw: [String: Any]?) -> DataSettings {
 
   return DataSettings(
     mode: DataMode.from(JS.string(raw["mode"])),
-    // A zero or negative interval would emit on every frame under a name that promises not to.
     throttleMs: duration(raw["throttleMs"], defaultThrottleMs, floor: 1),
     flushMs: duration(raw["flushMs"], defaultFlushMs, floor: 1),
     landmarks: JS.bool(raw["landmarks"]) ?? true,
@@ -25,7 +24,7 @@ func parseData(_ raw: [String: Any]?) -> DataSettings {
   )
 }
 
-/// In the order named, which is the order `PoseFrame.selection` promises. Unknown names drop out.
+/// In the order named, as `PoseFrame.selection` promises. Unknown names drop out.
 func parseSelection(_ names: [String]) -> [Int] {
   var indices = [Int]()
   indices.reserveCapacity(names.count)

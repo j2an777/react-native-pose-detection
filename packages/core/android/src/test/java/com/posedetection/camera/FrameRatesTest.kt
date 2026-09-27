@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** Which camera frame rate range gets pinned: the steadiest one that tops out at the target. */
 class FrameRatesTest {
     @Test
     fun `a fixed range at the target wins`() {

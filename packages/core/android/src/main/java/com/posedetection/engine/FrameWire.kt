@@ -22,11 +22,7 @@ internal enum class DataMode {
     }
 }
 
-/**
- * The layout of `src/frames/wire.ts`, restated. Every block length is derivable from the header, so a
- * drain that arrives after the props that shaped it changed is decoded correctly or rejected.
- * Any divergence from the TypeScript constants is a bug even when each side looks right alone.
- */
+/** The layout of `src/frames/wire.ts`, restated; `wireParity.test.ts` checks the two agree. */
 internal object Wire {
     const val HEADER_FLOAT64S = 6
 
@@ -56,7 +52,6 @@ internal object Wire {
             frameCount * floatsPerFrame * BYTES_PER_FLOAT32
 }
 
-/** The delivery half of `data`. The payload half is [FrameShape]. */
 internal class DataSettings(
     val mode: DataMode,
     val throttleMs: Long,
@@ -65,12 +60,9 @@ internal class DataSettings(
     val worldLandmarks: Boolean,
 )
 
-/**
- * What `data.*` asked for, resolved once per props update rather than per frame. `jointIndices`
- * holds exactly the joints the buffer carries, in the order `data.select` named them, and is
- * empty when `data.landmarks` is false.
- */
+/** What `data.*` asked for, resolved once per props update rather than per frame. */
 internal class FrameShape(
+    /** In `data.select` order; empty when `data.landmarks` is false. */
     val jointIndices: IntArray,
     val worldLandmarks: Boolean,
     /** In `ANGLE_JOINT_NAMES` order. JavaScript applies the same rule, so neither side sends it. */
@@ -91,12 +83,7 @@ internal class FrameShape(
         (if (worldLandmarks) Wire.FLAG_WORLD_LANDMARKS else 0) or
             (if (angleCount > 0) Wire.FLAG_ANGLES else 0)
 
-    /**
-     * The buffer one frame is encoded into, sized for this shape and owned by it. It lives here
-     * rather than beside the shape so that adopting a new layout is a single volatile write. Two
-     * fields left a window where an old shape could be read with a new, longer scratch, and the
-     * frame written into it would carry zeros past the old cursor.
-     */
+    /** Lives on the shape so a layout change is one volatile write, never a torn shape and scratch. */
     val scratch = FloatArray(floatsPerFrame)
 
     fun sameAs(other: FrameShape): Boolean =
@@ -110,16 +97,9 @@ internal class FrameShape(
     }
 }
 
-/**
- * Builds the buffer JavaScript decodes. The live ring buffer and the static-input path both write
- * through this, so the layout exists once: a second copy of these offsets is how the two would
- * come to disagree while each looked right on its own.
- */
+/** The one writer of the layout, for the live ring buffer and the static-input path alike. */
 internal object WireWriter {
-    /**
-     * Native order, not Java's big-endian default: JavaScript reads this memory through typed
-     * arrays in the same process, which use the platform's order and cannot be told otherwise.
-     */
+    /** Native order, not Java's big-endian default: JavaScript's typed arrays read platform order. */
     fun allocate(
         shape: FrameShape,
         frameCount: Int,
@@ -147,7 +127,6 @@ internal object WireWriter {
         return doubles
     }
 
-    /** The body starts where the Float64 header and per-frame metadata end. */
     fun body(
         buffer: ByteBuffer,
         frameCount: Int,
@@ -167,12 +146,7 @@ internal object WireWriter {
             .order(ByteOrder.nativeOrder())
 }
 
-/**
- * Bounded, drop-oldest, written on the analysis thread and drained on the module queue.
- *
- * Backing storage is allocated once per layout and reused, so the frame path copies and does not
- * allocate. A drain allocates exactly one direct buffer, which JavaScript then owns.
- */
+/** Written on the analysis thread, drained on the JavaScript thread. The frame path never allocates. */
 internal class FrameRingBuffer {
     private val lock = Any()
 
@@ -191,10 +165,7 @@ internal class FrameRingBuffer {
     private var latestProcessingMs = 0.0
     private var hasLatest = false
 
-    /**
-     * Frames held for a trigger to claim, see ADR 0009. Bounded and overwritten oldest-first: a
-     * JavaScript side that stops redeeming must cost a fixed amount of memory, not a growing one.
-     */
+    /** Frames held for a trigger to claim, see ADR 0009. */
     private val ticketIds = IntArray(TICKETS)
     private var ticketFrames = Array(TICKETS) { FloatArray(0) }
     private val ticketTimestamps = DoubleArray(TICKETS)
@@ -232,7 +203,6 @@ internal class FrameRingBuffer {
     /** Whether a drain would carry anything: frames, or the news that some were dropped. */
     fun hasBuffered(): Boolean = synchronized(lock) { count > 0 || dropped > 0 }
 
-    /** A bare header. Decodes to no frames rather than to a malformed buffer. */
     fun empty(): ByteBuffer = WireWriter.empty()
 
     private fun reset() {
@@ -244,10 +214,7 @@ internal class FrameRingBuffer {
         ticketIds.fill(0)
     }
 
-    /**
-     * Holds [frame] and returns the ticket that claims it. Zero means the layout is not ready, and
-     * the caller sends no `snapshotId` rather than one that redeems to nothing.
-     */
+    /** The ticket that claims [frame], or 0 before a layout, when the caller sends no `snapshotId`. */
     fun mintSnapshot(
         frame: FloatArray,
         timestampMs: Double,
@@ -281,11 +248,7 @@ internal class FrameRingBuffer {
         }
     }
 
-    /**
-     * [buffered] is what the delivery mode decides. The latest frame is recorded either way.
-     * Returns nothing: a full buffer drops its oldest frame and counts it, which is reported in
-     * the next drain's header rather than raised here.
-     */
+    /** Always records the latest frame; buffers it if [buffered], dropping and counting the oldest. */
     fun submit(
         frame: FloatArray,
         timestampMs: Double,
@@ -311,12 +274,7 @@ internal class FrameRingBuffer {
         }
     }
 
-    /**
-     * Everything buffered since the last call. Empties the buffer and the dropped count.
-     *
-     * A plain buffer, not the one JavaScript receives: wrapping it for JNI is one call the caller
-     * makes, and keeping that out of here is what lets the encoding be tested on a JVM.
-     */
+    /** Empties the buffer and dropped count. The caller wraps it for JavaScript, so this tests on a JVM. */
     fun drain(): ByteBuffer {
         synchronized(lock) {
             val layout = this.layout ?: return WireWriter.empty()
@@ -346,7 +304,7 @@ internal class FrameRingBuffer {
         }
     }
 
-    /** The most recent frame, or a bare header when no pose has been seen. */
+    /** The latest frame, or a bare header when there is no current pose. */
     fun snapshot(): ByteBuffer {
         synchronized(lock) {
             val layout = this.layout ?: return WireWriter.empty()

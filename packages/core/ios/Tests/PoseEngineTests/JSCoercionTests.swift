@@ -20,7 +20,7 @@ final class JSCoercionTests: XCTestCase {
     XCTAssertNil(JS.int(true))
   }
 
-  /// How JavaScript numbers really arrive: as `NSNumber`, which for exactly 0 or 1 also passes `is Bool`.
+  /// JavaScript numbers arrive as `NSNumber`.
   func testZeroAndOneAreNumbersWhenTheyCrossAsNSNumber() {
     XCTAssertEqual(JS.finite(NSNumber(value: 1.0)), 1)
     XCTAssertEqual(JS.finite(NSNumber(value: 0.0)), 0)

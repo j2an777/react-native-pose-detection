@@ -10,8 +10,7 @@ internal fun parseOverlay(raw: Map<*, *>): OverlayConfig {
 
     (raw["landmarks"] as? Boolean)?.let { config.landmarks = it }
     (raw["connections"] as? Boolean)?.let { config.connections = it }
-    // Clamped here rather than trusted: these come from a JavaScript object that may have been
-    // built dynamically and skipped validation, and a negative stroke or radius draws nothing.
+    // Clamped, not trusted: a dynamically built object may have skipped JavaScript validation.
     (raw["lineWidth"] as? Number)?.let { config.lineWidthDp = it.clamped(0f, Float.MAX_VALUE, 3f) }
     (raw["pointRadius"] as? Number)?.let { config.pointRadiusDp = it.clamped(0f, Float.MAX_VALUE, 4f) }
     (raw["minVisibility"] as? Number)?.let { config.minVisibility = it.clamped(0f, 1f, 0.5f) }
@@ -35,8 +34,6 @@ internal fun parseOverlay(raw: Map<*, *>): OverlayConfig {
 
 internal fun parseAngle(raw: Map<*, *>): AngleOverlaySpec? {
     val joint = raw["joint"] as? String ?: return null
-    // JS validation rejects a non-angle joint before it reaches here, so a miss means a config
-    // built dynamically and skipped that check. Skipping the arc beats drawing a wrong one.
     val triple =
         Skeleton.angleTriple(joint) ?: run {
             PoseLog.warn(LogCategory.OVERLAY) { "$joint has no angle, skipping its arc" }
@@ -49,8 +46,7 @@ internal fun parseAngle(raw: Map<*, *>): AngleOverlaySpec? {
         label = raw["label"] as? Boolean ?: true,
         radiusDp = (raw["radius"] as? Number)?.clamped(1f, Float.MAX_VALUE, 40f) ?: 40f,
         color = parseColor(raw["color"]),
-        // Capped because the label goes into a fixed 16 char buffer: a large value would build a
-        // long string on the draw path every frame only to have it truncated on the way in.
+        // Capped: the label goes into a fixed 16-char buffer on the draw path.
         decimals = ((raw["decimals"] as? Number)?.toInt() ?: 0).coerceIn(0, MAX_LABEL_DECIMALS),
         minVisibility = (raw["minVisibility"] as? Number)?.clamped(0f, 1f, 0.5f) ?: 0.5f,
     )

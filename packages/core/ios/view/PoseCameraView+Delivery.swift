@@ -1,7 +1,6 @@
 import Foundation
 import ExpoModulesCore
 
-/// Everything measured about one frame, so the functions below take a value rather than a list.
 struct FrameMeasurements {
   let nowMs: Int64
   let timestampMs: Double
@@ -14,12 +13,9 @@ struct FrameMeasurements {
   let size: CaptureSize
 }
 
-/// Triggers and the delivery mode. Both run on MediaPipe's callback queue.
+/// Runs on MediaPipe's callback queue.
 extension PoseCameraView {
-  /**
-   Runs before the frame is delivered, because a `snapshot: true` trigger claims the frame it fired
-   on and that has to be this one rather than whatever is current when JavaScript asks.
-   */
+  /// Before `deliver()`: a snapshot trigger claims this frame.
   func evaluateTriggers(layout: FrameShape, measurements: FrameMeasurements) {
     guard !triggers.isEmpty else { return }
 
@@ -36,9 +32,7 @@ extension PoseCameraView {
     firings.removeAll(keepingCapacity: true)
     triggers.evaluate(frameContext, nowMs: measurements.nowMs, into: &firings)
 
-    // Released before returning, and not at the end of the frame by accident: an array held here
-    // between frames is a second reference to the landmark buffers, and the next write to either
-    // would copy the whole thing.
+    // Released now: a reference held past this frame makes the next buffer write copy it.
     frameContext.landmarks = []
     frameContext.previousLandmarks = nil
 
@@ -62,8 +56,7 @@ extension PoseCameraView {
       if let durationMs = firing.durationMs {
         payload["durationMs"] = durationMs
       }
-      // Zero means the frame could not be held, and the event says nothing rather than handing over
-      // a ticket that redeems to an empty buffer.
+      // Zero: the frame could not be held.
       if ticket != 0 {
         payload["snapshotId"] = ticket
       }
@@ -73,11 +66,7 @@ extension PoseCameraView {
     firings.removeAll(keepingCapacity: true)
   }
 
-  /**
-   `batched` flushes on its interval from `deliver`, which only frames with a pose reach. What was
-   buffered before somebody left is flushed on time from here, on the frames without them, instead
-   of being held until somebody comes back.
-   */
+  /// `deliver` only runs with a pose, so a batch buffered before somebody left flushes from here.
   func flushOwedBatch() {
     guard propMode == .batched else { return }
     let now = Monotonic.nowMs()
@@ -86,7 +75,6 @@ extension PoseCameraView {
     tick()
   }
 
-  /// The delivery mode decides only two things: whether this frame is kept, and whether to tick.
   func deliver(_ scratch: [Float], timestampMs: Double, processingMs: Double) {
     let mode = propMode
     let now = Monotonic.nowMs()
@@ -100,8 +88,6 @@ extension PoseCameraView {
     case .batched: due = sinceEmit >= propFlushMs.value
     }
 
-    // `throttled` drops the frames between emissions rather than buffering them, which is what the
-    // mode means. `batched` buffers everything and flushes on the interval.
     let buffered = mode == .live || mode == .batched || (mode == .throttled && due)
 
     frames.submit(scratch, timestampMs: timestampMs, processingMs: processingMs, buffered: buffered)
@@ -112,8 +98,6 @@ extension PoseCameraView {
   }
 
   private func tick() {
-    // A tick already queued has not been answered yet, so a second one would ask for the same drain
-    // twice.
     let shouldTick = tickPending.mutate { pending -> Bool in
       guard !pending else { return false }
       pending = true

@@ -5,7 +5,7 @@ import type { DiagnosticsMedia } from '../diagnosticsRequest';
 export type ScenarioReport = {
   readonly id: string;
   readonly passed: boolean;
-  /** True when the scenario could not apply here, for example idle search with somebody in frame. */
+  /** Could not apply here, for example idle search with somebody in frame. */
   readonly skipped?: boolean;
   readonly iterations: number;
   readonly elapsedMs: number;
@@ -28,30 +28,20 @@ export type CameraProps = Pick<
 >;
 
 export type ScenarioContext = {
-  /** Null between a remount's teardown and the next mount, which is a case every runner hits. */
+  /** Null between a remount's teardown and the next mount. */
   readonly camera: { current: PoseCameraRef | null };
   /** Unmounts and remounts the camera, resolving on the next `onReady` rather than on a timer. */
   readonly remount: () => Promise<void>;
-  /**
-   * Remounts without waiting for anything, resolving as soon as the new camera's ref exists. The
-   * returned promise resolves on that mount's `onReady`, which is what a pause during startup races.
-   */
+  /** Resolves as soon as the new camera's ref exists; `ready` resolves on its `onReady`. */
   readonly remountNow: () => Promise<{ ready: Promise<void> }>;
-  /** How many `onReady` events have fired. A restart emits another, which is how one is noticed. */
+  /** A restart emits another `onReady`, which is how one is noticed. */
   readonly readyCount: () => number;
   /** The facing the last `onReady` or `onCameraChange` reported. */
   readonly facing: () => 'front' | 'back' | null;
-  /** How many `onCameraChange` events have fired. */
   readonly cameraChanges: () => number;
-  /**
-   * Covers the camera with a full-screen modal for `ms`, which on iOS takes its view out of the
-   * window and puts it back: the native-stack push and pop case, without a navigation library.
-   */
+  /** A full-screen modal over the camera for `ms`: the native-stack push and pop case on iOS. */
   readonly cover: (ms: number) => Promise<void>;
-  /**
-   * Unmounts the camera, runs `run` with no camera in the tree, and mounts it again, resolving on
-   * that mount's `onReady`: what a screen without a camera, a studio or a settings page, looks like.
-   */
+  /** Runs `run` with the camera unmounted, then remounts and resolves on its `onReady`. */
   readonly withoutCamera: (run: () => Promise<void>) => Promise<void>;
   /** Flips a set of props that must never restart the camera: overlay, smoothing, data mode. */
   readonly toggleProps: () => void;

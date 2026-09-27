@@ -15,7 +15,6 @@ import { theme } from '../theme';
 
 export type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-/** A round control for the floating rail over the camera. */
 export function IconButton({
   icon,
   label,
@@ -27,7 +26,6 @@ export function IconButton({
   icon: IconName;
   label: string;
   active?: boolean;
-  /** Swaps the icon for a spinner and stops taking presses, for an action that takes a moment. */
   busy?: boolean;
   size?: number;
   onPress: () => void;
@@ -101,7 +99,6 @@ export function Button({
   );
 }
 
-/** One switch and its explanation, the unit of every control panel over the camera. */
 export function ToggleRow({
   title,
   note,
@@ -131,7 +128,6 @@ export function ToggleRow({
   );
 }
 
-/** A row of mutually exclusive choices, for the settings a switch cannot express. */
 export function Choice<T extends string>({
   title,
   options,
@@ -146,8 +142,7 @@ export function Choice<T extends string>({
   return (
     <View style={styles.choice}>
       <Text style={styles.rowTitle}>{title}</Text>
-      {/* Scrolls rather than wraps: five profile names do not fit a phone's width, and a wrapped
-          second line makes a row of chips read as two separate settings. */}
+      {/* Scrolls rather than wraps: a wrapped row of chips reads as two settings. */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -176,7 +171,6 @@ export function Choice<T extends string>({
   );
 }
 
-/** Separates groups inside a control panel. */
 export function Rule() {
   return <View style={styles.rule} />;
 }

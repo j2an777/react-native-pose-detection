@@ -7,28 +7,13 @@ import com.posedetection.view.OverlayConfig
 import com.posedetection.view.parseOverlay
 import java.io.File
 
-/** What `exportPose` was asked for. Defaults from `guides/files.md`. */
+/** Defaults as documented in guides/files.md. */
 internal class ExportOptions(
-    /**
-     * The same config the camera's `overlay` prop takes, so a painted file and a live preview are
-     * configured with one vocabulary rather than two.
-     */
     val overlay: OverlayConfig,
     val drawOverlay: Boolean,
     val maxPoses: Int,
-    /**
-     * How sure the model has to be before it calls something a body.
-     *
-     * Left out, it follows [maxPoses], because the two are one decision: 0.5 for a single subject,
-     * which is MediaPipe's own, and 0.3 above that, which is where a second person actually appears
-     * rather than the first person twice. A number overrides it, and what the right number is for a
-     * given piece of footage is the caller's to know.
-     */
     val minConfidence: Float,
-    /**
-     * Detection samples a second. Between samples the last pose is held, exactly as the live
-     * overlay holds one between inferences.
-     */
+    /** Between samples the last pose is held, as the live overlay holds one between inferences. */
     val sampleFps: Int,
     /** Long edge of the output, or 0 for the source's own size. */
     val maxSize: Int,
@@ -52,8 +37,6 @@ internal class ExportOptions(
                 overlay = (overlayRaw as? Map<*, *>)?.let { parseOverlay(it) } ?: OverlayConfig(),
                 drawOverlay = overlayRaw as? Boolean ?: true,
                 maxPoses = maxPoses,
-                // 0.1 to 1, the range the guide documents. At 1 the model has to be certain, which
-                // it rarely is.
                 minConfidence =
                     ((raw?.get("minConfidence") as? Number)?.toFloat() ?: StillConfidence.forMaxPoses(maxPoses))
                         .coerceIn(0.1f, 1f),
@@ -68,14 +51,7 @@ internal class ExportOptions(
             )
         }
 
-        /**
-         * Where the file lands, created if it is not there yet.
-         *
-         * The default is the app's cache directory: an export is derived data, and a package that
-         * wrote into the app's files directory by default would leave behind copies the user never
-         * asked for and never sees. Apps that want it kept pass a directory of their own, which is
-         * also how the file ends up somewhere they can upload or move it from.
-         */
+        /** Cache by default: an export is derived data, and filesDir would keep copies nobody asked for. */
         private fun directory(
             context: Context,
             raw: String?,
@@ -100,10 +76,7 @@ internal class ExportOptions(
             return base
         }
 
-        /**
-         * Whatever a dead process left mid-write. Exports run serially on one executor, so
-         * nothing swept here can belong to an export that is still running.
-         */
+        /** Exports run serially on one executor, so nothing swept here belongs to a running one. */
         private fun sweepStaging(base: File) {
             base
                 .listFiles { file ->
@@ -112,10 +85,7 @@ internal class ExportOptions(
                 }?.forEach { it.delete() }
         }
 
-        /**
-         * Sanitized rather than trusted: this reaches the filesystem, and a name with a slash in it
-         * would write outside the directory the caller chose.
-         */
+        /** Sanitized: a slash in the name would write outside the chosen directory. */
         private fun fileName(
             raw: String?,
             sourceName: String,
@@ -141,7 +111,6 @@ internal class ExportOptions(
     }
 }
 
-/** What came back, for the JavaScript side to turn into an `ExportResult`. */
 internal class ExportSummary(
     val file: File,
     val width: Int,
@@ -165,5 +134,4 @@ internal class ExportError(
     message: String,
 ) : Exception(message)
 
-/** Thrown when the caller cancelled. Distinct from a failure, because it is not one. */
 internal class ExportCancelled : Exception("the export was cancelled")

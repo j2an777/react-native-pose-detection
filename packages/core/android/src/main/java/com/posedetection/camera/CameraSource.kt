@@ -24,18 +24,12 @@ import java.util.concurrent.Executor
 
 internal enum class Facing { FRONT, BACK }
 
-/** The lens asked for does not exist here, which is `CAMERA_UNAVAILABLE` rather than a start that failed. */
+/** Reported as CAMERA_UNAVAILABLE rather than CAMERA_START_FAILED. */
 internal class CameraMissing(
     facing: Facing,
 ) : IllegalStateException("this device has no $facing camera")
 
-/**
- * Owns the capture session. Knows about frames, not poses.
- *
- * **Every field here is main thread only.** CameraX requires `bindToLifecycle` on main, so main
- * is the serial session queue rather than a second queue racing it. Analysis runs on
- * [analysisExecutor] so inference never blocks the UI.
- */
+/** Main thread only: CameraX binds on main, so main is the session queue. */
 internal class CameraSource(
     private val context: Context,
     private val previewView: PreviewView,
@@ -44,11 +38,7 @@ internal class CameraSource(
     private var provider: ProcessCameraProvider? = null
     private var analysis: ImageAnalysis? = null
 
-    /**
-     * This source's own session, which is all it ever unbinds when it stops. The provider is one per
-     * process: a view unmounting while its replacement is already bound used to `unbindAll()` on
-     * its way out and take the new view's camera with it, leaving a preview with no frames.
-     */
+    /** All a stop unbinds: the provider is per process and may already hold a newer view's session. */
     private var boundConfig: SessionConfig? = null
     private var analyzer: ImageAnalysis.Analyzer? = null
     private var lifecycleOwner: LifecycleOwner? = null
@@ -62,26 +52,21 @@ internal class CameraSource(
     var previewSize: Size = Size(1280, 720)
     var analysisSize: Size = Size(640, 480)
 
-    /**
-     * What the bound session actually delivers. CameraX takes [previewSize] and [analysisSize] as
-     * targets and settles on the nearest size the camera has, so these are what gets reported:
-     * a Redmi Note 12 asked for 854x480 analysis delivers 864x480. Null until a session is bound.
-     */
+    /** What the bound session delivers; CameraX settles near the asked size. Null until bound. */
     var boundPreviewSize: Size? = null
         private set
     var boundAnalysisSize: Size? = null
         private set
 
-    /** `auto` prefers front and falls back to back. A pinned lens fails instead of falling back. */
+    /** True for `auto`; a pinned lens fails instead of falling back. */
     var facingFallbackAllowed: Boolean = false
 
-    /** Told, on main, what the bound camera actually delivers once it has been pinned. */
+    /** Called on main with the frame rate the bound session delivers. */
     var onFrameRate: ((Int) -> Unit)? = null
 
-    /** Tells the provider callback, which lands a turn later, whether its session still exists. */
+    /** Bumped by every start, pause and release, so a late provider callback can tell it is stale. */
     private var startToken = 0
 
-    /** Kept so `resume()` can re-issue a start whose provider fetch a `pause()` cancelled. */
     private var onBound: (() -> Unit)? = null
 
     private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
@@ -109,9 +94,6 @@ internal class CameraSource(
 
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
-            // A pause, a release or a newer start landed while the provider was being fetched, so
-            // this binding is no longer wanted. Without the token it would bring the camera and the
-            // landmarker back up behind a session that has already stopped.
             if (token != startToken) {
                 PoseLog.debug(LogCategory.CAMERA) { "ignoring a stale camera provider callback" }
                 return@addListener
@@ -141,9 +123,7 @@ internal class CameraSource(
             onDone(facing)
             return
         }
-        // The `auto` fallback belongs on the first bind, not here. Letting it run would rebind the
-        // lens that is already up, flash the preview, and resolve the switch as a success that
-        // changed nothing. guides/camera-control.md promises a CAMERA_SWITCH_FAILED instead.
+        // Checked here: bind()'s `auto` fallback would rebind the current lens and report success.
         val available = provider?.let { hasCamera(it, target) } ?: false
         if (!available) {
             onFailed(
@@ -164,21 +144,18 @@ internal class CameraSource(
                 bind(previous)
                 onFailed(ErrorCode.CAMERA_SWITCH_FAILED, error)
             } catch (rollbackError: Throwable) {
-                // The previous camera is gone too. This is no longer recoverable.
                 isBound = false
                 onFailed(ErrorCode.CAMERA_UNAVAILABLE, rollbackError)
             }
         }
     }
 
-    /** Called on a configuration change so the analysis buffer keeps arriving upright. */
     fun updateTargetRotation() {
         val rotation = currentRotation()
         analysis?.targetRotation = rotation
         PoseLog.debug(LogCategory.CAMERA) { "target rotation now $rotation" }
     }
 
-    /** Parks a facing change made while unbound so the next bind picks it up. */
     fun setPendingFacing(target: Facing) {
         if (isBound) return
         facing = target
@@ -196,9 +173,7 @@ internal class CameraSource(
         if (isBound) return
         val owner = lifecycleOwner ?: return
 
-        // A pause that landed while the provider was still being fetched cancelled that start and
-        // left `provider` null, so there is nothing to rebind to. Re-issuing the start is what
-        // makes pause-then-resume during startup recoverable instead of permanently dead.
+        // A pause during the provider fetch cancelled that start, so issue it again.
         if (provider == null) {
             start(owner, facing, onBound ?: {}, onFailed)
             return
@@ -223,7 +198,6 @@ internal class CameraSource(
         isBound = false
     }
 
-    /** A session another view has since replaced is already unbound, and unbinding it again is a no-op. */
     private fun unbindOwn() {
         val config = boundConfig ?: return
         boundConfig = null
@@ -246,16 +220,10 @@ internal class CameraSource(
                 .setResolutionSelector(previewSelector(previewSize))
                 .setTargetRotation(rotation)
                 .build()
-        // Before the bind, so the session opens once with both streams. Attached after, it opened
-        // with the analysis stream alone and was rebuilt at once to add the preview; that second
-        // open raced the camera still closing from the session before it, CameraX reported the
-        // camera unavailable and did not retry, and a remount sat with a preview and no frames.
+        // Before the bind, so the session opens once: adding it after forced a reopen that lost the camera.
         preview.surfaceProvider = previewView.surfaceProvider
 
-        // RGBA_8888 is converted by CameraX in native code (libyuv), which is far cheaper than a
-        // YUV to RGB pass in Kotlin and hands MediaPipe the one layout it takes without a copy.
-        // KEEP_ONLY_LATEST means a slow frame is dropped rather than queued, so the pipeline
-        // degrades in latency instead of falling behind forever.
+        // RGBA_8888: CameraX converts natively, far cheaper than a YUV-to-RGB pass in Kotlin.
         val analysis =
             ImageAnalysis
                 .Builder()
@@ -279,8 +247,7 @@ internal class CameraSource(
                 SessionConfig(useCases)
             }
 
-        // All, not just this source's own: one lifecycle owner can hold one camera, so the newest
-        // session takes it, and a view still bound somewhere else would make this bind throw.
+        // All: one lifecycle owner holds one camera, and another view's session would make this throw.
         provider.unbindAll()
         boundConfig = null
         provider.bindToLifecycle(owner, selector, config)
@@ -301,12 +268,7 @@ internal class CameraSource(
         }
     }
 
-    /**
-     * The frame rate range the session is bound at: the steadiest one this camera offers for these
-     * use cases that tops out at [PINNED_FPS]. Left to itself, auto-exposure is free to drop to a
-     * handful of frames a second in a dim room, which halves the skeleton's rate with the camera's.
-     * Null leaves the camera's own default, which is what a device that offers no such range gets.
-     */
+    /** Pinned so auto-exposure cannot drop to a few fps in a dim room; null keeps the default. */
     private fun pinnedRange(
         provider: ProcessCameraProvider,
         selector: CameraSelector,
@@ -326,11 +288,9 @@ internal class CameraSource(
         return range.takeIf { supportedAsSession }
     }
 
-    /** A pinned lens the device does not have is documented as its own code. */
     private fun startFailure(error: Throwable): ErrorCode =
         if (error is CameraMissing) ErrorCode.CAMERA_UNAVAILABLE else ErrorCode.CAMERA_START_FAILED
 
-    /** Binding a lens the device lacks throws and leaves a dead preview, so resolve first. */
     private fun resolveAvailable(
         provider: ProcessCameraProvider,
         target: Facing,
@@ -375,12 +335,7 @@ internal class CameraSource(
                 ResolutionStrategy(size, ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
             ).build()
 
-    /**
-     * The analysis stream at the preview's aspect, and never much bigger than asked for. Every pixel
-     * past what MediaPipe keeps is converted to RGBA, copied and thrown away inside the graph, which
-     * resizes to 256 by 256. A camera without the exact size used to fall back higher, to 720p and
-     * past it; the filter keeps the fallback within an eighth of the requested short side.
-     */
+    /** Falls back at most an eighth above the asked short side: MediaPipe resizes to 256x256 anyway. */
     private fun analysisSelector(size: Size): ResolutionSelector {
         val limit = (minOf(size.width, size.height) * ANALYSIS_SLACK).toInt()
         return ResolutionSelector
@@ -396,10 +351,7 @@ internal class CameraSource(
     }
 
     companion object {
-        /**
-         * The rate the sensor is held at. Thirty, because inference is never run faster than frames
-         * arrive and a phone asked for 60 ran warm within minutes for a skeleton that looked identical.
-         */
+        /** At 60 a phone ran warm within minutes, for a skeleton that looked identical. */
         const val PINNED_FPS = 30
 
         private const val ANALYSIS_SLACK = 1.125f
@@ -421,15 +373,8 @@ internal class CameraSource(
     }
 }
 
-/**
- * Which camera frame rate range to pin, kept apart from CameraX so the choice is testable on its own.
- */
 internal object FrameRates {
-    /**
-     * `[target, target]` where the camera offers it; otherwise the range that tops out at [target]
-     * with the highest floor, so auto-exposure has the least room to slow down; otherwise the
-     * fastest that stays below it. Null when every range is faster, which leaves the default alone.
-     */
+    /** The highest floor that tops out at [target], else the fastest range below; null if all are faster. */
     fun choose(
         ranges: List<Pair<Int, Int>>,
         target: Int,

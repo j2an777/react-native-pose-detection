@@ -1,14 +1,12 @@
 import XCTest
 @testable import PoseEngine
 
-/// A clock the pacer sleeps on without anybody waiting, and the heat it reads.
 private final class Bench {
   var now: Int64 = 0
   var heat = ThermalState.nominal
   var slept: Int64 = 0
 }
 
-/// Heat costs a file job time, never frames: full speed, half speed, or a pause.
 final class FilePacerTests: XCTestCase {
   private let bench = Bench()
 

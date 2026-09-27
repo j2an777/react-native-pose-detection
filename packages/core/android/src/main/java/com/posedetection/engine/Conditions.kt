@@ -2,10 +2,7 @@ package com.posedetection.engine
 
 import com.posedetection.Skeleton
 
-/**
- * Everything a condition can read about one frame. Reused across frames and mutated in place: this
- * is on the inference path, and a per-frame allocation here is a per-frame allocation everywhere.
- */
+/** Reused and mutated in place: it is on the inference path, which must not allocate per frame. */
 internal class FrameContext {
     var landmarks: FloatArray = EMPTY
     var previousLandmarks: FloatArray? = null
@@ -26,10 +23,7 @@ internal class FrameContext {
         axis: Int,
     ): Float = landmarks[joint * Skeleton.LANDMARK_STRIDE + axis]
 
-    /**
-     * Normalized units per second, uncorrected for aspect, so it is in the same units as the
-     * positions a threshold is written against. `NaN` when there is nothing to differ from.
-     */
+    /** Normalized units per second, uncorrected for aspect to match thresholds. `NaN` when unknown. */
     fun velocity(
         joint: Int,
         axis: Int,
@@ -46,15 +40,7 @@ internal class FrameContext {
     }
 }
 
-/**
- * A parsed `Condition`. JavaScript validates the shape before native ever sees it, so this half is
- * about evaluating quickly rather than about diagnosing: a config that fails to parse here is
- * logged and treated as one that never matches.
- *
- * Abstract rather than sealed. Nothing branches on the subtype, so exhaustiveness buys nothing,
- * and sealed would stop the tests standing in a switch here to exercise the state machine without
- * dragging real geometry through it.
- */
+/** Abstract, not sealed: tests subclass it to drive the state machine without real geometry. */
 internal abstract class PoseCondition {
     abstract fun matches(frame: FrameContext): Boolean
 }
@@ -63,11 +49,7 @@ internal const val NO_JOINT = -1
 internal const val AXIS_X = 0
 internal const val AXIS_Y = 1
 
-/**
- * `NaN` is how an absent bound is stored, and it is also what an unmeasurable value is. Both mean
- * the same thing here: a comparison against `NaN` is false, so a condition over a value nobody
- * could measure does not match, and a bound nobody set does not constrain.
- */
+/** `NaN` is an absent bound, which does not constrain, or an unmeasurable value, which never matches. */
 internal fun withinBounds(
     value: Float,
     below: Float,
@@ -78,7 +60,7 @@ internal fun withinBounds(
     if (value.isNaN()) return false
     if (!below.isNaN() && value >= below) return false
     if (!above.isNaN() && value <= above) return false
-    // Inclusive, unlike below and above, because `between` names the range you want to be in.
+    // Inclusive, unlike below and above: `between` names the range to be in.
     if (!betweenMin.isNaN() && (value < betweenMin || value > betweenMax)) return false
     return true
 }
@@ -106,10 +88,7 @@ internal class AngleCondition(
     }
 }
 
-/**
- * A bound that names a joint is compared against that joint in the same frame, which is what keeps
- * "wrist above shoulder" true at any distance from the camera.
- */
+/** A bound naming a joint reads that joint in the same frame, so it holds at any camera distance. */
 internal class LandmarkCondition(
     private val axis: Int,
     private val joint: Int,
@@ -174,7 +153,6 @@ internal object NeverCondition : PoseCondition() {
     override fun matches(frame: FrameContext): Boolean = false
 }
 
-/** The negation of `enter`, which is what returns a trigger with no `exit` to idle. */
 internal class NotCondition(
     private val inner: PoseCondition,
 ) : PoseCondition() {

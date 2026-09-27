@@ -17,8 +17,7 @@ import { Card } from '../components/Glass';
 import { theme } from '../theme';
 import type { IconName } from '../components/Controls';
 
-// Read off the package rather than restated here, so the screen cannot claim a version the app is
-// not actually running. `./package.json` is a declared entry point, so this resolves in Metro.
+// Resolves in Metro because the package's `exports` declare `./package.json`.
 import { version } from 'react-native-pose-detection/package.json';
 
 const REPOSITORY = 'https://github.com/khalid999devs/react-native-pose-detection';

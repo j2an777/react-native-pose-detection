@@ -1,25 +1,15 @@
 #!/bin/sh
-# Runs the example app's diagnostics sweep on a device with nobody tapping, and collects the
-# results.
+# Runs the example app's diagnostics sweep on a device, hands-off, and collects the report.
 #
 #   scripts/device-diagnostics.sh android [scenarios]   # an emulator, or a phone over adb
 #   scripts/device-diagnostics.sh ios [scenarios]       # an iPhone paired with this Mac
 #
-# `scenarios` is `all` (the default, every scenario except the ten-minute soak) or a
-# comma-separated list of ids, such as `files` or `soak`. The example app must already be
-# installed. APP_ID picks which one: com.posedetection.example (the default) or
-# com.posedetection.bare. With more than one device attached, ANDROID_SERIAL picks the Android one
-# (adb reads it) and DEVICE the iPhone. Android is granted the camera here; an iPhone asks on the
-# first run, so somebody has to allow it once. DELEGATE=gpu or DELEGATE=cpu holds the sweep to one
-# delegate, to compare the two on a device.
-#
-# The `files` scenario needs a photo and a clip on the device. This script makes them from
-# ss/export-frame.png with scripts/diagnostics-media.swift, which needs macOS, and copies them
-# into the app's documents directory. Android can only write there on an emulator, where adb runs
-# as root, or with a debug build, through run-as.
-#
-# Prints every scenario's line as it runs, and saves the full report as
-# diagnostics-<platform>.json in the current directory.
+# scenarios: `all` (default, everything but the ten-minute soak) or ids like `files,soak`.
+# The app must be installed. APP_ID: com.posedetection.example (default) or com.posedetection.bare.
+# ANDROID_SERIAL / DEVICE: which phone, when several are attached. DELEGATE: gpu or cpu only.
+# An iPhone asks for the camera on the first run. The `files` scenario needs macOS to make its
+# media, and on Android an emulator or a debug build to copy it in.
+# Writes diagnostics-<platform>.json to the current directory.
 
 set -eu
 
@@ -49,7 +39,7 @@ make_media() {
     echo "Not macOS: the files scenario will be skipped." >&2
     return 1
   fi
-  # The interpreter's compiler warnings are noise here; they are shown only if the media fails.
+  # The interpreter's warnings are noise, shown only if the media fails.
   if ! xcrun swift "$root_dir/scripts/diagnostics-media.swift" "$root_dir/ss/export-frame.png" "$media" \
     >"$media/media.log" 2>&1; then
     cat "$media/media.log" >&2
@@ -65,9 +55,8 @@ run_android() {
   adb get-state >/dev/null
   have_media=0
   if make_media; then
-    # Root on an emulator writes straight into the app's files; a debug build copies through
-    # run-as. A release build on a real phone can do neither, and the files scenario skips. An app
-    # that has never run has no files directory yet, so both make it first.
+    # Root on an emulator, or run-as on a debug build; a release build on a phone can do neither.
+    # An app that has never run has no files directory yet.
     if adb root 2>/dev/null | grep -q -e 'restarting' -e 'already running'; then
       adb wait-for-device
       owner=$(adb shell stat -c %u "/data/data/$app")
@@ -99,14 +88,11 @@ run_android() {
   fi
 
   adb shell am force-stop "$app"
-  # A fresh install has never been asked, and without the camera the whole sweep fails. Some
-  # phones refuse the grant over adb (MIUI, until "USB debugging (Security settings)" is on); the
-  # app then asks on screen.
+  # MIUI refuses this until "USB debugging (Security settings)" is on; the app then asks on screen.
   adb shell pm grant "$app" android.permission.CAMERA 2>/dev/null ||
     echo "Could not grant the camera over adb: allow it on the phone when the app asks." >&2
   adb logcat -c
-  # Captured to a file and stopped by hand: a filtered logcat piped into something that has
-  # finished only notices at its next write, which may never come.
+  # To a file and killed by hand: a filtered logcat piped onward only exits at its next write.
   log="$media/logcat.txt"
   adb logcat -v raw -s ReactNativeJS:V >"$log" 2>/dev/null &
   logcat=$!
@@ -130,9 +116,7 @@ run_ios() {
   fi
   device=${DEVICE:-}
   if [ -z "$device" ]; then
-    # The JSON rather than the table: a name can hold spaces, and a phone in reach shows as
-    # "available" or, while a tunnel to it is up, "connected", where one out of reach is
-    # "unavailable".
+    # JSON, not the table, as names hold spaces. In reach is any tunnelState but "unavailable".
     xcrun devicectl list devices --quiet --json-output "$media/devices.json" >/dev/null 2>&1 || true
     device=$(node -e '
       const devices = require(process.argv[1]).result?.devices ?? [];
@@ -153,7 +137,7 @@ run_ios() {
   fi
   container="--device $device --domain-type appDataContainer --domain-identifier $app"
 
-  # An empty report first, so the one read back below is this run's rather than the last one's.
+  # An empty report first, so the one read back is this run's, not the last one's.
   printf '{}' >"$media/diagnostics.json"
   # shellcheck disable=SC2086
   xcrun devicectl device copy to $container --source "$media/diagnostics.json" --destination Documents/diagnostics.json >/dev/null
@@ -175,8 +159,7 @@ run_ios() {
   # `--`, or devicectl reads `-poseDiagnostics` as a cluster of its own short options.
   xcrun devicectl device process launch --device "$device" --terminate-existing "$app" -- "$@" >/dev/null
   echo "Running on $device. The report is read back when the sweep finishes."
-  # The whole sweep with the soak takes under 20 minutes. A report that has not come in an hour
-  # is not coming: the app crashed, or the phone locked and stopped it.
+  # The sweep with the soak takes under 20 minutes; no report in an hour means it is not coming.
   waited=0
   while :; do
     sleep 10

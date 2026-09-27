@@ -1,11 +1,6 @@
 #!/bin/sh
-# Asserts the published package installs nothing.
-#
-# `npm audit --omit=dev` and license-checker both walk the whole workspace, which since the
-# example apps exist includes Expo's build tooling. That tooling is not something a consumer
-# installs, so auditing it under a consumer-facing gate reports risk nobody carries. What a
-# consumer actually gets is whatever `react-native-pose-detection` lists in `dependencies`, and
-# the design commitment is that this stays empty.
+# Asserts the published package declares no runtime dependencies. Not `npm audit --omit=dev`:
+# that walks the whole workspace, example apps' Expo tooling included, which no consumer installs.
 
 set -e
 

@@ -1,10 +1,6 @@
 import Foundation
 
-/**
- BlazePose landmark order, the skeleton, and the joints that have an angle. These three tables
- are the contract from `src/types/joints.ts`, and Android carries the same three. Any divergence
- is a bug even when each side looks right alone.
- */
+/// Mirrors `src/types/joints.ts` and Android's copy; any divergence is a bug.
 enum Skeleton {
   static let landmarkCount = 33
   static let landmarkStride = 4
@@ -72,7 +68,7 @@ enum Skeleton {
     return nameToIndex[name] ?? -1
   }
 
-  /// 35 pairs, flattened: a flat array avoids per-segment tuple copies on the draw path.
+  /// Flat pairs: no per-segment tuple copies on the draw path.
   static let connections: [Int] = [
     nose, leftEyeInner,
     leftEyeInner, leftEye,
@@ -113,11 +109,7 @@ enum Skeleton {
 
   static let connectionCount = 35
 
-  /**
-   `[proximal, vertex, distal]` for each of the 12 joints where two limb segments meet, in the
-   order `ANGLE_JOINT_NAMES` declares them. An array of pairs rather than a dictionary: order is
-   the contract here, and Swift dictionaries do not have one.
-   */
+  /// `[proximal, vertex, distal]`; an array, as `ANGLE_JOINT_NAMES` order is the contract.
   private static let angleTriples: [(joint: String, triple: [Int])] = [
     ("leftShoulder", [leftHip, leftShoulder, leftElbow]),
     ("rightShoulder", [rightHip, rightShoulder, rightElbow]),
@@ -133,10 +125,6 @@ enum Skeleton {
     ("rightAnkle", [rightKnee, rightAnkle, rightFootIndex])
   ]
 
-  /**
-   The 12 angle joints in wire order. Derived from the table above rather than listed again, so a
-   reorder there cannot leave a second list disagreeing with it.
-   */
   static let angleJointNames: [String] = angleTriples.map(\.joint)
 
   private static let angleTripleTable: [String: [Int]] = {

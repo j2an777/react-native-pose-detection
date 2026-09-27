@@ -11,8 +11,7 @@ internal data class AngleOverlaySpec(
     val decimals: Int,
     val minVisibility: Float,
 ) {
-    // IntArray in a data class means the generated equals compares references. The overlay compares
-    // specs when props change, so it has to compare contents.
+    // A data class compares an IntArray by reference; a props change needs content equality.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is AngleOverlaySpec) return false
@@ -45,12 +44,11 @@ internal class OverlayConfig {
     var pointRadiusDp: Float = 4f
     var minVisibility: Float = 0.5f
 
-    /** `null` means every joint. A set of indices when `only` narrows it. */
+    /** Null means every joint. */
     var only: BooleanArray? = null
     var angles: List<AngleOverlaySpec> = emptyList()
 
-    // React hands down a fresh overlay object on most renders, so the view is reassigned a config
-    // that is usually identical to the one it holds. Comparing by content lets it skip the redraw.
+    // React sends a fresh, usually identical overlay object on most renders; equal content skips a redraw.
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is OverlayConfig) return false

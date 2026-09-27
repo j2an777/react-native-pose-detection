@@ -4,10 +4,7 @@ export type ValidationIssue = {
   readonly message: string;
 };
 
-/**
- * Thrown for configuration mistakes that JavaScript can catch, so they surface at the call site
- * with a path instead of as a silently ignored trigger or a native error code.
- */
+/** A configuration mistake. `issues` holds every problem found, not just the first. */
 export class PoseConfigError extends Error {
   readonly issues: readonly ValidationIssue[];
 

@@ -4,12 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The picture and the skeleton are positioned from this one class, so these are the tests that say
- * they cannot drift apart. Case for case the same as `OverlayProjectionTests.swift`: the two
- * platforms must project a landmark to the same place, and the only way to keep that true is to
- * assert the same things on each side.
- */
+/** Case for case the same as OverlayProjectionTests.swift, so both platforms project alike. */
 class OverlayProjectionTest {
     private val viewWidth = 400f
     private val viewHeight = 800f
@@ -75,8 +70,7 @@ class OverlayProjectionTest {
     fun `corners of the source land on corners of the content rect`() {
         val projection = projection(1920, 1080, ContentFit.FIT)
 
-        // A landmark at 0,0 is the top-left of the picture, not of the view. This is the assertion
-        // that the letterbox is accounted for.
+        // 0,0 is the picture's top-left, not the view's: the letterbox is accounted for.
         assertEquals(projection.left, projection.x(0f, false), 0.001f)
         assertEquals(projection.top, projection.y(0f), 0.001f)
         assertEquals(projection.left + projection.width, projection.x(1f, false), 0.001f)
@@ -123,8 +117,6 @@ class OverlayProjectionTest {
 
     @Test
     fun `the two platforms agree on a 4 by 3 source in a tall view`() {
-        // The shape a 640x480 analysis frame makes on a phone, which is the common case and the
-        // one a regression would be easiest to miss. Same numbers asserted in the Swift suite.
         val projection = projection(640, 480, ContentFit.FILL)
 
         assertEquals(800f, projection.height, 0.001f)

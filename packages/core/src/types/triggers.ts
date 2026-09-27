@@ -1,7 +1,7 @@
 import type { PoseFrame } from './frame';
 import type { AngleJointName, JointName } from './joints';
 
-/** Degrees, 0 to 180, at a joint where two limb segments meet. */
+/** Degrees, 0 to 180. `below` and `above` are strict, `between` is inclusive. */
 export type AngleCondition = {
   angle: AngleJointName;
   below?: number;
@@ -10,10 +10,7 @@ export type AngleCondition = {
   between?: readonly [number, number];
 };
 
-/**
- * Normalized 0 to 1, origin top-left. A `JointName` bound compares against that joint's position
- * in the same frame, which stays correct as the subject moves toward or away from the camera.
- */
+/** Normalized 0 to 1, origin top-left. A `JointName` bound compares against that joint. */
 export type LandmarkXCondition = {
   landmarkX: JointName;
   below?: number | JointName;
@@ -48,10 +45,7 @@ export type VisibilityCondition = {
 export type AllCondition = { all: readonly Condition[] };
 export type AnyCondition = { any: readonly Condition[] };
 
-/**
- * Conditions describe a body, never an activity. That is what keeps them reusable across sports
- * and what keeps domain logic out of this package.
- */
+/** Exactly one key per condition. `all` and `any` nest up to 8 levels deep. */
 export type Condition =
   | AngleCondition
   | LandmarkXCondition
@@ -73,7 +67,7 @@ export type Trigger = {
   emit: TriggerEmit;
   /** Suppress re-entry for this long after a fire. Default 0. */
   debounceMs?: number;
-  /** The condition must hold this long before the state change counts. Default 0. */
+  /** How long the condition must hold, unbroken, before either transition counts. Default 0. */
   minDurationMs?: number;
   /** Attach the `PoseFrame` from the moment the trigger fired. */
   snapshot?: boolean;
@@ -83,6 +77,7 @@ export type Trigger = {
 
 export type TriggerEvent = {
   readonly id: string;
+  /** `emit: 'while'` fires as repeated `'enter'`. */
   readonly phase: 'enter' | 'exit' | 'cycle';
   /** Completed cycles since mount. Survives a camera switch, resets on unmount. */
   readonly count: number;

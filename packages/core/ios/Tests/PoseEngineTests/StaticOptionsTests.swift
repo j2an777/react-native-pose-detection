@@ -1,7 +1,6 @@
 import XCTest
 @testable import PoseEngine
 
-/// What a photo or video job runs with when the caller leaves things out, and what it refuses.
 final class StaticOptionsTests: XCTestCase {
   func testConfidenceFollowsMaxPosesUnlessChosen() {
     XCTAssertEqual(StaticOptions.forImage(nil).minConfidence, 0.5)

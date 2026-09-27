@@ -14,24 +14,13 @@ import com.posedetection.view.OverlayProjection
 import com.posedetection.view.OverlayRenderer
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** One sampled frame, and everybody who was in it, which may be nobody. */
 internal class Pose(
     val timeMs: Long,
     val bodies: List<FloatArray>,
 )
 
-/** Which sample a frame of the video is painted with. */
 internal object PoseTimeline {
-    /**
-     * The latest sample at or before [timeMs], or -1 for a frame before the first sample, which is
-     * painted with nothing. Frames between two samples take the earlier one, including an empty
-     * one: nobody was found, so nobody is drawn.
-     *
-     * It used to hold only the samples that found somebody, and fell back to the first of them. A
-     * person who left the clip stayed painted on it until the end, frozen where they were last
-     * seen, and frames before anyone was found carried a pose from later in the clip. A binary
-     * search rather than a walk forward, so a frame that arrives out of order still gets its own.
-     */
+    /** The latest sample at or before [timeMs], even an empty one, or -1 before the first. */
     fun at(
         poses: List<Pose>,
         timeMs: Long,
@@ -47,13 +36,6 @@ internal object PoseTimeline {
     }
 }
 
-/**
- * Draws the skeleton into the overlay bitmap, and knows when it does not have to.
- *
- * The bitmap is cleared and redrawn only when the transcode moves onto a different pose, which is
- * at the detection rate rather than the frame rate, so two frames out of three cost nothing but the
- * texture already on the GPU.
- */
 internal class OverlayPainter(
     private val target: Bitmap,
     canvasSize: IntArray,
@@ -66,8 +48,7 @@ internal class OverlayPainter(
     private val sourceWidth = if (upright) naturalHeight else naturalWidth
     private val sourceHeight = if (upright) naturalWidth else naturalHeight
 
-    // Fit, not fill: cropping a file the user picked would cut away part of the very thing they
-    // asked to have painted. The canvas already carries the source's aspect, so this fills it.
+    // Fit, not fill, so nothing of the picked file is cropped away.
     private val projection =
         OverlayProjection(
             sourceWidth,
@@ -104,7 +85,6 @@ internal class OverlayPainter(
                     canvas,
                     landmarks,
                     projection,
-                    // A file is never mirrored: what was picked is what gets painted.
                     mirrored = false,
                     sourceWidth = sourceWidth,
                     sourceHeight = sourceHeight,
@@ -115,14 +95,7 @@ internal class OverlayPainter(
     }
 }
 
-/**
- * The transcode loop: feed the decoder, render what comes out, drain the encoder into the muxer.
- *
- * All three run in one thread rather than three, because they are already serialised by the frame:
- * nothing can be encoded before it is rendered and nothing rendered before it is decoded. One
- * thread also means one place to check for cancellation, and no chance of a codec being released
- * from under a thread still using it.
- */
+/** Decode, render and encode on one thread: each frame serialises them anyway. */
 @Suppress("LongParameterList")
 internal class ExportPump(
     private val decoder: MediaCodec,
@@ -133,7 +106,7 @@ internal class ExportPump(
     private val cancelled: AtomicBoolean,
     private val pacer: FilePacer,
 ) {
-    /** The last presentation time written, which is the export's real duration. */
+    /** The last presentation time written: the export's real duration. */
     var lastTimeUs = 0L
         private set
 
@@ -162,9 +135,7 @@ internal class ExportPump(
             if (!decodeDone) {
                 val index = decoder.dequeueOutputBuffer(info, TIMEOUT_US)
                 if (index >= 0) {
-                    // A decoder that hands frames back in decode order, as the emulator's does
-                    // with B-frames, would take the file's time backwards. Those frames are
-                    // dropped rather than written out of order, which a player cannot play.
+                    // Some decoders return B-frames in decode order; a player cannot play time going back.
                     val backwards = frames > 0 && info.presentationTimeUs <= lastTimeUs
                     if (backwards && !warnedOrder) {
                         warnedOrder = true
@@ -183,7 +154,6 @@ internal class ExportPump(
                         lastTimeUs = info.presentationTimeUs
                         audio?.drain(muxer, info.presentationTimeUs)
                         if (durationUs > 0) onProgress(info.presentationTimeUs.toFloat() / durationUs)
-                        // Heat slows the picture pass the same way it slows detection.
                         if (!pacer.rest { cancelled.get() }) throw ExportCancelled()
                     }
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
@@ -200,7 +170,7 @@ internal class ExportPump(
         return frames
     }
 
-    /** True once the extractor has nothing left and the end of stream has been queued. */
+    /** True once the end of stream has been queued. */
     private fun feed(extractor: MediaExtractor): Boolean {
         val index = decoder.dequeueInputBuffer(TIMEOUT_US)
         if (index < 0) return false
@@ -216,13 +186,7 @@ internal class ExportPump(
         return false
     }
 
-    /**
-     * Moves whatever the encoder has produced into the muxer.
-     *
-     * Returns the muxer's track index, or [FINISHED] once the encoder has reported the end of the
-     * stream. The muxer cannot be started until the encoder has published its real output format,
-     * which is why the track is discovered here rather than set up in advance.
-     */
+    /** The muxer's track index, or [FINISHED] after the encoder's end of stream. */
     private fun drain(
         info: MediaCodec.BufferInfo,
         track: Int,
@@ -236,8 +200,7 @@ internal class ExportPump(
                 }
 
                 index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                    // The only moment a track can be added, and the video's real format is not
-                    // known until the encoder publishes it, so the audio track waits for it too.
+                    // The real format is known only now, and tracks go in before start(), so audio waits too.
                     muxerTrack = muxer.addTrack(encoder.outputFormat)
                     audio?.addTo(muxer)
                     muxer.start()
@@ -245,8 +208,7 @@ internal class ExportPump(
 
                 index >= 0 -> {
                     val buffer = encoder.getOutputBuffer(index)
-                    // The codec config rides in the format the muxer was started with, so writing
-                    // it again would put a second one in the file.
+                    // The config is already in the format the muxer started with; writing it would double it.
                     val isConfig = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
                     if (buffer != null && info.size > 0 && !isConfig && muxerTrack >= 0) {
                         buffer.position(info.offset)
@@ -255,8 +217,7 @@ internal class ExportPump(
                     }
                     encoder.releaseOutputBuffer(index, false)
                     if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                        // Whatever audio outlasts the last video frame, so a track that runs a
-                        // fraction longer than the picture is not cut off.
+                        // Audio that outlasts the last video frame, so it is not cut off.
                         audio?.drain(muxer, Long.MAX_VALUE)
                         return FINISHED
                     }

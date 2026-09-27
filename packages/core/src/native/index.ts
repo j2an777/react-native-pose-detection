@@ -3,8 +3,7 @@ import type { ComponentType } from 'react';
 
 import type { NativePoseModule } from './contract';
 
-// Resolved lazily: requiring at import time makes importing a type throw in an app that has not
-// rebuilt its native project yet, with an error that names nothing useful.
+// Lazily: requiring at import time throws, unhelpfully, in an app not yet rebuilt with the module.
 let cachedModule: NativePoseModule | null = null;
 let cachedView: ComponentType<Record<string, unknown>> | null = null;
 

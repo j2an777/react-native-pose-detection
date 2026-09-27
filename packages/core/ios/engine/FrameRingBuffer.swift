@@ -1,11 +1,6 @@
 import Foundation
 
-/**
- Bounded, drop-oldest, written on the inference thread and drained on the module queue.
-
- Backing storage is allocated once per layout and reused, so the frame path copies and does not
- allocate. A drain allocates exactly one `Data`, which JavaScript then owns.
- */
+/// Written on the inference thread, drained on the JS thread. The frame path never allocates.
 final class FrameRingBuffer {
   /// Two seconds at 30 fps, which is longer than any stall a drain recovers from.
   private static let capacity = 64
@@ -30,10 +25,7 @@ final class FrameRingBuffer {
   private var latestProcessingMs = 0.0
   private var hasLatest = false
 
-  /**
-   Frames held for a trigger to claim, see ADR 0009. Bounded and overwritten oldest-first: a
-   JavaScript side that stops redeeming must cost a fixed amount of memory, not a growing one.
-   */
+  /// Frames held for a trigger to claim, see ADR 0009.
   private var ticketIds = [Int](repeating: 0, count: tickets)
   private var ticketFrames = [[Float]](repeating: [], count: tickets)
   private var ticketTimestamps = [Double](repeating: 0, count: tickets)
@@ -41,7 +33,7 @@ final class FrameRingBuffer {
   private var ticketCursor = 0
   private var nextTicket = 1
 
-  /// Frames already buffered cannot be re-encoded under a new stride, so a change clears them.
+  /// A new layout drops buffered frames and tickets: neither can be encoded under it.
   func setLayout(_ next: FrameShape) {
     lock.lock()
     defer { lock.unlock() }
@@ -71,14 +63,14 @@ final class FrameRingBuffer {
     reset()
   }
 
-  /// The pose left the frame, so there is no current frame. Buffered ones are still owed.
+  /// The pose left. Buffered frames are still owed to the next drain.
   func clearLatest() {
     lock.lock()
     defer { lock.unlock() }
     hasLatest = false
   }
 
-  /// Whether a drain would carry anything: frames, or the news that some were dropped.
+  /// True for drops alone too: a drain must report them.
   var hasBuffered: Bool {
     lock.lock()
     defer { lock.unlock() }
@@ -86,7 +78,6 @@ final class FrameRingBuffer {
     return frames > 0 || dropped > 0
   }
 
-  /// A bare header. Decodes to no frames rather than to a malformed buffer.
   func empty() -> Data {
     return WireWriter.empty()
   }
@@ -96,16 +87,12 @@ final class FrameRingBuffer {
     count = 0
     dropped = 0
     hasLatest = false
-    // A ticket minted under the old stride cannot be encoded under the new one.
     for index in ticketIds.indices {
       ticketIds[index] = 0
     }
   }
 
-  /**
-   Holds `frame` and returns the ticket that claims it. Zero means the layout is not ready, and the
-   caller sends no `snapshotId` rather than one that redeems to nothing.
-   */
+  /// Returns the ticket that claims `frame`, or 0 when no layout is set yet.
   func mintSnapshot(_ frame: [Float], timestampMs: Double, processingMs: Double) -> Int {
     lock.lock()
     defer { lock.unlock() }
@@ -140,11 +127,7 @@ final class FrameRingBuffer {
     )
   }
 
-  /**
-   `buffered` is what the delivery mode decides. The latest frame is recorded either way. Returns
-   nothing: a full buffer drops its oldest frame and counts it, which is reported in the next
-   drain's header rather than raised here.
-   */
+  /// The latest frame is recorded either way. A full buffer drops and counts its oldest frame.
   func submit(_ frame: [Float], timestampMs: Double, processingMs: Double, buffered: Bool) {
     lock.lock()
     defer { lock.unlock() }
@@ -172,12 +155,7 @@ final class FrameRingBuffer {
     }
   }
 
-  /**
-   Everything buffered since the last call. Empties the buffer and the dropped count.
-
-   A plain `Data`, not the array buffer JavaScript receives: wrapping it is one call the caller
-   makes, and keeping that out of here is what lets the encoding be tested without a JS runtime.
-   */
+  /// Plain `Data`, not the JS array buffer, so the encoding is testable without a JS runtime.
   func drain() -> Data {
     lock.lock()
     defer { lock.unlock() }
@@ -213,7 +191,6 @@ final class FrameRingBuffer {
     return buffer
   }
 
-  /// The most recent frame, or a bare header when no pose has been seen.
   func snapshot() -> Data {
     lock.lock()
     defer { lock.unlock() }

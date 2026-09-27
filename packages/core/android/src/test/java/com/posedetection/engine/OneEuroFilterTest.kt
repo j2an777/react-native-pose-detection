@@ -42,7 +42,6 @@ class OneEuroFilterTest {
         next[Skeleton.LANDMARK_STRIDE - 1] = 0.1f
         filter.apply(next, 1f / 30f)
 
-        // A joint that has just left frame must not keep reading as present.
         assertEquals(0.1f, next[Skeleton.LANDMARK_STRIDE - 1], 0f)
     }
 
@@ -106,8 +105,7 @@ class OneEuroFilterTest {
         filter.apply(frame(0.1f), 1f / 30f)
         filter.apply(frame(0.9f), Float.NaN)
 
-        // Held still at the new place: filtered against the frame after the gap, nothing moves.
-        // Against the stale state from before it, this frame would be dragged back toward 0.1.
+        // Against the stale state from before the gap, this frame would be dragged back toward 0.1.
         val next = frame(0.9f)
         filter.apply(next, 1f / 30f)
         assertEquals(0.9f, x(next), 1e-6f)
@@ -154,8 +152,7 @@ class OneEuroFilterTest {
 
     @Test
     fun `speed is measured in body spans so a distant subject is not left behind`() {
-        // A subject a tenth the height of the frame moving one of its own spans a second: slow in
-        // frame units, brisk for the body. Measured in spans it gets the cutoff a near one would.
+        // A subject a tenth of the frame tall, moving a span a second: slow in frame units, brisk in spans.
         fun lagOf(scale: Float): Float {
             val filter = OneEuroFilter()
             var landmarks = frame(0.5f)

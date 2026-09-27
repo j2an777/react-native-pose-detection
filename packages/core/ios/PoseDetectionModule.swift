@@ -2,17 +2,10 @@ import AVFoundation
 import ExpoModulesCore
 
 public class PoseDetectionModule: Module {
-  /**
-   The log flush while no camera is attached. A camera hands batches over as its own `onLog` while
-   it is, and with none on screen nothing did: `addLogListener()` heard nothing from a file
-   detection or an export. It runs while the stream does, which is only while something in
-   JavaScript listens. Started and stopped on the JavaScript thread, and fired on main.
-   */
+  /// Hands logs to JavaScript while no camera owns the flush, e.g. during a file job or an export.
   private var logFlush: DispatchSourceTimer?
 
-  // The two functions below are declarations rather than logic: every line names one prop, one
-  // function or one event, and splitting them further would only scatter the surface this module
-  // exports across several places to satisfy a line count.
+  // A list of declarations, not logic: splitting it would only scatter the exported surface.
   // swiftlint:disable:next function_body_length
   public func definition() -> ModuleDefinition {
     Name("PoseDetection")
@@ -21,8 +14,6 @@ public class PoseDetectionModule: Module {
       applyLogLevel(unwrap(config))
     }
 
-    // The buffer is global because the level mask is. A camera runs the flush while one is
-    // attached, and the module while none is, see PoseLog.
     Function("startLogStream") { [weak self] in
       PoseLog.startStream()
       self?.startLogFlush()
@@ -37,8 +28,7 @@ public class PoseDetectionModule: Module {
 
     Events("onVideoProgress", "onExportProgress", "onLog")
 
-    // Both handed to this package's own queue rather than run on Expo's, which every module in the
-    // app shares: a video job there held all of them up while it ran, at the camera's priority.
+    // File jobs run on our own queues, not the one Expo shares with every module. See ADR 0012.
     AsyncFunction("detectOnImage") { (uri: String, options: [String: Any]?, promise: Promise) in
       StaticDetection.queue.async {
         do {
@@ -79,10 +69,6 @@ public class PoseDetectionModule: Module {
       StaticDetection.cancel(taskId: taskId)
     }
 
-    /**
-     Dispatched onto the export queue rather than run on Expo's, which is what keeps a long export
-     off any thread the camera cares about. See `PoseExport` for the other three rules.
-     */
     AsyncFunction("exportPose") { (uri: String, options: [String: Any]?, taskId: Int, promise: Promise) in
       PoseExport.queue.async { [weak self] in
         do {
@@ -102,16 +88,13 @@ public class PoseDetectionModule: Module {
       PoseExport.cancel(taskId: taskId)
     }
 
-    // Synchronous and on the JavaScript thread that calls them: a view function would run on main,
-    // behind layout and the overlay, twice per tick. Each reads a view's frames through the id
-    // `<PoseCamera>` gave it, and an id with no view behind it reads as an empty buffer. See ADR 0008.
+    // On the JS thread: a view function would queue behind main. See ADR 0010.
     Function("drainFrames") { (streamId: Int) -> NativeArrayBuffer in
       NativeArrayBuffer.wrap(dataWithoutCopy: FrameStreams.shared.drain(streamId))
     }
     Function("snapshotFrame") { (streamId: Int) -> NativeArrayBuffer in
       NativeArrayBuffer.wrap(dataWithoutCopy: FrameStreams.shared.snapshot(streamId))
     }
-    /// An unknown or spent ticket is an empty buffer, which is the documented contract.
     Function("takeTriggerSnapshot") { (streamId: Int, snapshotId: Int) -> NativeArrayBuffer in
       NativeArrayBuffer.wrap(dataWithoutCopy: FrameStreams.shared.takeSnapshot(streamId, ticket: snapshotId))
     }
@@ -125,8 +108,6 @@ public class PoseDetectionModule: Module {
 
     AsyncFunction("requestCameraPermission") { (promise: Promise) in
       let status = AVCaptureDevice.authorizationStatus(for: .video)
-      // Only `notDetermined` can produce a dialog. Asking again in any other state resolves
-      // immediately with what is already true, which is what the JavaScript side documents.
       guard status == .notDetermined else {
         promise.resolve(permissionResult(status))
         return
@@ -158,8 +139,6 @@ public class PoseDetectionModule: Module {
 }
 
 extension PoseDetectionModule {
-  // Extracted from `definition()` so each half stays readable; the DSL composes either way, and
-  // like `definition()` this is a list of declarations rather than a long function.
   // swiftlint:disable:next function_body_length
   fileprivate func cameraView() -> ViewDefinition<PoseCameraView> {
     return View(PoseCameraView.self) {
@@ -177,8 +156,6 @@ extension PoseDetectionModule {
       Prop("delegate") { (view: PoseCameraView, value: String?) in view.setDelegate(value ?? "auto") }
       Prop("active") { (view: PoseCameraView, value: Bool?) in view.setActive(value ?? true) }
 
-      // What runs and at what size. `detection` parks and resumes the landmarker, `maxPoses` and
-      // `minConfidence` are built into it and rebuild it, and `resolution` rebinds the camera.
       Prop("detection") { (view: PoseCameraView, value: Bool?) in view.setDetection(value ?? true) }
       Prop("maxPoses") { (view: PoseCameraView, value: Int?) in view.setMaxPoses(value ?? 1) }
       Prop("minConfidence") { (view: PoseCameraView, value: Double?) in view.setMinConfidence(value) }
@@ -188,8 +165,7 @@ extension PoseDetectionModule {
       }
       Prop("data") { (view: PoseCameraView, value: [String: Any]?) in view.setData(parseData(value)) }
 
-      // Resolved by JavaScript, in ANGLE_JOINT_NAMES order. Re-deriving the set here would be a
-      // second implementation of one rule, and a way for them to disagree.
+      // Already resolved by JavaScript, in ANGLE_JOINT_NAMES order; not re-derived here.
       Prop("angleJoints") { (view: PoseCameraView, value: [String]?) in view.setAngleJoints(value ?? []) }
       Prop("selection") { (view: PoseCameraView, value: [String]?) in
         view.setSelection(value.map(parseSelection))
@@ -205,7 +181,6 @@ extension PoseDetectionModule {
         applySmoothing(view, unwrap(value))
       }
 
-      // Raises the global level while this camera exists, see PoseLog.raise. Absent withdraws it.
       Prop("logLevel") { (view: PoseCameraView, value: Either<String, [String: String]>?) in
         PoseLog.raise(view, to: PoseLog.levelMask(for: unwrap(value)))
       }
@@ -222,8 +197,7 @@ extension PoseDetectionModule {
         view.onPropsUpdated()
       }
 
-      // Every one of these runs on the main queue: ExpoModulesCore puts view functions there. None
-      // is on the frame path; the frame reads are module functions above, on the JavaScript thread.
+      // ExpoModulesCore runs view functions on the main queue.
       AsyncFunction("switchCamera") { (view: PoseCameraView, promise: Promise) in
         view.switchCamera(
           onDone: { _ in promise.resolve(nil) },
@@ -256,9 +230,7 @@ extension PoseDetectionModule {
   }
 }
 
-/// `Either.value` is internal to ExpoModulesCore, so the typed getters are the way in from out
-/// here. Asked in declaration order because an `NSNumber` bridges to `Bool` and a dictionary never
-/// does: reversing it would read `smoothing: true` as a config object.
+/// `Either.value` is internal to ExpoModulesCore, so the typed getters are the way in.
 private func unwrap(_ either: Either<String, [String: String]>?) -> Any? {
   guard let either else { return nil }
   if let name: String = either.get() { return name }
@@ -273,11 +245,6 @@ private func unwrap(_ either: Either<Bool, [String: Any]>?) -> Any? {
   return nil
 }
 
-/**
- A file that could not be read rejects with its decode code, a missing model with `MODEL_NOT_FOUND`,
- and anything that failed after the file was read with `DETECTION_FAILED`: three different things
- for the app to tell its user, where one code used to cover all of them.
- */
 private func rejectFileJob(_ promise: Promise, _ error: Error) {
   if let failure = error as? StaticDetectionError {
     promise.reject(failure.code.rawValue, failure.message)
@@ -286,7 +253,6 @@ private func rejectFileJob(_ promise: Promise, _ error: Error) {
   promise.reject(ErrorCode.detectionFailed.rawValue, error.localizedDescription)
 }
 
-/// Resolved by JavaScript for the live path, and passed the same way here.
 func angleJoints(from options: [String: Any]?) -> [String] {
   guard let names = JS.strings(options?["angleJoints"]) else { return Skeleton.angleJointNames }
   return names
@@ -310,8 +276,7 @@ func applyLogLevel(_ config: Any?) {
 }
 
 func applySmoothing(_ view: PoseCameraView, _ value: Any?) {
-  // Absent is off. JavaScript resolves `'auto'` against `maxPoses` and always sends the answer, and
-  // one pose is already smoothed inside MediaPipe.
+  // Absent is off: JavaScript always sends `'auto'` already resolved against `maxPoses`.
   guard !JS.isNull(value) else {
     view.setSmoothing(enabled: false, minCutoff: OneEuroFilter.defaultMinCutoff, beta: OneEuroFilter.defaultBeta)
     return

@@ -23,39 +23,14 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Paints the skeleton into a copy of a picked image or video and writes it into the app's sandbox.
- *
- * **Nothing here is allowed to slow the live camera down.** That is the whole shape of this file,
- * not a footnote to it, and it is bought four ways:
- *
- * 1. **Its own detector.** Never the camera's landmarker. Built here, used here, closed here.
- * 2. **Never the GPU while a camera is detecting.** A video runs inference on the GPU only when no
- *    camera is running inference and this device's GPU check passed, and on the CPU otherwise, so
- *    an export cannot contend with a preview for the GPU its own inference runs on. See
- *    [com.posedetection.detector.FileDetector]. A photo is one inference and always runs on the
- *    CPU. The video pixel path uses the hardware codec and GL, because that is the platform's
- *    cheap path and the alternative, converting every frame in Kotlin, would compete for far more
- *    CPU than the codec ever does for GPU.
- * 3. **A single background thread at low priority.** Serial, so two exports queue up behind each
- *    other instead of ganging up on the camera, and below the camera's own threads so the
- *    scheduler starves the export first. Heat slows it further, see
- *    [com.posedetection.performance.FilePacer].
- * 4. **Bounded memory.** One frame decoded at a time, one buffer encoded at a time, nothing
- *    accumulated. A long video costs what a short one costs, which is what keeps an export from
- *    ending as a memory-pressure kill of the camera it was running beside.
- *
- * Every path closes what it opened in a `finally`, so a throw, a cancel and a clean finish all
- * unwind the same way.
- */
+/** Never slows the live camera: its own detector, one low-priority thread, one frame of pixels at a time. */
 internal object PoseExport {
     private val VIDEO_EXTENSIONS =
         setOf("mp4", "mov", "m4v", "3gp", "avi", "mkv", "webm")
 
-    /** Before the extension of a file still being written. See [ExportOptions] for the sweep. */
     const val STAGING_SUFFIX = ".partial"
 
-    /** Serial and below the camera. See the note above; this is rule 3 and rule 3 is why it is here. */
+    /** Serial, which the staging sweep relies on, and below the camera's priority. */
     val executor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "pose-export").apply {
@@ -70,11 +45,7 @@ internal object PoseExport {
         cancelled[taskId]?.set(true)
     }
 
-    /**
-     * By the type a content provider reports, then by extension. A `content://` URI from a document
-     * picker or MediaStore usually has no extension at all, `.../document/video%3A123`, and read by
-     * extension alone it went to the image decoder and failed as a picture that could not be read.
-     */
+    /** Content type first: a picker's `content://` URI usually has no extension. */
     fun isVideo(
         context: Context,
         uri: String,
@@ -100,15 +71,11 @@ internal object PoseExport {
                 .substringAfterLast('/')
                 .substringBeforeLast('.')
         val options = ExportOptions.parse(context, raw, sourceName)
-        // The two values that decide who gets painted, and the pair most worth seeing when an
-        // export finds fewer bodies than expected: `minConfidence` follows `maxPoses` unless the
-        // caller set it, and the resolved number is not visible from JavaScript otherwise.
+        // The resolved minConfidence is not visible from JavaScript otherwise.
         PoseLog.info(LogCategory.ENGINE) {
             "export maxPoses=${options.maxPoses} minConfidence=${options.minConfidence}"
         }
 
-        // An entry exists only while the job runs, so cancelling a task nobody started is a no-op
-        // rather than a note kept for the life of the process.
         val flag = AtomicBoolean(false)
         cancelled[taskId] = flag
         try {
@@ -122,17 +89,13 @@ internal object PoseExport {
         }
     }
 
-    // MARK: Stills
-
     private fun exportImage(
         context: Context,
         uri: String,
         options: ExportOptions,
         onProgress: (Float) -> Unit,
     ): ExportSummary {
-        // Detection first, on a picture no larger than it needs, freed before the one that is
-        // painted is decoded: a full-size export of a 48-megapixel photo never holds both. At the
-        // default size the two are the same decode, and it is done once.
+        // Detect on a smaller decode, freed before the painted one, so a huge photo is never held twice.
         val paintMax = options.maxSize.takeIf { it > 0 }
         val shared = paintMax != null && paintMax <= StillImage.DETECTION_MAX_PIXELS
         val detectable =
@@ -170,8 +133,7 @@ internal object PoseExport {
         val canvas = ExportCanvas.size(source.width, source.height, options.maxSize)
         val painted = Bitmap.createBitmap(canvas[0], canvas[1], Bitmap.Config.ARGB_8888)
         val output = File(options.directory, "${options.fileName}.jpg")
-        // Written under a staging name and renamed into place, as a video is, so a failure part-way
-        // through the encode never leaves a truncated picture that looks like a finished export.
+        // Staged and renamed, so a failed encode never leaves a truncated file that looks finished.
         val staging = File(options.directory, "${options.fileName}$STAGING_SUFFIX.jpg")
         try {
             paint(painted, source, result, options)
@@ -204,8 +166,6 @@ internal object PoseExport {
         result: PoseLandmarkerResult,
         options: ExportOptions,
     ) {
-        // Fit, not fill: cropping a picture the user picked would cut away part of the very thing
-        // they asked to have painted.
         val projection =
             OverlayProjection(
                 source.width,
@@ -216,8 +176,7 @@ internal object PoseExport {
             )
         val canvas = Canvas(target)
         canvas.drawColor(Color.BLACK)
-        // The rect is built here rather than on the projection: that class is deliberately free of
-        // `android.graphics` so it can run under a plain JVM test.
+        // Built here: the projection stays free of android.graphics for its JVM tests.
         canvas.drawBitmap(source, null, projection.rect(), null)
 
         if (!options.drawOverlay) return
@@ -229,7 +188,6 @@ internal object PoseExport {
                 canvas,
                 landmarks,
                 projection,
-                // A file is never mirrored: what was picked is what gets painted.
                 mirrored = false,
                 sourceWidth = source.width,
                 sourceHeight = source.height,
@@ -239,13 +197,7 @@ internal object PoseExport {
 
     private fun OverlayProjection.rect(): RectF = RectF(left, top, left + width, top + height)
 
-    /**
-     * Every pose in the frame as flat buffers the renderer reads, empty when nobody was in it.
-     *
-     * All of them, not the front one: `maxPoses` is an export option, and painting one skeleton
-     * onto a frame the caller asked to have five detected in would silently ignore what they asked
-     * for.
-     */
+    /** Every pose, not just the subject: painting one of the maxPoses asked for would ignore the rest. */
     fun poses(result: PoseLandmarkerResult): List<FloatArray> =
         result.landmarks().map { pose ->
             val landmarks = FloatArray(Skeleton.LANDMARK_COUNT * Skeleton.LANDMARK_STRIDE)

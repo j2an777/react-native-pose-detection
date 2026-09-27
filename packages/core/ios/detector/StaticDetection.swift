@@ -3,7 +3,6 @@ import Foundation
 import MediaPipeTasksVision
 import UIKit
 
-/// A file job's failure, carrying the code its promise rejects with.
 struct StaticDetectionError: LocalizedError {
   let code: ErrorCode
   let message: String
@@ -18,23 +17,11 @@ struct StaticDetectionError: LocalizedError {
   }
 }
 
-/**
- The same detector, without a camera.
-
- Nothing here calibrates: a file has no frame budget to hit, so it always runs at full quality. What
- it does answer to is heat, through `FilePacer`, and to the camera, through `FileDetector`'s choice
- of delegate.
- */
+/// No calibration: a file has no frame budget, so it runs at full quality, paced only for heat.
 enum StaticDetection {
   private static let millisPerSecond: Double = 1_000
-  /// The same step an export reports progress in.
   private static let progressStep: Float = 0.02
 
-  /**
-   Where photo and video detection run: serial, below the camera's own queue, and this package's
-   own. Expo runs every module's async functions on one shared queue, so a video job there held up
-   every other module in the app for as long as it ran.
-   */
   static let queue = DispatchQueue(label: "com.posedetection.files", qos: .utility)
 
   private static let running = CancelRegistry()
@@ -43,7 +30,7 @@ enum StaticDetection {
     running.cancel(taskId)
   }
 
-  /// One entry per detected pose, the subject first, so a two-person photo decodes to two frames.
+  /// One frame per pose, the subject first.
   static func detectImage(
     uri: String,
     options: StaticOptions,
@@ -56,8 +43,6 @@ enum StaticDetection {
     }
     let shape = shapeFor(options, angleJoints: angleJoints, selection: selection)
 
-    // No try/finally around the decode, unlike Android: ARC releases the image and the detector
-    // when a throw unwinds this frame, so there is no window where either can be stranded.
     let detector = try PoseDetector.createForStillInput(
       modelPath: try requireModel(),
       maxPoses: options.maxPoses,
@@ -76,11 +61,6 @@ enum StaticDetection {
     return write(shape: shape, frames: frames, timestamps: [Double](repeating: 0, count: frames.count))
   }
 
-  /**
-   Sampled at `fps`, not at the video's own rate, and run through VIDEO mode with monotonic
-   timestamps so temporal tracking behaves the way it does live. Each frame carries its real
-   position in the video, which is what smoothing and velocity are measured against.
-   */
   static func detectVideo(
     uri: String,
     options: StaticOptions,
@@ -114,11 +94,7 @@ enum StaticDetection {
 
     while !isCancelled() {
       guard let frame = try sampler.next() else { break }
-      // MPImage and everything MediaPipe allocates behind it are autoreleased, and this loop never
-      // returns to a run loop, so without a pool per sample a long clip holds every one of them.
       try autoreleasepool {
-        // VIDEO mode rejects a timestamp that does not move forward, and a variable frame rate clip
-        // can hand back two frames on the same millisecond.
         let timestamp = max(Int(frame.timestampMs), lastTimestamp + 1)
         lastTimestamp = timestamp
         guard let upright = frames.upright(frame.buffer) else {
@@ -133,8 +109,6 @@ enum StaticDetection {
           PoseLog.debug(.engine, "nobody found at \(frame.timestampMs) ms")
         }
       }
-      // Throttled as an export's is: a progress event per sampled frame is a crossing per frame for
-      // a number nobody reads that fast.
       let progress = sampler.progress(of: frame)
       if progress >= lastReported + StaticDetection.progressStep {
         lastReported = progress
@@ -172,7 +146,7 @@ enum StaticDetection {
     )
   }
 
-  /// The same block order the live path writes, because it is the same decoder on the other side.
+  /// Must match the live path's block order: JavaScript decodes both the same way.
   static func encode(
     _ landmarks: [Float],
     result: PoseLandmarkerResult,
@@ -251,12 +225,7 @@ enum StaticDetection {
   }
 }
 
-/**
- The subject of a video, followed from one sampled frame to the next: the same rules the live view
- applies. The largest body is the subject, smoothing and velocity are measured against real
- timestamps, and both start over when the subject is lost, changes, or a gap opens (see
- `PoseTrack`).
- */
+/// Follows a video's subject by the live view's rules; `PoseTrack` decides when it starts over.
 struct VideoTracker {
   private var track: PoseTrack
   private let smoothing: OneEuroFilter?
@@ -268,7 +237,6 @@ struct VideoTracker {
     self.size = size
   }
 
-  /// The subject's frame, or nil when nobody was found.
   mutating func encode(_ result: PoseLandmarkerResult, shape: FrameShape, atMs timestampMs: Double) -> [Float]? {
     let poses = PoseExport.poses(result)
     guard !poses.isEmpty else {
@@ -281,7 +249,7 @@ struct VideoTracker {
     let elapsed = track.advance(boxes[subject], atMs: timestampMs)
 
     if let smoothing = smoothing {
-      // Speed in body spans, as live: x is normalized by width, so its span is scaled to it.
+      // In body spans, as live: x is width-normalized, so its span is scaled by the aspect.
       let span = Geometry.bodySpan(landmarks)
       let aspect = size.width > 0 ? Float(size.height / size.width) : 1
       smoothing.apply(to: &landmarks, elapsedSeconds: elapsed ?? .nan, scaleX: span * aspect, scaleY: span)

@@ -1,9 +1,7 @@
 import ExpoModulesCore
 import UIKit
 
-/// The imperative surface behind the ref, and every event this view sends.
 extension PoseCameraView {
-  /// From where the last queued switch is heading, so two quick switches go there and back.
   func switchCamera(onDone: @escaping (String) -> Void, onFailed: @escaping (String) -> Void) {
     setFacingInternal(camera.targetFacing.opposite, onDone: onDone, onFailed: onFailed)
   }
@@ -17,27 +15,21 @@ extension PoseCameraView {
       target,
       onDone: { [weak self] facing in
         guard let self = self else { return }
-        // Everything from before this point belongs to the old camera. Frames already on the
-        // analysis queue can still be stamped after this read, which costs at most a frame or two
-        // drawn with the new mirroring.
+        // Frames already queued can be stamped after this read: a frame or two drawn mis-mirrored.
         self.staleBefore.value = (self.detector.value?.lastTimestampMs ?? 0) + 1
         self.previousFrameMs.value = 0
         // A hold is continuous on one camera; the new one starts it over.
         self.triggers.onPoseLost()
         self.syncOverlayMirroring()
 
-        // Anything still waiting from an earlier switch is settled first, so no promise is left
-        // dangling when two switches overlap.
+        // Settle an earlier switch first, so overlapping switches leave no promise dangling.
         self.completeSwitch()
         let name = facing.nameForJs
-        // Weakly, because this closure is stored on the view: capturing strongly would keep the
-        // view alive through its own property until the switch settles.
+        // Weak: this closure is stored on the view.
         self.pendingSwitchDone = { [weak self] in
           self?.onCameraChange(["facing": name])
           onDone?(name)
         }
-        // A rebind is not a frame. Reporting the switch waits for the new camera to deliver one,
-        // with a timeout so a camera that never does still settles the promise.
         self.awaitingFirstFrame.value = true
         self.switchTimer?.invalidate()
         self.switchTimer = Timer.scheduledTimer(
@@ -95,20 +87,14 @@ extension PoseCameraView {
     applyOverlayEnabled()
   }
 
-  /**
-   Setting one explicitly is a decision, so it takes effect now rather than at the next render. The
-   measurement is kept: every profile budgets against what this device's inference costs.
-   */
+  /// Applies now, not at the next render. Calibration is kept: every profile budgets against it.
   func applyProfile(_ profile: Profile) {
     propProfile = profile
     applyPerformance(reason: "calibration")
     restartSessionIfGeometryChanged()
   }
 
-  /**
-   The measured rate and the reason for the current one, for `getState()` on the JavaScript thread.
-   Static and fed the thread-safe values it reads, so it can never reach main-thread state by accident.
-   */
+  /// Static and handed only thread-safe values, because it runs on the JavaScript thread.
   static func liveState(
     measuredFps: Guarded<Int>,
     lastResultMs: Guarded<Int64>,
@@ -129,7 +115,6 @@ extension PoseCameraView {
     return ["fps": fps, "limitedBy": limitedBy.rawValue]
   }
 
-  /// Zero once results stop: the last live value would read as a session that is still running.
   func currentMeasuredFps() -> Int {
     let last = lastResultMs.value
     guard last != 0, Monotonic.nowMs() - last <= PoseCameraView.fpsStaleAfterMs else { return 0 }
@@ -148,7 +133,6 @@ extension PoseCameraView {
     ]
   }
 
-  /// The profile as `getProfile()` reports it.
   func profileState() -> [String: Any] {
     return [
       "profile": propProfile.rawValue,
@@ -170,13 +154,11 @@ extension PoseCameraView {
     ]
   }
 
-  /// The rate inference is gated at right now, idle search included.
   func currentTargetFps() -> Int {
     let decided = rate.value.fps
     return idleFps.value.map { min($0, decided) } ?? decided
   }
 
-  /// Why the rate is what it is. `paused` whenever nothing is running to be limited.
   func currentLimitedBy() -> LimitedBy {
     guard propDetection, feeding.value, camera.isBound, detector.value != nil || detectorPending else {
       return .paused
@@ -189,8 +171,7 @@ extension PoseCameraView {
 
   func emitReadyOnce() {
     guard !readySent, camera.isBound else { return }
-    // onReady reports the delegate that is actually in use, and that is not known until the
-    // landmarker has finished building, so a pending build holds the event back.
+    // Held while a build is pending: onReady reports the delegate actually in use.
     guard !detectorPending else { return }
     readySent = true
 

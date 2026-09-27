@@ -3,10 +3,7 @@ package com.posedetection.engine
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * MediaPipe answers in the sensor buffer's frame, and a phone held upright delivers that buffer a
- * quarter turn round. Every case here is a corner of the buffer and where a clockwise turn puts it.
- */
+/** Each case is a corner of the sensor buffer and where a clockwise turn puts it. */
 class UprightTest {
     private fun upright(
         x: Float,
@@ -41,7 +38,6 @@ class UprightTest {
 
     @Test
     fun `two points side by side in the buffer are one above the other once a quarter turn round`() {
-        // What the screen showed before this: a face's eyes stacked down the nose.
         val left = upright(0.4f, 0.5f, 3)
         val right = upright(0.6f, 0.5f, 3)
         assertEquals(left.first, right.first, 1e-6f)

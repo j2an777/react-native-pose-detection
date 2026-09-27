@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Telling one person from another between two frames, which is when smoothing has to start over. */
 class PoseBoxTest {
     @Test
     fun `the same body moving one frame overlaps well`() {

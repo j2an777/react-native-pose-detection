@@ -21,17 +21,8 @@ export type ThermalPolicy = 'adaptive' | 'critical-only' | 'off';
 export type Profile = 'auto' | 'efficient' | 'balanced' | 'quality' | 'unrestricted';
 
 /**
- * Why the inference rate is what it is, reported with every rate so a number below what was asked
- * for always comes with its reason. See [guides/performance.md](../../../../guides/performance.md).
- *
- * - `camera`: the camera's own frame rate, the fastest there is to run on.
- * - `device`: what this device can finish within its duty budget, as measured.
- * - `target`: an explicit `targetFps`.
- * - `profile`: the ceiling a named profile sets below the camera's rate.
- * - `thermal`: heat, including detection paused at `critical`.
- * - `lowPower`: Low Power Mode on iOS, Battery Saver on Android.
- * - `idle`: nobody has been in frame for a while.
- * - `paused`: detection is off, or the camera is not running.
+ * Why the rate is what it is: `camera` rate, measured `device` budget, `target` or `profile`
+ * ceiling, `thermal`, `lowPower`, `idle` (nobody in frame), `paused` (camera or detection off).
  */
 export type LimitedBy =
   | 'camera'
@@ -43,7 +34,7 @@ export type LimitedBy =
   | 'idle'
   | 'paused';
 
-/** The heat the governor acts on, after hysteresis: rising at once, cooling only once it has held. */
+/** The heat the governor acts on: it rises at once and cools only once the lower state has held. */
 export type ThermalState = 'nominal' | 'fair' | 'serious' | 'critical';
 
 export type ProfileState = {
@@ -59,9 +50,8 @@ export type ProfileState = {
   };
   readonly p50InferenceMs: number;
   /**
-   * Completed inferences per second, measured over the last second and zero once results stop.
-   * This is the live counterpart of `resolved.targetFps`: the two disagree exactly when the
-   * device cannot hold the rate it was asked for.
+   * Completed inferences over the last second, 0 once results stop. Below `resolved.targetFps`
+   * exactly when the device cannot hold that rate.
    */
   readonly measuredFps: number;
   /** Why `resolved.targetFps` is what it is. */
@@ -77,10 +67,7 @@ export type CameraState = {
   readonly facing: Facing;
   readonly active: boolean;
   readonly detecting: boolean;
-  /**
-   * Completed inferences per second over the last second, read live from native on the JavaScript
-   * thread each time `getState()` is called, and zero once results stop.
-   */
+  /** Completed inferences over the last second, read live on each call; 0 once results stop. */
   readonly fps: number;
   readonly delegate: Delegate;
   readonly deviceTier: DeviceTier;
@@ -88,7 +75,10 @@ export type CameraState = {
   readonly limitedBy: LimitedBy;
 };
 
-/** One-Euro filter parameters. Lower `minCutoff` smooths more; higher `beta` tracks fast motion. */
+/**
+ * One Euro filter, MediaPipe's constants by default: `minCutoff` 0.05, `beta` 80. Lower
+ * `minCutoff` smooths a still body harder; higher `beta` follows fast movement sooner.
+ */
 export type SmoothingConfig = {
   minCutoff?: number;
   beta?: number;
@@ -102,7 +92,7 @@ export type AngleOverlay = {
   radius?: number;
   /** Defaults to the overlay color. */
   color?: string;
-  /** Decimal places on the label, 0 to 3. Default 0. Larger values are capped at 3. */
+  /** Decimal places on the label, 0 to 3; larger values are capped. Default 0. */
   decimals?: number;
   /** Hide the arc when the vertex is tracked below this. Default 0.5. */
   minVisibility?: number;
@@ -112,18 +102,18 @@ export type OverlayConfig = {
   landmarks?: boolean;
   connections?: boolean;
   color?: string;
+  /** Points. Default 3. */
   lineWidth?: number;
+  /** Points. Default 4. */
   pointRadius?: number;
+  /** Hide joints tracked below this. Default 0.5. */
   minVisibility?: number;
   /** Draw a subset of the skeleton. Connections with an excluded endpoint are skipped. */
   only?: readonly JointName[];
   angles?: readonly AngleOverlay[];
 };
 
-/**
- * How often frames cross to JavaScript. Triggers are independent of this, they fire on their own
- * schedule even at `off`.
- */
+/** How often frames cross to JavaScript. Triggers fire regardless, even at `'off'`. */
 export type DataMode = 'off' | 'throttled' | 'batched' | 'live';
 
 export type DataConfig = {
@@ -136,14 +126,13 @@ export type DataConfig = {
   landmarks?: boolean;
   worldLandmarks?: boolean;
   /**
-   * `true` computes all 12. An array computes only those. Triggers and `overlay.angles` add to
-   * whatever this asks for, so leaving it unset still gets you the angles they need.
+   * `true` computes all 12, a list only those. The angles triggers and `overlay.angles` reference
+   * are added either way.
    */
   angles?: boolean | readonly AngleJointName[];
   /**
-   * Narrows the landmark buffer to these joints, which appear on `PoseFrame.selection` in buffer
-   * order. It holds exactly these: angles are computed natively from the full set beforehand, so
-   * asking for an angle never widens the payload.
+   * Narrows the landmark buffer to exactly these joints, in this order, listed on
+   * `PoseFrame.selection`. Angles are computed from the full set first, so they never widen it.
    */
   select?: readonly JointName[];
 };

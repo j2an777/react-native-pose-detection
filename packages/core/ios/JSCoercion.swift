@@ -1,31 +1,20 @@
 import Foundation
 
-/**
- Untyped JavaScript values into Swift ones.
-
- Everything crossing the bridge arrives as `Any`, and a number can be an `Int`, a `Double` or an
- `NSNumber` depending on how it was written on the other side. Reading it as one of those and
- ignoring the rest is how a valid config silently becomes a default.
-
- `Bool` bridges to `NSNumber` as 0 or 1, so it has to be rejected before the numeric cast rather
- than after: `{ smoothing: true }` read as a number is `minCutoff: 1`. It is told apart by its
- CoreFoundation type, not by `is Bool`: every `NSNumber` holding exactly 0 or 1 passes `is Bool`, and
- a JavaScript number arrives as one, so testing that way dropped every 0 and 1 in a config, a
- `beta: 0` or a `lineWidth: 1`, for the default.
- */
+/// Untyped bridge values into Swift ones. A number may arrive as `Int`, `Double` or `NSNumber`.
 enum JS {
-  /// JavaScript `null` crosses as `NSNull`, which is not nil and is not any of the types below.
+  /// JavaScript `null` crosses as `NSNull`, not nil.
   static func isNull(_ value: Any?) -> Bool {
     return value == nil || value is NSNull
   }
 
-  /// A JavaScript `true` or `false`, which crosses as the `CFBoolean` singletons.
+  /// By CF type, not `is Bool`: every `NSNumber` holding 0 or 1 passes `is Bool`.
   static func isBoolean(_ value: Any?) -> Bool {
     guard let number = value as? NSNumber else { return false }
     return CFGetTypeID(number) == CFBooleanGetTypeID()
   }
 
   static func number(_ value: Any?) -> Double? {
+    // First: a bool bridges as NSNumber, so `smoothing: true` would read as 1.
     if isBoolean(value) { return nil }
     if let double = value as? Double { return double }
     if let int = value as? Int { return Double(int) }
@@ -33,19 +22,12 @@ enum JS {
     return nil
   }
 
-  /// A number that arithmetic can use. NaN and both infinities are refused: no caller means to
-  /// send one, and converting either to an integer traps.
   static func finite(_ value: Any?) -> Double? {
     guard let number = number(value), number.isFinite else { return nil }
     return number
   }
 
-  /**
-   A whole number, truncated toward zero the way `Int64(_:)` truncates, but saturating at the ends
-   of the range instead of trapping, and nil for anything `finite` refuses. Every integer read out
-   of a JavaScript value goes through here: `Int64(Double.infinity)` takes the app down, where
-   Kotlin's `toLong()` quietly saturates.
-   */
+  /// Truncates like `Int64(_:)` but saturates instead of trapping, as Kotlin's `toLong()` does.
   static func int64(_ value: Any?) -> Int64? {
     guard let number = finite(value) else { return nil }
     // 2^63. Int64.max has no exact double, and this is the first one past it.
@@ -59,7 +41,6 @@ enum JS {
     return int64(value).map { Int(clamping: $0) }
   }
 
-  /// Only a real boolean: a number is not one, whatever it would bridge to.
   static func bool(_ value: Any?) -> Bool? {
     guard isBoolean(value), let number = value as? NSNumber else { return nil }
     return number.boolValue
@@ -77,7 +58,6 @@ enum JS {
     return value as? [String: Any]
   }
 
-  /// The element at `index`, or nil when the array is shorter or was never an array.
   static func at(_ value: [Any]?, _ index: Int) -> Any? {
     guard let value = value, index >= 0, index < value.count else { return nil }
     return value[index]

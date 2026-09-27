@@ -1,14 +1,6 @@
 import ExpoModulesCore
 import UIKit
 
-/**
- Attaching, detaching, and the four things the OS can tell this view about.
-
- Android needs a `LifecycleOwner`, a `ComponentCallbacks2`, a `DisplayListener` and an explicit
- destroy hook, and leaks an Activity if any one of them is unregistered on only one of the two
- teardown paths. Here they are four notifications registered together and removed together, in
- `deinit` as well, so a view released without a detach still lets go.
- */
 extension PoseCameraView {
   public override func didMoveToWindow() {
     super.didMoveToWindow()
@@ -21,33 +13,24 @@ extension PoseCameraView {
 
   private func attachToWindow() {
     removeObservers()
-    // Token-based, and every token is kept, so detaching removes exactly what this view added
-    // rather than everything anybody registered against it.
     observe(UIApplication.didReceiveMemoryWarningNotification) { $0.handleMemoryWarning() }
     observe(UIApplication.didEnterBackgroundNotification) { $0.handleBackground() }
     observe(UIApplication.willEnterForegroundNotification) { $0.handleForeground() }
-    // The interface can turn 180 degrees without any other callback firing, which would leave the
-    // capture connection on a stale rotation and every landmark arriving upside down.
+    // A 180-degree turn fires nothing else, and a stale rotation leaves landmarks upside down.
     observe(UIDevice.orientationDidChangeNotification) { $0.camera.updateTargetRotation() }
-    // Heat and power apply the moment the OS says so; the timer covers cooling, which only takes
-    // effect after it has held, and needs a reading to notice it has.
+    // Heat applies at once; the timer catches cooling, which counts only after it has held.
     observe(ProcessInfo.thermalStateDidChangeNotification) { $0.sampleHeat() }
     observe(Notification.Name.NSProcessInfoPowerStateDidChange) { $0.sampleHeat() }
 
-    // Claimed now rather than on the first tick: until then the module would be the one flushing,
-    // and this camera's `onLog` would miss its own start.
+    // Claimed now, not on the first tick, so this camera's `onLog` sees its own start.
     PoseLog.claimStream(self)
     startLogTimer()
     startHeatTimer()
-    // Reattaching after a temporary detach re-establishes whatever the props already say, rather
-    // than waiting for a prop to change before the camera comes back.
+    // A reattached view restores what the props already say.
     onPropsUpdated()
   }
 
-  /**
-   Detaching is not destruction: a view scrolled out of a list comes back. Releases the session but
-   keeps the analysis queue, which a reattached view still needs.
-   */
+  /// Not destruction: a view scrolled out of a list comes back.
   private func detachFromWindow() {
     removeObservers()
     logTimer?.invalidate()
@@ -58,7 +41,6 @@ extension PoseCameraView {
 
     camera.setAnalyzerEnabled(false)
     camera.release()
-    // A view pushed under another screen usually comes back, and finds its landmarker still built.
     parkDetector(for: PoseCameraView.awayReleaseSeconds)
     completeSwitch()
     started = false
@@ -80,18 +62,14 @@ extension PoseCameraView {
     observerTokens.removeAll()
   }
 
-  /// The process is next to be killed. The landmarker is the largest block we can give back.
+  /// The landmarker is the largest block of memory there is to give back.
   private func handleMemoryWarning() {
     PoseLog.warn(.detector, "memory warning, releasing the landmarker")
     releaseDetector()
     overlayView.clearPose()
   }
 
-  /**
-   AVFoundation stops the session itself when the app loses the camera; this is the half it does not
-   know about. The landmarker is parked rather than released, so a quick trip to another app comes
-   back to a skeleton at once, and its memory is given back if the trip is not quick.
-   */
+  /// AVFoundation stops the session itself; parking makes a quick return instant.
   private func handleBackground() {
     PoseLog.info(.camera, "backgrounded, parking the detector")
     parkDetector(for: PoseCameraView.awayReleaseSeconds)
@@ -104,12 +82,7 @@ extension PoseCameraView {
     applyDetectionState()
   }
 
-  /**
-   One view drains the shared buffer, whoever attached first, and hands it over as an event, so a
-   camera's own `onLog` sees everything from its start. The timer runs while the view is attached
-   and costs one lock per tick when nothing is streaming, which is cheaper than a way for the
-   module to reach every view. With no camera attached the module flushes.
-   */
+  /// The first attached view drains the shared log; with none attached, the module flushes.
   private func startLogTimer() {
     logTimer?.invalidate()
     logTimer = Timer.scheduledTimer(

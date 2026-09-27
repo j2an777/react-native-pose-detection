@@ -2,7 +2,6 @@ import Foundation
 import ExpoModulesCore
 import MediaPipeTasksVision
 
-/// The four values the trigger evaluator needs back out of the scalar block.
 struct FrameScalars {
   let comX: Float
   let comY: Float
@@ -10,7 +9,6 @@ struct FrameScalars {
   let velocityY: Float
 }
 
-/// What one frame was captured under, bundled so the encoder takes a value rather than a list.
 struct FrameTiming {
   let size: CaptureSize
   let nowMs: Int64
@@ -18,11 +16,10 @@ struct FrameTiming {
   let elapsedSeconds: Float
 }
 
-/// The result path. Everything here runs on MediaPipe's callback queue unless it says otherwise.
+/// The result path, on MediaPipe's callback queue.
 extension PoseCameraView: PoseDetectorObserver {
   func poseDetector(_ detector: PoseDetector, didDetect result: PoseLandmarkerResult, timestampMs: Int) {
-    // An empty result still counts: the model ran. Empty frames are what an honest rate is made
-    // of while the camera points at a room, and skipping them would freeze the number instead.
+    // Empty results count too: the model ran, and skipping them would freeze the rate.
     countResult(Monotonic.nowMs())
     let identity = ObjectIdentifier(detector)
     if identity != clockedWith {
@@ -42,9 +39,7 @@ extension PoseCameraView: PoseDetectorObserver {
     let previous = lastResultMs.value
     lastResultMs.value = nowMs
 
-    // A gap resets the window. Averaging across a pause would publish a near-zero rate for the
-    // first second after frames resume, which reads as a session that broke rather than one that
-    // paused.
+    // A gap restarts the window; averaging across a pause would publish a near-zero rate.
     if previous != 0 && nowMs - previous > PoseCameraView.fpsStaleAfterMs {
       framesInWindow = 0
       fpsWindowStartMs = nowMs
@@ -54,8 +49,6 @@ extension PoseCameraView: PoseDetectorObserver {
     if fpsWindowStartMs == 0 { fpsWindowStartMs = nowMs }
     let elapsed = nowMs - fpsWindowStartMs
 
-    // The very first window publishes early, so the readout is alive within a quarter second of
-    // the first result instead of showing zero under a skeleton that is visibly tracking.
     let due = elapsed >= PoseCameraView.fpsWindowMs
       || (measuredFps.value == 0
         && elapsed >= PoseCameraView.fpsFirstWindowMs
@@ -67,14 +60,8 @@ extension PoseCameraView: PoseDetectorObserver {
     fpsWindowStartMs = nowMs
   }
 
-  /**
-   Everything a camera pose goes through once it exists: smoothing, geometry, the trigger
-   evaluator, the ring buffer and the overlay, in that order. Photos and videos take their own path,
-   `StaticDetection`, which applies the same rules to a file's frames without a view.
-
-   `visibilitySmoothed` is whether MediaPipe low-passed this result's visibility per frame, which it
-   does for one pose; see `VisibilityClock`.
-   */
+  /// Camera poses only; `StaticDetection` applies the same rules to files. `visibilitySmoothed`:
+  /// MediaPipe low-passed this result's visibility, which it does for one pose.
   func accept(_ result: PoseLandmarkerResult, timestampMs: Int, visibilitySmoothed: Bool) {
     let poses = result.landmarks
     guard !poses.isEmpty else {
@@ -85,15 +72,13 @@ extension PoseCameraView: PoseDetectorObserver {
     let primary = poses[primaryIndex]
     guard primary.count >= Skeleton.landmarkCount else { return }
 
-    // The same monotonic clock the log channel stamps entries with, so a log line maps to the frame
-    // that caused it. It is when the pose became known, not when the sensor exposed it.
+    // Monotonic like log entries: when the pose became known, not when the sensor exposed it.
     let nowMs = Monotonic.nowMs()
     lastPoseMs.value = nowMs
 
     copyPrimary(primary, timestampMs: timestampMs, visibilitySmoothed: visibilitySmoothed)
 
-    // With several people tracked, the primary is whoever is largest on this frame, so it can become
-    // somebody else between two frames. Nothing carried across that boundary describes anyone.
+    // The largest body can change between frames; nothing carries across a change of person.
     let box = PoseBox(landmarkBuffer)
     if let previous = previousBox, box.overlap(previous) < PoseBox.sameBodyOverlap {
       PoseLog.debug(.engine, "the primary pose is somebody else now, starting its motion over")
@@ -102,9 +87,7 @@ extension PoseCameraView: PoseDetectorObserver {
     }
     previousBox = box
 
-    // A gap means a switch, a pause, or a backgrounded app. The positions on either side are real,
-    // the difference between them is not a movement that happened at that speed. What counts as a
-    // gap depends on the rate frames are expected at, see `Continuity`.
+    // Velocity across a gap (a switch, pause or background) is no real speed; see `Continuity`.
     let elapsedMs = Double(nowMs) - previousFrameMs.value
     let expectedFps = Double(idleFps.value ?? rate.value.fps)
     let comparable = previousFrameMs.value > 0 && elapsedMs > 0
@@ -113,9 +96,8 @@ extension PoseCameraView: PoseDetectorObserver {
 
     let size = frameSize.value
 
-    // Before anything reads a coordinate: the overlay, the geometry, the evaluators and the wire
-    // all have to agree about where the body is. Speed is measured in body spans, so a distant
-    // subject is smoothed like a near one; x is normalized by width, so its span is scaled to it.
+    // Before anything reads a coordinate. Speed is in body spans; x is normalized by width, so
+    // its span is scaled by the aspect.
     if propSmoothing {
       let span = Geometry.bodySpan(landmarkBuffer)
       let aspect = size.width > 0 ? Float(size.height) / Float(size.width) : 1
@@ -136,7 +118,6 @@ extension PoseCameraView: PoseDetectorObserver {
     ))
   }
 
-  /// The primary pose into `landmarkBuffer`, its visibility re-timed where MediaPipe smoothed it.
   private func copyPrimary(_ primary: [NormalizedLandmark], timestampMs: Int, visibilitySmoothed: Bool) {
     for index in 0..<Skeleton.landmarkCount {
       let landmark = primary[index]
@@ -144,7 +125,6 @@ extension PoseCameraView: PoseDetectorObserver {
       landmarkBuffer[base + Skeleton.offsetX] = landmark.x
       landmarkBuffer[base + Skeleton.offsetY] = landmark.y
       landmarkBuffer[base + Skeleton.offsetZ] = landmark.z
-      // The NSNumber already exists, so reading it costs a message send and no allocation.
       landmarkBuffer[base + Skeleton.offsetVisibility] = landmark.visibility?.floatValue ?? 0
     }
 
@@ -161,20 +141,14 @@ extension PoseCameraView: PoseDetectorObserver {
     visibilityClock.reset()
     previousBox = nil
     overlayView.clearPose()
-    // A frame is only current while a pose is in it, and velocity across the gap where someone left
-    // and came back is not a speed anybody moved at.
     frames.clearLatest()
     flushOwedBatch()
     resetVelocity()
     triggers.onPoseLost()
-    // Filtering across that gap would invent the motion between the two places they stood.
     smoothing.reset()
   }
 
-  /**
-   Largest bounding box, ties broken by distance from the frame centre. MediaPipe's own order is
-   detection order and means nothing about who the subject is.
-   */
+  /// Largest box, ties to the most central. MediaPipe's order is only detection order.
   private func primaryPose(_ poses: [[NormalizedLandmark]]) -> Int {
     var best = 0
     var bestArea: Float = -1
@@ -216,18 +190,13 @@ extension PoseCameraView: PoseDetectorObserver {
     hasPreviousLandmarks = false
   }
 
-  /**
-   Encodes one frame into the wire layout and hands it to the ring buffer. The latest frame is
-   recorded whatever the mode is, because `snapshotFrame()` is documented to answer at `mode: 'off'`;
-   only buffering and the tick are the mode's business.
-   */
+  /// The latest frame is recorded in every mode: `snapshotFrame()` must answer at `mode: 'off'`.
   private func buildFrame(result: PoseLandmarkerResult, pose: Int, poseSize: Int, timing: FrameTiming) {
     let size = timing.size
     let nowMs = timing.nowMs
     let elapsedSeconds = timing.elapsedSeconds
 
-    // One read: the scratch buffer belongs to the shape, so a layout change swaps both together and
-    // this can never pair an old shape with a new buffer.
+    // One read, so the shape and its scratch buffer come from the same layout.
     guard let layout = frameLayout.value else { return }
 
     if layout.worldLandmarks {
@@ -257,8 +226,6 @@ extension PoseCameraView: PoseDetectorObserver {
       size: size
     ))
 
-    // Every profile is measured: each one budgets its rate against what this device's inference
-    // costs, and only its duty and ceiling differ.
     if processingMs > 0 {
       let moved = calibrator.record(inferenceMs: Float(processingMs), nowMs: nowMs)
       if moved {
@@ -266,8 +233,7 @@ extension PoseCameraView: PoseDetectorObserver {
       }
     }
 
-    // Element-wise, not `previousLandmarks = landmarkBuffer`: that would share one buffer between
-    // the two and make the next frame's first write copy it.
+    // Element-wise: assigning would share the buffer and make the next write copy it.
     for index in previousLandmarks.indices {
       previousLandmarks[index] = landmarkBuffer[index]
     }
@@ -279,13 +245,7 @@ extension PoseCameraView: PoseDetectorObserver {
     deliver(layout.scratch, timestampMs: timestampMs, processingMs: processingMs)
   }
 
-  /**
-   The landmark, world-landmark and angle blocks, in wire order, returning where the scalars start.
-
-   Written through the shape rather than through a local. `var scratch = layout.scratch` would leave
-   two references to one array, and the first write would copy the whole thing, once per frame,
-   which is exactly the allocation this buffer exists to avoid.
-   */
+  /// Returns where scalars start. Writes via `layout.scratch`: a local var would copy the array.
   private func writeBlocks(into layout: FrameShape, size: CaptureSize) -> Int {
     var cursor = 0
 
@@ -323,7 +283,6 @@ extension PoseCameraView: PoseDetectorObserver {
     return cursor
   }
 
-  /// Centre of mass, its velocity, and the body span: the five scalars that close every frame.
   private func writeScalars(
     into layout: FrameShape,
     at start: Int,
@@ -340,8 +299,7 @@ extension PoseCameraView: PoseDetectorObserver {
       layout.scratch[cursor] = (comX - previousComX) / elapsed
       layout.scratch[cursor + 1] = (comY - previousComY) / elapsed
     } else {
-      // Unknown, not zero: the first frame of a pose has nothing to differ from, and zero would
-      // read as a body that was measured and found to be still.
+      // NaN, not zero: zero would read as a body measured to be still.
       layout.scratch[cursor] = .nan
       layout.scratch[cursor + 1] = .nan
     }
@@ -353,14 +311,7 @@ extension PoseCameraView: PoseDetectorObserver {
     return FrameScalars(comX: comX, comY: comY, velocityX: velocityX, velocityY: velocityY)
   }
 
-  /**
-   The world landmarks of the pose the rest of the frame describes.
-
-   Indexed rather than taken from the front: with `maxPoses` above one, the pose everything else
-   reads is the largest body in the frame, and `worldLandmarks[0]` is whichever one MediaPipe
-   happened to detect first. Taking the front would pair one person's screen coordinates with
-   another person's metric ones in a single frame.
-   */
+  /// Indexed, not `worldLandmarks[0]`: with several poses the primary is not always first.
   private func fillWorldBuffer(_ result: PoseLandmarkerResult, pose: Int, poseSize: Int) {
     let world = result.worldLandmarks
     let points = pose < world.count ? world[pose] : []
@@ -377,8 +328,7 @@ extension PoseCameraView: PoseDetectorObserver {
       worldBuffer[base + Skeleton.offsetX] = landmark.x
       worldBuffer[base + Skeleton.offsetY] = landmark.y
       worldBuffer[base + Skeleton.offsetZ] = landmark.z
-      // MediaPipe copies the screen landmarks' visibility onto these and smooths it the same way,
-      // so the re-timed one is the one that belongs here too.
+      // MediaPipe gives these the screen landmarks' visibility, so they take the re-timed one too.
       worldBuffer[base + Skeleton.offsetVisibility] = visibilityClocked
         ? landmarkBuffer[base + Skeleton.offsetVisibility]
         : landmark.visibility?.floatValue ?? 0

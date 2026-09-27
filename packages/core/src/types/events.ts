@@ -25,11 +25,7 @@ const CODES = [
   'EXPORT_CANCELLED',
 ] as const;
 
-/**
- * The complete set. Native emits nothing outside it, so consumers can exhaustively switch on a
- * code and a new failure mode is a deliberate addition here rather than a new string in a catch
- * block somewhere.
- */
+/** The complete set: native sends nothing outside it, so a `switch` on it can be exhaustive. */
 export type ErrorCode = (typeof CODES)[number];
 
 export const ERROR_CODES: readonly ErrorCode[] = CODES;
@@ -60,9 +56,8 @@ export type CameraChangeEvent = {
 
 export type PerformanceEvent = {
   /**
-   * `delegate` is Android's `auto` moving from the CPU landmarker it starts on to the GPU one once
-   * that has built; `gpu_fallback` is the other way, a GPU that kept failing. `load` and `headroom`
-   * are reserved and not sent today.
+   * `delegate`: Android's `auto` moved from the CPU landmarker it starts on to the GPU one.
+   * `gpu_fallback`: the GPU kept failing. `load` and `headroom` are reserved, not sent today.
    */
   readonly reason:
     | 'calibration'

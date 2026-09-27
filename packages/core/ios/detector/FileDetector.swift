@@ -1,22 +1,12 @@
 import MediaPipeTasksVision
 
-/**
- The landmarker a video job runs on, and the rule that picks its delegate.
-
- The GPU when this device's GPU check passed and no camera is running inference; the CPU otherwise.
- A file job therefore never competes with a live preview for the GPU that preview's own inference
- runs on. A device the check has never run on tries the GPU, and the first frame is the check: if it
- fails, the job carries on on the CPU, and the answer is kept for the camera and for the next job.
-
- The choice is made once, when the job starts. A camera started halfway through a long job shares
- the GPU with it until the job ends, which is rarer and cheaper than rebuilding mid-job.
- */
+/// GPU unless its check failed here or a camera is detecting; on an unchecked device the first
+/// frame is the check. Chosen once per job: a camera starting mid-job shares the GPU until it ends.
 final class FileDetector {
   private let modelPath: String
   private let maxPoses: Int
   private let minConfidence: Float
   private var detector: PoseDetector
-  /// On the GPU with nothing yet to show it works here.
   private var unproven: Bool
 
   init(modelPath: String, maxPoses: Int, minConfidence: Float) throws {
@@ -50,7 +40,6 @@ final class FileDetector {
     return detector.delegateKind
   }
 
-  /// VIDEO mode. A GPU that fails is replaced by the CPU once, and the frame is run again there.
   func detect(_ image: MPImage, timestampMs: Int) throws -> PoseLandmarkerResult {
     guard detector.delegateKind == .GPU else {
       return try detector.detectVideo(image, timestampMs: timestampMs)

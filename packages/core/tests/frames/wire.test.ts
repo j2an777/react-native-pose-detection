@@ -27,8 +27,7 @@ test('the expected length accounts for the header, the per-frame meta, and the b
 });
 
 test('angles come back in table order, never in the order they were mentioned', () => {
-  // Both sides resolve the set independently, so the order has to come from the table rather
-  // than from whichever prop happened to name a joint first.
+  // The same set must give the same list, whichever prop named a joint first.
   assert.deepStrictEqual(resolveAngleJoints(new Set(['rightKnee', 'leftElbow', 'leftKnee'])), [
     'leftElbow',
     'leftKnee',

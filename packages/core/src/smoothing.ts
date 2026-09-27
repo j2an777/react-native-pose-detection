@@ -1,10 +1,6 @@
 import type { SmoothingConfig } from './types/camera';
 
-/**
- * `'auto'` is off for one pose, because MediaPipe already runs the same One Euro filter on a single
- * tracked body in LIVE_STREAM and VIDEO mode, and on for several, where it runs none. Resolved in
- * JavaScript, where `maxPoses` is, so native only ever receives an answer.
- */
+/** Native never sees `'auto'`: it is resolved here, where `maxPoses` is. */
 export function resolveSmoothing<T extends boolean | SmoothingConfig>(
   smoothing: 'auto' | T | undefined,
   maxPoses: number | undefined,

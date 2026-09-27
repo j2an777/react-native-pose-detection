@@ -1,7 +1,6 @@
 import XCTest
 @testable import PoseEngine
 
-/// Telling one person from another between two frames, which is when smoothing has to start over.
 final class PoseBoxTests: XCTestCase {
   func testTheSameBodyMovingOneFrameOverlapsWell() {
     let before = PoseBox(minX: 0.30, minY: 0.10, maxX: 0.60, maxY: 0.90)

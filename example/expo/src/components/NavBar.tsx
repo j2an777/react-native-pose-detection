@@ -14,19 +14,11 @@ const TABS: { id: TabId; label: string; icon: IconName; active: IconName }[] = [
   { id: 'upload', label: 'Studio', icon: 'color-wand-outline', active: 'color-wand' },
 ];
 
-/**
- * The floating bar.
- *
- * It sits over the content instead of reserving a strip, so a screen can run to the bottom edge,
- * and the selected tab is the only one that carries a label. That is the whole hierarchy: an icon
- * says where you can go, the label says where you are.
- */
 export function NavBar({ active, onSelect }: { active: TabId; onSelect: (tab: TabId) => void }) {
   const insets = useSafeAreaInsets();
   return (
     <View
-      // Android's gesture bar inset is smaller than the space a floating bar needs to look
-      // deliberate, so it gets a floor of its own rather than the raw inset.
+      // Android's gesture bar inset alone leaves a floating bar too low, so it gets 16 on top.
       style={[styles.wrap, { bottom: insets.bottom + Platform.select({ ios: 0, default: 16 }) }]}
       pointerEvents="box-none"
     >

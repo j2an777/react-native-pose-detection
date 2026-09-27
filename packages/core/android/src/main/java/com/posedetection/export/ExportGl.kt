@@ -16,20 +16,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
 
-/**
- * Getting pixels from the video decoder to the video encoder, with the skeleton drawn in between.
- *
- * Android has no way to hand a decoded frame to an encoder without going through a surface, and no
- * way to draw on an encoder's input surface with a `Canvas`. The supported path is the one here:
- * the decoder writes into a [SurfaceTexture], GL samples that as an external texture and draws it
- * into the encoder's input surface, and the overlay is uploaded as a second, ordinary texture and
- * blended on top.
- *
- * This is the one place the export touches the GPU, and it is the platform's cheap path rather than
- * an indulgence: the alternative is converting every frame between colour spaces in Kotlin, which
- * would take far more CPU from the camera than this takes GPU. Inference stays on the CPU, which is
- * the rule that actually protects the live preview: see [PoseExport].
- */
+/** Decoder to encoder through GL: a Canvas cannot draw on an encoder's input surface. */
 internal class ExportGl(
     encoderSurface: Surface,
 ) {
@@ -42,7 +29,6 @@ internal class ExportGl(
     private var externalTexture = 0
     private var overlayTexture = 0
 
-    /** Where the decoder writes. The video exporter hands this to `MediaCodec.configure`. */
     lateinit var decoderSurface: Surface
         private set
 
@@ -75,8 +61,6 @@ internal class ExportGl(
         }
         decoderSurface = Surface(surfaceTexture)
     }
-
-    // MARK: EGL
 
     private fun setUpEgl(encoderSurface: Surface) {
         display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
@@ -129,12 +113,6 @@ internal class ExportGl(
         check(EGL14.eglMakeCurrent(display, surface, surface, context)) { "could not bind the EGL context" }
     }
 
-    /**
-     * Blocks until the decoder has written a frame, then pulls it into the external texture.
-     *
-     * The decoder signals on its own thread, so this waits rather than polls. A timeout rather than
-     * an indefinite wait, because a decoder that stalls must not hang the export thread forever.
-     */
     fun awaitFrame(): Boolean {
         synchronized(frameAvailable) {
             val deadline = System.currentTimeMillis() + FRAME_TIMEOUT_MS
@@ -150,18 +128,7 @@ internal class ExportGl(
         return true
     }
 
-    // MARK: Drawing
-
-    /**
-     * Draws the decoded frame, rotated so the output is upright.
-     *
-     * Rotation is baked in rather than written to the file as metadata: a phone shoots portrait
-     * video stored landscape plus a rotation, and players that ignore the rotation, which includes
-     * a good number of web and server side ones, would show the export on its side.
-     *
-     * The quad's positions are rotated rather than its texture coordinates, so the transform matrix
-     * the decoder supplies still applies to an ordinary, unrotated sampling of the image.
-     */
+    /** Rotation is baked in, not left as metadata that many players ignore and show sideways. */
     fun drawFrame(rotationDegrees: Int) {
         GLES20.glDisable(GLES20.GL_BLEND)
         positions.clear()
@@ -169,13 +136,6 @@ internal class ExportGl(
         draw(externalProgram, GLES11Ext.GL_TEXTURE_EXTERNAL_OES, externalTexture, texCoords, stMatrix)
     }
 
-    /**
-     * Blends the skeleton over the frame.
-     *
-     * The bitmap is uploaded only when the pose changed, which is ten times a second rather than
-     * thirty: between samples the same texture is drawn again, exactly as the live overlay holds the
-     * last pose between inferences.
-     */
     fun drawOverlay(
         overlay: Bitmap,
         changed: Boolean,
@@ -227,7 +187,6 @@ internal class ExportGl(
         GLES20.glViewport(0, 0, width, height)
     }
 
-    /** Stamps the frame's time onto the encoder's surface and hands it over. */
     fun present(timeNanos: Long) {
         EGLExt.eglPresentationTimeANDROID(display, surface, timeNanos)
         EGL14.eglSwapBuffers(display, surface)
@@ -252,8 +211,6 @@ internal class ExportGl(
         if (this::decoderSurface.isInitialized) decoderSurface.release()
         if (this::surfaceTexture.isInitialized) surfaceTexture.release()
     }
-
-    // MARK: Shaders
 
     private fun createTexture(target: Int): Int {
         val ids = IntArray(1)
@@ -284,7 +241,6 @@ internal class ExportGl(
         const val MATRIX_SIZE = 16
         const val QUAD_FLOATS = 8
 
-        /** Shared with the video sampler, which draws the same decoded frames through the same quads. */
         fun buildProgram(
             vertex: String,
             fragment: String,
@@ -314,7 +270,6 @@ internal class ExportGl(
             return shader
         }
 
-        /** The quad that draws a frame stored at [rotationDegrees] upright. */
         fun quadFor(rotationDegrees: Int): FloatArray =
             when (((rotationDegrees % 360) + 360) % 360) {
                 90 -> QUAD_90
@@ -323,10 +278,7 @@ internal class ExportGl(
                 else -> QUAD_0
             }
 
-        /**
-         * A triangle strip: bottom left, bottom right, top left, top right. Rotating these rather
-         * than the texture coordinates keeps the decoder's transform matrix meaningful.
-         */
+        /** The positions turn, not the texture coordinates, so the decoder's matrix still applies. */
         val QUAD_0 = floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
         val QUAD_90 = floatArrayOf(-1f, 1f, -1f, -1f, 1f, 1f, 1f, -1f)
         val QUAD_180 = floatArrayOf(1f, 1f, -1f, 1f, 1f, -1f, -1f, -1f)

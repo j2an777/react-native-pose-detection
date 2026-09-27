@@ -1,7 +1,7 @@
 import { Paths } from 'expo-file-system';
 import { Linking, Platform, Settings } from 'react-native';
 
-/** The files the `files` scenario reads. Pushed to the device before the launch, see below. */
+/** The files the `files` scenario reads, pushed to the device before the launch. */
 export type DiagnosticsMedia = {
   readonly photo?: string;
   /** The same photo stored a quarter turn round, with EXIF orientation 6 to put it back. */
@@ -18,26 +18,8 @@ export type DiagnosticsRequest = {
 };
 
 /**
- * Which diagnostics a launch asked for, so a whole sweep can run on a device with nobody tapping.
- * `scripts/device-diagnostics.sh` builds these launches for both platforms.
- *
- * iOS reads launch arguments, which the system turns into user defaults. The `--` keeps devicectl
- * from reading them as its own options:
- *
- *   xcrun devicectl device process launch --device <id> com.posedetection.example \
- *     -- -poseDiagnostics all -poseDiagnosticsPhoto pose-photo.jpg
- *
- * Android reads the launching intent's data, which needs no intent filter when the activity is
- * named explicitly. The action has to be `VIEW`: React Native hands back no initial URL for any
- * other, so without it the app opens as if launched normally:
- *
- *   adb shell am start -a android.intent.action.VIEW -n com.posedetection.example/.MainActivity \
- *     -d "'posediag://run?scenarios=all&photo=file:///sdcard/...'"
- *
- * Scenarios are `all` or a comma-separated list of ids. A media value with a scheme is used as it
- * is; a bare file name is looked for in the app's documents directory, which is where
- * `xcrun devicectl device copy to` puts a file on iOS. `delegate` is `gpu` or `cpu` to hold the
- * sweep to one of them.
+ * The sweep a launch asked for, so it runs with nobody tapping. `scripts/device-diagnostics.sh`
+ * builds the launches; a bare media file name is looked for in the documents directory.
  */
 export async function diagnosticsRequest(): Promise<DiagnosticsRequest | null> {
   const read = Platform.OS === 'ios' ? readLaunchArguments() : await readIntent();
@@ -66,7 +48,7 @@ function delegateOf(value: string | undefined): 'gpu' | 'cpu' | undefined {
 
 type Reader = (name: string) => string | undefined;
 
-/** `-poseDiagnostics` for the scenarios, `-poseDiagnosticsPhoto` and so on for the rest. */
+/** Launch arguments arrive as user defaults: `-poseDiagnostics all -poseDiagnosticsPhoto x`. */
 function readLaunchArguments(): Reader {
   return (name) => {
     const suffix = name === 'scenarios' ? '' : `${name.charAt(0).toUpperCase()}${name.slice(1)}`;

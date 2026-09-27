@@ -1,11 +1,6 @@
 package com.posedetection.detector
 
-/**
- * How sure the model has to be before it calls something a body in a photo or a video, when the
- * caller has not said. One decision with `maxPoses` rather than a second one: 0.5 for a single
- * subject, which is MediaPipe's own, and 0.3 above that, which is where a second person actually
- * appears rather than the first person twice. See guides/files.md for the measurements.
- */
+/** 0.3 is where a second person appears without the first counting twice; see guides/files.md. */
 internal object StillConfidence {
     const val SINGLE = 0.5f
     const val SEVERAL = 0.3f
@@ -13,10 +8,9 @@ internal object StillConfidence {
     fun forMaxPoses(maxPoses: Int): Float = if (maxPoses > 1) SEVERAL else SINGLE
 }
 
-/** What `detectOnImage` and `detectOnVideo` were asked for. Defaults from `guides/files.md`. */
+/** Defaults as documented in guides/files.md. */
 internal class StaticOptions(
     val maxPoses: Int,
-    /** Follows [maxPoses] unless the caller chose one, exactly as an export's does. */
     val minConfidence: Float,
     val angles: Boolean,
     val worldLandmarks: Boolean,
@@ -35,7 +29,7 @@ internal class StaticOptions(
                 minConfidence = confidence(raw?.get("minConfidence"), maxPoses),
                 angles = raw?.get("angles") as? Boolean ?: true,
                 worldLandmarks = raw?.get("worldLandmarks") as? Boolean ?: false,
-                // A single frame has nothing to smooth against, so this is off whatever was asked.
+                // One frame has nothing to smooth against.
                 smoothing = false,
                 fps = 0,
                 startMs = 0,
@@ -50,7 +44,7 @@ internal class StaticOptions(
                 minConfidence = confidence(raw?.get("minConfidence"), maxPoses),
                 angles = raw?.get("angles") as? Boolean ?: true,
                 worldLandmarks = raw?.get("worldLandmarks") as? Boolean ?: false,
-                // JavaScript resolves `'auto'` against `maxPoses`. VIDEO mode already smooths one pose.
+                // Absent is off: JavaScript resolves 'auto' against maxPoses.
                 smoothing = raw?.get("smoothing") as? Boolean ?: false,
                 fps = finite(raw?.get("fps"))?.toInt()?.coerceAtLeast(1) ?: DEFAULT_FPS,
                 startMs = finite(raw?.get("startMs"))?.toLong()?.coerceAtLeast(0L) ?: 0L,

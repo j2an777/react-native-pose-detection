@@ -6,10 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The rate model from `guides/performance.md`, the twin of the iOS suite. The first test is its
- * worked table, so a change that moves one of those numbers has to come here and say so.
- */
+/** The first test is guides/performance.md's worked table; the iOS suite is the twin. */
 class RateGovernorTest {
     @Suppress("LongParameterList")
     private fun decide(

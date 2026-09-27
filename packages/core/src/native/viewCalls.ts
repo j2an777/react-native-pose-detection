@@ -1,8 +1,4 @@
-/**
- * How long a ref call waits for the native view to exist. The gap it covers is a frame or two:
- * React has committed the component and handed out its ref, but Fabric mounts the native view on
- * the UI thread a moment later, and a view function called in between finds no view.
- */
+/** How long a ref call waits for Fabric to mount a view whose ref React has already handed out. */
 export const MOUNT_WAIT_MS = 1_000;
 
 const RETRY_MS = 16;
@@ -14,9 +10,8 @@ export function isViewNotMounted(error: unknown): boolean {
 }
 
 /**
- * Calls a native view function, retrying while the view has not been mounted yet rather than
- * rejecting a call that was only early. Any other failure rejects at once, and so does this one
- * once `MOUNT_WAIT_MS` has passed. Resolves to `undefined` when the component has unmounted.
+ * Retries a call that was only early, until `MOUNT_WAIT_MS`; any other failure rejects at once.
+ * Resolves to `undefined` once the component has unmounted.
  */
 export async function callView<View, Result>(
   current: () => View | null,

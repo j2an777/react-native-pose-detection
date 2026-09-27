@@ -16,9 +16,7 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
-    // CommonJS by convention, not by choice: Expo resolves app.plugin.js itself, the bin is
-    // loaded by Node before any bundler is involved, and Metro and Babel read their configs
-    // through require.
+    // CommonJS because Expo, Node, Metro and Babel load these through require, no bundler between.
     files: [
       'packages/core/app.plugin.js',
       'packages/core/cli/index.js',

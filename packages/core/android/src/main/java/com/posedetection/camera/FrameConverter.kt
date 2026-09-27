@@ -7,15 +7,7 @@ import androidx.camera.core.ImageProxy
 import com.posedetection.LogCategory
 import com.posedetection.PoseLog
 
-/**
- * Turns an RGBA_8888 [ImageProxy] into a bitmap MediaPipe can take, reusing bitmaps for the life
- * of the session so the frame path allocates nothing.
- *
- * Some devices pad each row to an alignment boundary. Copying such a buffer into a `width`-wide
- * bitmap shears the image diagonally, so the padded case blits through a full-stride bitmap.
- *
- * **Analysis thread only, including [release].**
- */
+/** Analysis thread only, including [release]. */
 internal class FrameConverter {
     private var source: Bitmap? = null
     private var cropped: Bitmap? = null
@@ -27,7 +19,7 @@ internal class FrameConverter {
     private var frameWidth = 0
     private var frameHeight = 0
 
-    /** Returns a bitmap holding this frame. Valid until the next call. */
+    /** Valid until the next call. */
     fun convert(proxy: ImageProxy): Bitmap {
         val plane = proxy.planes[0]
         val pixelStride = plane.pixelStride
@@ -59,6 +51,7 @@ internal class FrameConverter {
         frameWidth = width
         frameHeight = height
 
+        // Full stride: copying padded rows into a width-wide bitmap shears the image.
         source = Bitmap.createBitmap(stride, height, Bitmap.Config.ARGB_8888)
 
         if (stride != width) {
@@ -71,10 +64,7 @@ internal class FrameConverter {
         }
     }
 
-    /**
-     * Drops the bitmaps and leaves them to the collector. MediaPipe copies a frame's pixels before
-     * its detection returns, so nothing reads them past the frame they were converted for.
-     */
+    /** Safe between frames: MediaPipe copies the pixels before its detection returns. */
     fun release() {
         source = null
         cropped = null

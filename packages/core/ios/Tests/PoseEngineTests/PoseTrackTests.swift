@@ -1,7 +1,6 @@
 import XCTest
 @testable import PoseEngine
 
-/// What a file job carries from one sampled frame to the next, and when it has to start over.
 final class PoseTrackTests: XCTestCase {
   private let body = PoseBox(minX: 0.3, minY: 0.1, maxX: 0.6, maxY: 0.9)
   private let someoneElse = PoseBox(minX: 0.7, minY: 0.1, maxX: 0.95, maxY: 0.9)

@@ -21,10 +21,7 @@ internal enum class TriggerEmit {
 internal class TriggerSpec(
     val id: String,
     val enter: PoseCondition,
-    /**
-     * Absent means "when `enter` stops holding". Without that a trigger with no `exit` would go
-     * active once and have nothing that could ever return it to idle.
-     */
+    /** Defaults to not-`enter`, or a trigger with no `exit` could never return to idle. */
     val exit: PoseCondition,
     val emit: TriggerEmit,
     val debounceMs: Long,
@@ -43,22 +40,9 @@ internal class TriggerFiring(
     val wantsSnapshot: Boolean,
 )
 
-/**
- * The state machine from `guides/reference/trigger-schema.md`, one per trigger.
- *
- * ```text
- * IDLE   + enter holds → ACTIVE ; emit if 'enter'
- * ACTIVE + exit  holds → IDLE   ; count++ ; emit if 'cycle' or 'exit'
- * ACTIVE + enter holds → emit if 'while', throttled
- * ```
- *
- * `while` needs `enter` to hold, not only `exit` not to: between the two thresholds of a trigger
- * with both, the trigger is still active but `enter` no longer holds, and it used to keep firing
- * there against the schema.
- */
+/** The state machine from `guides/reference/trigger-schema.md`, one per trigger. */
 internal class TriggerRuntime(
     val spec: TriggerSpec,
-    /** Carried across a props update by the engine. Only unmount starts one from zero. */
     initialCount: Int = 0,
 ) {
     var active = false
@@ -73,11 +57,7 @@ internal class TriggerRuntime(
     private var lastFireMs = 0L
     private var lastWhileMs = 0L
 
-    /**
-     * A hold has to be continuous, so a frame with no pose ends one. The active state survives:
-     * somebody stepping out of frame mid-rep has not finished the rep, and has not abandoned it
-     * either.
-     */
+    /** Breaks a hold but keeps the active state: stepping out mid-rep neither ends nor abandons it. */
     fun onPoseLost() {
         holdSince = 0L
     }
@@ -98,8 +78,7 @@ internal class TriggerRuntime(
 
         if (holdSince == 0L) holdSince = nowMs
         if (nowMs - holdSince < spec.minDurationMs) return null
-        // Debounce suppresses re-entry, not the hold: the condition keeps being measured, it just
-        // cannot fire again yet.
+        // Debounce suppresses re-entry, not the hold, which keeps being measured.
         if (lastFireMs != 0L && nowMs - lastFireMs < spec.debounceMs) return null
 
         active = true
@@ -150,6 +129,7 @@ internal class TriggerRuntime(
 
         holdSince = 0L
         if (spec.emit != TriggerEmit.WHILE) return null
+        // `enter` must hold, not just `exit` fail: between the two thresholds this must not fire.
         if (!spec.enter.matches(frame)) return null
         if (lastWhileMs != 0L && nowMs - lastWhileMs < spec.throttleMs) return null
 
@@ -161,18 +141,8 @@ internal class TriggerRuntime(
     private fun frameTimestamp(nowMs: Long): Double = nowMs.toDouble()
 }
 
-/**
- * Every trigger on one camera. Rebuilt when the `triggers` prop changes, carrying counts across by
- * id: a re-render is not an unmount, and `count` is documented to survive everything but one.
- */
 internal class TriggerEngine {
-    /**
-     * `setTriggers` runs on main and `evaluate` on the analysis thread, and the count a new set
-     * carries across has to be the one after the frame in flight, not before it. Without the lock
-     * a rep that finished during a props update was counted by the old runtime and lost from the
-     * new one. Held around the whole evaluation, as on iOS: it is uncontended on every frame but
-     * the one a props update lands on.
-     */
+    /** Spans the whole [evaluate], so a rep ending during `setTriggers` on main carries over. */
     private val lock = Any()
 
     /** Volatile as well, for [isEmpty], the one read taken without the lock. */
@@ -200,7 +170,7 @@ internal class TriggerEngine {
         }
     }
 
-    /** Appends to [into] rather than returning a list, so a frame that fires nothing allocates nothing. */
+    /** Appends to [into] so a frame that fires nothing allocates nothing. */
     fun evaluate(
         frame: FrameContext,
         nowMs: Long,

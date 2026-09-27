@@ -37,9 +37,8 @@ export type Vec2 = { readonly x: number; readonly y: number };
 
 export type PoseFrame = {
   /**
-   * Flat `[x, y, z, visibility, ...]`. Read it with `landmark()`. Length is
-   * `FULL_FRAME_FLOAT_COUNT`, `selection.length * LANDMARK_STRIDE` under `data.select`, or `0`
-   * when `data.landmarks` is false.
+   * Flat `[x, y, z, visibility, ...]`, read with `landmark()`. A view into the drained buffer, so
+   * `.slice()` anything kept past the callback. Empty when `data.landmarks` is false.
    */
   readonly landmarks: Float32Array;
 
@@ -49,21 +48,21 @@ export type PoseFrame = {
   /** Metric 3D in meters, origin at the hip midpoint. Same stride and same `selection` as above. */
   readonly worldLandmarks?: Float32Array;
 
-  /** Degrees, 0 to 180. Partial because angles are computed lazily, only for referenced joints. */
+  /** Degrees, 0 to 180, only for referenced joints. `NaN` when a limb segment has zero length. */
   readonly angles?: Readonly<Partial<Record<AngleJointName, number>>>;
 
-  /** Visibility-weighted, hip 0.5 / ankle 0.3 / knee 0.2. Normalized frame coordinates. */
+  /** Visibility-weighted hips 0.5, ankles 0.3, knees 0.2, normalized. `NaN` with none visible. */
   readonly centerOfMass: Vec2;
 
-  /** Center-of-mass movement in normalized units per second. */
+  /** Center-of-mass movement in normalized units per second. `NaN` on a pose's first frame. */
   readonly velocity: Vec2;
 
-  /** Shoulder midpoint to ankle midpoint, normalized. Divide by it for distance-independent thresholds. */
+  /** Shoulder midpoint to ankle midpoint, normalized. Divide by it for scale-free thresholds. */
   readonly bodySpan: number;
 
-  /** Milliseconds on the same monotonic clock as `LogEntry.timestamp`. Not wall clock. */
+  /** Monotonic ms, as `LogEntry.timestamp`. From `detectOnVideo`, the position in the video. */
   readonly timestamp: number;
 
-  /** Inference plus geometry for this frame. */
+  /** Dispatch to result for this frame, in ms. 0 from `detectOnImage` and `detectOnVideo`. */
   readonly processingMs: number;
 };

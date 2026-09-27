@@ -19,8 +19,7 @@ const withModelResource: ConfigPlugin<ResolvedOptions> = (config, options) =>
       const { projectRoot, projectName } = config.modRequest;
       if (!projectName) return config;
 
-      // An older install, or a hand-copied file, can sit next to the sources rather than in
-      // Resources/. Both end up in the bundle, so both have to be cleared.
+      // A model beside the sources, from an older install or by hand, is bundled too.
       await removeInstalledModels(join(projectRoot, 'ios', projectName));
 
       const installed = await installModelFile(
@@ -43,9 +42,7 @@ const withModelInXcodeProject: ConfigPlugin<ResolvedOptions> = (config, options)
     return config;
   });
 
-// A description already in the app config is the author being specific, so it wins over our
-// fallback text. Passing cameraPermissionText is also the author being specific, so it wins
-// over both.
+// cameraPermissionText wins, then a description already in the app config, then our fallback.
 const withCameraUsageDescription: ConfigPlugin<ResolvedOptions> = (config, options) =>
   withInfoPlist(config, (config) => {
     const existing = config.modResults['NSCameraUsageDescription'];

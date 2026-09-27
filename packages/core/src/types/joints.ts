@@ -1,6 +1,4 @@
-// BlazePose emits 33 landmarks in a fixed order. That order is the wire format, the native
-// overlay's index space, and the trigger evaluator's lookup table, so it is defined once here
-// and everything else derives from it.
+// BlazePose's 33 landmarks in model order: the index space of the wire and both native sides.
 
 const NAMES = [
   'nose',
@@ -49,8 +47,7 @@ export const JOINT_INDEX = Object.fromEntries(
   NAMES.map((name, index) => [name, index]),
 ) as Readonly<Record<JointName, number>>;
 
-// A Set rather than `value in JOINT_INDEX`: the `in` operator walks the prototype chain, so
-// 'toString' and 'constructor' would pass a guard that gates the wire format and the evaluator.
+// Not `value in JOINT_INDEX`: `in` walks the prototype chain, so 'toString' would pass.
 const JOINT_NAME_SET: ReadonlySet<string> = new Set(NAMES);
 
 export function isJointName(value: unknown): value is JointName {
@@ -95,12 +92,12 @@ const CONNECTIONS = [
   ['rightAnkle', 'rightFootIndex'],
 ] as const satisfies readonly (readonly [JointName, JointName])[];
 
-/** The skeleton both native renderers draw. Same pairs, same order, on both platforms. */
+/** The 35 bones both native overlays draw, pair for pair. */
 export const POSE_CONNECTIONS: readonly (readonly [JointName, JointName])[] = CONNECTIONS;
 
 export const CONNECTION_COUNT: 35 = CONNECTIONS.length;
 
-/** What the native renderers actually iterate: pair lookup without a string hash per segment. */
+/** `POSE_CONNECTIONS` as landmark indices, the form the native overlays iterate. */
 export const POSE_CONNECTION_INDICES: readonly (readonly [number, number])[] = CONNECTIONS.map(
   ([from, to]) => [JOINT_INDEX[from], JOINT_INDEX[to]] as const,
 );
@@ -120,16 +117,12 @@ const ANGLE_NAMES = [
   'rightAnkle',
 ] as const satisfies readonly JointName[];
 
-/**
- * Only joints where two limb segments meet have an angle. `nose` does not, so accepting every
- * `JointName` in `Condition.angle` would push a class of config errors into the native evaluator
- * where they can only fail silently.
- */
+/** The 12 joints where two limb segments meet, the only ones with an angle. */
 export type AngleJointName = (typeof ANGLE_NAMES)[number];
 
 export const ANGLE_JOINT_NAMES: readonly AngleJointName[] = ANGLE_NAMES;
 
-/** `[proximal, vertex, distal]`. The angle is measured at the vertex, between the two segments. */
+/** `[proximal, vertex, distal]`: the angle is measured at the vertex. */
 export const ANGLE_JOINTS = {
   leftShoulder: ['leftHip', 'leftShoulder', 'leftElbow'],
   rightShoulder: ['rightHip', 'rightShoulder', 'rightElbow'],

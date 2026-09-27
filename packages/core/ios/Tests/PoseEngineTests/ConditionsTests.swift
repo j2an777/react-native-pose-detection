@@ -30,7 +30,6 @@ final class ConditionsTests: XCTestCase {
     frame.landmarks = landmarks
   }
 
-  /// A right angle at the knee, laid out so the aspect correction has something to correct.
   private func bendKneeTo90() {
     place(Skeleton.leftHip, 0.5, 0.2)
     place(Skeleton.leftKnee, 0.5, 0.5)
@@ -83,7 +82,7 @@ final class ConditionsTests: XCTestCase {
   }
 
   func testAnUnmeasurableAngleMatchesNothingRatherThanReadingAsZero() throws {
-    // Collinear: the vertex has no angle, and Geometry reports NaN rather than 0.
+    // The ankle sits on the knee: a zero-length segment has no angle, so Geometry reports NaN.
     place(Skeleton.leftHip, 0.5, 0.2)
     place(Skeleton.leftKnee, 0.5, 0.5)
     place(Skeleton.leftAnkle, 0.5, 0.5)

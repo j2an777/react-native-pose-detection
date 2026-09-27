@@ -6,7 +6,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** A condition the test drives directly, so the state machine is tested apart from the geometry. */
+/** Driven directly, so the state machine is tested apart from the geometry. */
 private class Switch(
     var on: Boolean = false,
 ) : PoseCondition() {
@@ -175,7 +175,6 @@ class TriggerRuntimeTest {
         trigger.evaluate(frame, 1000)
         assertNotNull(trigger.evaluate(frame, 1050))
 
-        // Past enter's threshold on the way back, short of exit's: still active, not holding.
         enter.on = false
         assertNull("enter no longer holds", trigger.evaluate(frame, 1400))
         assertNull("enter no longer holds", trigger.evaluate(frame, 1700))
@@ -192,7 +191,6 @@ class TriggerRuntimeTest {
         trigger.evaluate(frame, 1000)
         trigger.evaluate(frame, 1250)
 
-        // Mid-rep, the subject steps out of frame.
         trigger.onPoseLost()
 
         enter.on = false
@@ -227,7 +225,6 @@ class TriggerRuntimeTest {
         engine.evaluate(frame, 1100, fired)
         assertEquals(1, fired.single().count)
 
-        // A re-render is not an unmount.
         engine.setTriggers(listOf(spec("rep")))
         fired.clear()
         enter.on = true
@@ -238,7 +235,6 @@ class TriggerRuntimeTest {
         engine.evaluate(frame, 1300, fired)
         assertEquals("the count survived", 2, fired.single().count)
 
-        // A different id is a different trigger, and starts from zero.
         engine.setTriggers(listOf(spec("other")))
         fired.clear()
         enter.on = true

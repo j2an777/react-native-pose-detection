@@ -1,17 +1,7 @@
 import UIKit
 
-/**
- Draws the skeleton over the preview. Nothing here crosses to JavaScript.
-
- The detector's callback thread writes `incoming`, the main thread renders from `landmarks`, and
- `frameLock` is held only for the copy between them. Without it a render already in flight can read
- some joints from one frame and the rest from the next, and the skeleton snaps apart.
-
- Shape layers rather than `draw(_:)`. A view that draws itself re-rasterizes its whole backing store
- on the CPU for every result, about 12 MB at an iPhone 15's full-screen size, thirty times a second;
- a shape layer is handed a path and the GPU composites it. The paths come from `OverlayRenderer`,
- the same geometry the exporter paints with, so live and exported skeletons cannot disagree.
- */
+/// The callback queue writes `incoming`; main copies it under `frameLock` and renders the copy.
+/// Shape layers, not `draw(_:)`: a CPU redraw is ~12 MB per result at iPhone 15 full screen.
 final class OverlayView: UIView {
 
   private let frameLock = NSLock()
@@ -21,21 +11,18 @@ final class OverlayView: UIView {
   private var incomingWidth = 0
   private var incomingHeight = 0
 
-  // Everything below is the snapshot taken under the lock at the top of `render`, and is touched
-  // only on the main thread from there on. Mirroring and the source size ride in the same snapshot
-  // as the landmarks, so a camera switch can never draw new landmarks with the old mirroring.
+  // Main-thread copy; mirroring and size ride with the landmarks so a switch never mixes them.
   private var landmarks = [Float](repeating: 0, count: Skeleton.landmarkCount * Skeleton.landmarkStride)
   private var hasPose = false
   private var mirrored = false
   private var sourceWidth = 0
   private var sourceHeight = 0
 
-  /// At most one render in flight. UIKit has no `postInvalidateOnAnimation`, so this coalesces.
+  /// At most one render in flight; UIKit has no `postInvalidateOnAnimation`.
   private var renderPending = false
 
   private let bones = CAShapeLayer()
   private let joints = CAShapeLayer()
-  /// One per configured angle, reused across frames and hidden when an angle has nothing to show.
   private var arcLayers = [CAShapeLayer]()
   private var labelBoxes = [CAShapeLayer]()
   private var labelTexts = [CATextLayer]()
@@ -48,7 +35,6 @@ final class OverlayView: UIView {
     }
   }
 
-  /// Rebuilt when the config changes, never on the render path.
   private var palette = OverlayPalette(OverlayConfig())
 
   override init(frame: CGRect) {
@@ -72,7 +58,6 @@ final class OverlayView: UIView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    // The projection depends on the bounds, so the current pose is laid out again at the new size.
     render()
   }
 
@@ -83,13 +68,6 @@ final class OverlayView: UIView {
     requestRender()
   }
 
-  /**
-   Called from the detector's callback thread; copies into the view's buffer and asks for a render.
-
-   The size travels with the landmarks rather than in a call of its own. Two critical sections let
-   a render land between them and use new landmarks with the previous frame size, which is exactly
-   the interleaving the snapshot in this class exists to prevent.
-   */
   func submit(_ frame: [Float], width: Int, height: Int) {
     frameLock.lock()
     for index in 0..<incoming.count {
@@ -109,7 +87,6 @@ final class OverlayView: UIView {
     requestRender()
   }
 
-  /// One hop to main per render at most, however many frames arrive in between.
   private func requestRender() {
     frameLock.lock()
     if renderPending {
@@ -128,9 +105,7 @@ final class OverlayView: UIView {
     }
   }
 
-  /// Main thread. Swaps the layers' paths in one transaction with implicit animations off.
   private func render() {
-    // One copy under the lock, then the rest runs on a frame that cannot change underneath it.
     frameLock.lock()
     hasPose = incomingHasPose
     mirrored = incomingMirrored
@@ -152,7 +127,6 @@ final class OverlayView: UIView {
         projection: OverlayProjection(
           source: CGSize(width: sourceWidth, height: sourceHeight),
           bounds: bounds,
-          // The preview fills, so the skeleton fills with it.
           fit: .fill
         ),
         mirrored: mirrored,
@@ -203,7 +177,7 @@ final class OverlayView: UIView {
     }
   }
 
-  /// Layers are only ever added: a config with fewer angles hides the rest instead of freeing them.
+  /// Only ever grows: a config with fewer angles hides the extra layers.
   private func growArcLayers(to count: Int) {
     while arcLayers.count < count {
       let arc = CAShapeLayer()

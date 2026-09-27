@@ -2,13 +2,6 @@ import AVFoundation
 import MediaPipeTasksVision
 import UIKit
 
-/**
- The loop: pull a frame, detect on it when a sample is due, paint it, encode it.
-
- Split from the setup so that file reads as what the pipeline is and this one reads as what runs
- through it. Everything here happens on `PoseExport.queue`, which is serial and below the camera's
- own queue, and nothing here allocates per frame beyond what the encoder's pool hands back.
- */
 extension VideoExporter {
 
   // swiftlint:disable:next function_body_length
@@ -25,8 +18,7 @@ extension VideoExporter {
       minConfidence: options.minConfidence
     )
     let pacer = FilePacer()
-    // Detection gets its own upright, smaller copy of each sampled frame; the painting still draws
-    // the full frame, turned by UIKit. See UprightFrames for why MediaPipe is not told to turn it.
+    // Detection gets an upright, smaller copy; the painting turns the full frame through UIKit.
     let upright = UprightFrames(
       orientation: geometry.orientation,
       size: exportCanvasSize(display: geometry.display, maxSize: VideoFrameSampler.maxLongSide)
@@ -39,9 +31,7 @@ extension VideoExporter {
     let durationMs = max(1, StaticDetection.durationMilliseconds(of: asset))
     var clock = SampleClock(stepMs: max(1, 1000 / options.sampleFps))
 
-    // Held between samples and redrawn every frame, exactly as the live overlay holds the last
-    // pose between inferences. The renderer takes each buffer by value, and Swift's copy on write
-    // makes that a retain rather than 132 floats, so the steady state allocates nothing at all.
+    // Copy-on-write makes each renderer's copy of a pose a retain rather than 132 floats.
     var poses = [[Float]]()
     var frameCount = 0
     var posesFound = 0
@@ -50,10 +40,8 @@ extension VideoExporter {
     var pendingAudio: CMSampleBuffer?
 
     while let sample = reader.video.copyNextSampleBuffer() {
-      // MPImage, the CGImage over the source and everything MediaPipe allocates behind them are
-      // autoreleased. Without a pool per frame they are held until this function returns, which
-      // for a long clip is thousands of frames of decoded video, and is the one thing that would
-      // turn a bounded export into the memory-pressure kill it exists to avoid.
+      // Without a pool per frame, the autoreleased MPImage, CGImage and MediaPipe allocations of
+      // every frame live until the export ends.
       try autoreleasepool {
         if isCancelled() { throw ExportCancelled() }
         guard let buffer = CMSampleBufferGetImageBuffer(sample) else { return }
@@ -89,8 +77,7 @@ extension VideoExporter {
         try drain(audio: reader, into: writer, upTo: presentation, pending: &pendingAudio)
         report(Float(positionMs) / Float(durationMs))
       }
-      // Once per sample rather than per frame: the rest covers the painting and encoding since the
-      // last one too, which is what halving the job's speed means.
+      // Per sample, not per frame: the rest also covers the painting and encoding since the last.
       if sampled {
         sampled = false
         if !pacer.rest(isCancelled: isCancelled) { throw ExportCancelled() }
@@ -125,8 +112,6 @@ extension VideoExporter {
     }
   }
 
-  /// Nil when the overlay is switched off, so a frame with no skeleton takes the same path as a
-  /// frame with nobody in it rather than a second branch through the loop.
   private func makeRenderer(
     palette: OverlayPalette,
     landmarks: [Float],
@@ -139,7 +124,6 @@ extension VideoExporter {
       palette: palette,
       landmarks: landmarks,
       projection: geometry.projection,
-      // A file is never mirrored: what was picked is what gets painted.
       mirrored: false,
       sourceWidth: Int(geometry.display.width),
       sourceHeight: Int(geometry.display.height)
@@ -150,14 +134,6 @@ extension VideoExporter {
 
   // MARK: - One frame
 
-  /**
-   Draws the decoded frame and the skeleton into a buffer from the encoder's own pool.
-
-   The source is wrapped rather than copied: `CGDataProvider` is handed the locked base address and
-   a release callback that does nothing, because the sample buffer owns that memory and outlives
-   the draw. The destination comes from `pixelBufferPool`, so across a long video this cycles
-   through a handful of buffers instead of allocating one per frame.
-   */
   private func paint(
     source: CVPixelBuffer,
     into adaptor: AVAssetWriterInputPixelBufferAdaptor,
@@ -195,10 +171,8 @@ extension VideoExporter {
       throw ExportError("could not draw into the encoder's frame buffer")
     }
 
-    // A pixel buffer is stored top row first and Core Graphics counts up from the bottom, so
-    // without this every frame encodes upside down. Flipped here rather than in the renderer
-    // because after it the context is in UIKit's coordinates, which is what the overlay, the
-    // labels and `UIImage.draw(in:)` all expect, and is the same space the live view draws in.
+    // Core Graphics counts up from the bottom: flip into the top-down space UIKit and the overlay
+    // expect, or every frame encodes upside down.
     context.translateBy(x: 0, y: canvas.height)
     context.scaleBy(x: 1, y: -1)
     UIGraphicsPushContext(context)
@@ -207,8 +181,7 @@ extension VideoExporter {
     context.setFillColor(UIColor.black.cgColor)
     context.fill(CGRect(origin: .zero, size: canvas))
     if let image = VideoExporter.wrap(source) {
-      // The orientation rides on the UIImage, so a portrait clip stored landscape is drawn upright
-      // and the landmarks, detected against the same orientation, already match it.
+      // Drawn upright, as detection saw it, so the landmarks already match.
       UIImage(cgImage: image, scale: 1, orientation: geometry.orientation).draw(in: geometry.projection.rect)
     }
     for renderer in renderers {
@@ -221,13 +194,7 @@ extension VideoExporter {
     }
   }
 
-  /**
-   Waits for the encoder to take more data, and gives up on the two ways that never happens.
-
-   `isReadyForMoreMediaData` stops turning true for good once the writer fails, so a disk that
-   fills mid-export would otherwise leave this spinning on a background queue for the life of the
-   process. Cancellation is checked here too, because a wait is exactly where a cancel arrives.
-   */
+  /// Gives up when the writer fails, as readiness then never returns, or when cancelled.
   private func awaitReady(_ input: AVAssetWriterInput, writer: AVAssetWriter) throws {
     while !input.isReadyForMoreMediaData {
       guard writer.status == .writing else {
@@ -238,7 +205,7 @@ extension VideoExporter {
     }
   }
 
-  /// A CGImage over the pixel buffer's own memory. Valid only while the buffer stays locked.
+  /// No copy, and a no-op release: the buffer owns the memory. Valid only while it stays locked.
   private static func wrap(_ buffer: CVPixelBuffer) -> CGImage? {
     let height = CVPixelBufferGetHeight(buffer)
     let bytesPerRow = CVPixelBufferGetBytesPerRow(buffer)
@@ -267,13 +234,7 @@ extension VideoExporter {
 
   // MARK: - The other track, and the end
 
-  /**
-   Audio up to where the video has reached, so the two stay interleaved in the file.
-
-   One reader feeds both tracks, and a reader whose outputs are drained at very different rates
-   stalls the one that is behind. Writing all the video and then all the audio would also leave a
-   file whose sound is one long block at the end, which plays but streams badly.
-   */
+  /// Keeps audio interleaved with video: one reader feeds both, and draining unevenly stalls it.
   private func drain(
     audio reader: ReadSide,
     into writer: WriteSide,
@@ -289,8 +250,7 @@ extension VideoExporter {
         return
       }
       try awaitReady(input, writer: writer.writer)
-      // A refused audio sample is not worth failing an export over: the picture is the point, and
-      // a file with a gap in its sound beats no file at all.
+      // Not fatal: a gap in the sound beats no file.
       if !input.append(sample) {
         PoseLog.warn(.engine, "the export dropped an audio sample")
       }
@@ -301,8 +261,7 @@ extension VideoExporter {
     writer.video.markAsFinished()
     writer.audio?.markAsFinished()
 
-    // `finishWriting(completionHandler:)` returns before the file is closed, and the caller is
-    // about to hand this path back to JavaScript as a file that exists.
+    // `finishWriting` returns before the file is closed, and JavaScript is told the file exists.
     let done = DispatchSemaphore(value: 0)
     writer.writer.finishWriting { done.signal() }
     done.wait()
@@ -312,8 +271,7 @@ extension VideoExporter {
     }
   }
 
-  /// Throttled, because a frame-by-frame progress event is thirty crossings a second for a number
-  /// nobody can read that fast.
+  /// Throttled: per frame it is thirty crossings a second for a number nobody reads that fast.
   private func report(_ progress: Float) {
     let clamped = min(1, max(0, progress))
     guard clamped >= lastReportedProgress + VideoExporter.progressStep || clamped >= 1 else { return }
@@ -322,7 +280,6 @@ extension VideoExporter {
   }
 }
 
-/// When the next detection is due, and the last timestamp VIDEO mode was handed.
 struct SampleClock {
   let stepMs: Int
   private var nextMs = 0
@@ -332,11 +289,7 @@ struct SampleClock {
     self.stepMs = stepMs
   }
 
-  /**
-   The timestamp to detect this frame at, or nil when no sample is due. VIDEO mode rejects a
-   timestamp that does not move forward, and a variable frame rate clip can hand back two frames on
-   the same millisecond.
-   */
+  /// Nil when no sample is due. VIDEO mode needs rising timestamps; a VFR clip can repeat a ms.
   mutating func due(atMs positionMs: Int) -> Int? {
     guard positionMs >= nextMs else { return nil }
     let timestamp = max(positionMs, lastTimestampMs + 1)

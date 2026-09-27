@@ -1,14 +1,6 @@
 package com.posedetection.engine
 
-/**
- * Whether two frames describe one continuous movement, which smoothing and velocity both have to
- * know before they compare them.
- *
- * A gap is measured against the rate the frames were expected at, and is never shorter than
- * 200 ms: at 30 fps a frame that late is a stall, while at 4 fps it is simply the next frame. A
- * fixed 200 ms made every frame at a rate under 5 fps a first frame, with no velocity and no
- * smoothing.
- */
+/** A gap scales with the expected rate: 250 ms is a stall at 30 fps but the next frame at 4 fps. */
 internal object Continuity {
     const val MINIMUM_GAP_MS = 200.0
 
@@ -23,15 +15,7 @@ internal object Continuity {
     private const val MILLIS_PER_SECOND = 1_000.0
 }
 
-/**
- * One subject followed through a file's sampled frames. This is the file-side twin of the state the
- * live view keeps in its own fields.
- *
- * A frame continues the track unless it is the first one, follows a frame with nobody in it,
- * arrives after a gap (see [Continuity]), or shows a different body (see
- * [PoseBox.SAME_BODY_OVERLAP]). A frame that does not continue the track starts it over: nothing
- * measured across that boundary describes one movement.
- */
+/** One subject through a file's sampled frames: the file-side twin of the live view's own state. */
 internal class PoseTrack(
     sampleFps: Int,
 ) {
@@ -70,11 +54,7 @@ internal class PoseTrack(
         previousComY = Float.NaN
     }
 
-    /**
-     * Center-of-mass velocity in normalized units per second, written into [out] at [offset]. NaN
-     * when the frame started the track over, because the first frame of a movement has nothing to
-     * differ from, and zero would read as a body that was measured and found to be still.
-     */
+    /** Normalized units per second. `NaN` on a restart: 0 would read as a body measured still. */
     fun velocity(
         comX: Float,
         comY: Float,

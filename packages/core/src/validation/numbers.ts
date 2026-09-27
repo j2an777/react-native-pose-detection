@@ -4,12 +4,8 @@ import type { ExportOptions } from '../exportPose';
 import type { StaticOptions, VideoOptions } from '../staticInput';
 import type { PoseCameraProps } from '../types/props';
 
-/**
- * The numeric half of a config, checked before it crosses. `NaN` and both infinities pass
- * `typeof value === 'number'` and satisfy every TypeScript type, yet neither is anything a caller
- * meant, and `data.throttleMs: 1000 / 0` used to take an iOS app down: Swift traps converting one
- * to an integer. Ranges are not checked here. Native clamps those, and the guides document each.
- */
+// NaN and the infinities type-check as numbers, but Swift traps converting one to an integer.
+// Ranges are left to native, which clamps them.
 
 type CameraNumbers = Pick<
   PoseCameraProps,

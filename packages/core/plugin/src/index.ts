@@ -20,8 +20,7 @@ const withPoseDetection: ConfigPlugin<PoseDetectionPluginOptions | undefined> = 
   return config;
 };
 
-// Listing the plugin twice, directly and through another package, must not install the model
-// twice or race two downloads into the same cache path.
+// Listed twice, directly and via another package, it must not race two downloads to one path.
 export default createRunOncePlugin(withPoseDetection, PACKAGE_NAME);
 
 export type { PoseDetectionPluginOptions };

@@ -15,12 +15,8 @@ import { ANGLE_JOINTS, ANGLE_JOINT_NAMES, LANDMARK_COUNT } from '../../src/types
 import { LANDMARK_STRIDE } from '../../src/types/frame';
 
 /**
- * The wire format is written three times, in TypeScript, Kotlin and Swift, and nothing at runtime
- * compares them: a buffer encoded against a stale constant decodes into plausible wrong numbers
- * rather than failing. These read the two native sides and assert they still agree.
- *
- * Compiled under `.test-build/`, and each file is found by name rather than by path: this guard
- * should survive the sources being reorganized and fail only when they stop agreeing.
+ * The wire format is written in TypeScript, Kotlin and Swift, and a stale constant decodes into
+ * plausible wrong numbers. Files are found by name, so a reorganization does not break this.
  */
 const CORE = resolve(__dirname, '../../..', 'packages/core');
 const ROOTS = {
@@ -53,7 +49,7 @@ function read(language: Language, fileName: string): string {
   return readFileSync(path, 'utf8');
 }
 
-/** `const val NAME = 6` in Kotlin, `static let name = 6` in Swift. Both may be `1 shl 0` / `1 << 0`. */
+/** `const val NAME = 6` in Kotlin, `static let name = 6` in Swift; the value may be a shift. */
 function constant(language: Language, source: string, name: string): number {
   const declaration =
     language === 'kotlin' ? `const val ${name} = ([^\\n]+)` : `static let ${name} = ([^\\n]+)`;
@@ -68,7 +64,7 @@ function constant(language: Language, source: string, name: string): number {
   return value;
 }
 
-/** The two sides name the same slot differently only in case: INDEX_FRAME_COUNT / indexFrameCount. */
+/** The two sides differ only in case: INDEX_FRAME_COUNT / indexFrameCount. */
 const WIRE_NAMES = {
   kotlin: {
     header: 'HEADER_FLOAT64S',
@@ -197,8 +193,7 @@ test('the MediaPipe version in each calibration cache key is the one the build p
   assert.ok(pinnedByGradle !== undefined, 'build.gradle no longer pins tasks-vision');
   assert.equal(pinnedByPod, pinnedByGradle, 'the two platforms pin different MediaPipe releases');
 
-  // A cache key that outlives a MediaPipe upgrade would start the new version from a cost measured
-  // on the old one. The constants are what makes the key change.
+  // The calibration cache is keyed on these: a stale one would carry old costs across an upgrade.
   const kotlin = /const val PINNED = "([\d.]+)"/.exec(read('kotlin', 'Calibrator.kt'))?.[1];
   const swift = /static let pinned = "([\d.]+)"/.exec(read('swift', 'Calibrator.swift'))?.[1];
   assert.equal(kotlin, pinnedByGradle, 'MediaPipeVersion.PINNED is stale in the Kotlin');

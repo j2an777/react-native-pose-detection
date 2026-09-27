@@ -7,10 +7,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * The level `setLogLevel()` sets, what a camera's `logLevel` prop does on top of it, and who hands
- * the buffered entries to JavaScript.
- */
 class PoseLogTest {
     private val camera = Any()
     private val other = Any()

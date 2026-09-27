@@ -3,11 +3,6 @@ package com.posedetection.detector
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * CameraX names the clockwise turn a buffer needs to stand upright; MediaPipe turns the image the
- * other way by what it is handed. A frame dumped on a Redmi Note 12 is the evidence: handed +270
- * for its front camera, the model put the shoulders above the head.
- */
 class RotationTest {
     @Test
     fun `a front camera's 270 is handed over negated, so the model sees the person upright`() {

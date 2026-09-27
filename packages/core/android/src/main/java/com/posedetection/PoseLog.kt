@@ -35,32 +35,23 @@ internal enum class LogCategory {
     }
 }
 
-/**
- * A disabled call site costs one atomic read and an integer compare: the lambda is inlined and
- * never invoked, so nothing is built or allocated. Formatting outside the lambda turns that into
- * a per-frame cost at 30 fps. See docs/logging.md.
- *
- * Entries always go to Logcat, so native-only debugging works with no JavaScript listener
- * attached. They are additionally buffered for JavaScript while a listener is.
- */
+/** Format inside the lambda: a disabled call site then builds nothing. See docs/logging.md. */
 internal object PoseLog {
     private const val TAG = "PoseDetection"
     private const val BITS_PER_CATEGORY = 3
     private const val CATEGORY_MASK = 0x7
 
-    // 3 bits of level per category, packed into one int. One atomic read per call site. It is
-    // `base` raised by every camera's `logLevel` prop, and written only under `levelLock`.
+    // 3 bits of level per category: base raised by every camera's prop, written under levelLock.
     private val mask = AtomicInteger(0)
 
     private val levelLock = Any()
 
-    /** What `setLogLevel()` asked for. Guarded by `levelLock`. */
+    /** What setLogLevel() asked for; guarded by levelLock. */
     private var base = 0
 
-    /** Each camera's `logLevel` prop, raising the level for as long as that camera exists. */
     private val raises = IdentityHashMap<Any, Int>()
 
-    /** Bounded and drop-oldest, like the frame buffer: a listener that stalls costs a fixed size. */
+    /** Drop-oldest, so a listener that stalls costs a fixed size. */
     private const val CAPACITY = 256
     private val entryLevels = arrayOfNulls<LogLevel>(CAPACITY)
     private val entryCategories = arrayOfNulls<LogCategory>(CAPACITY)
@@ -75,15 +66,9 @@ internal object PoseLog {
     @Volatile
     private var streaming = false
 
-    /**
-     * Who hands batches to JavaScript: the camera that attached first, from the moment it attaches
-     * until it detaches. Without one owner every camera on screen would drain the same buffer and
-     * each would receive an arbitrary share of the entries. With no camera attached nobody owns it,
-     * and the module flushes instead.
-     */
+    /** The one camera that flushes, or cameras would split the entries; null: the module flushes. */
     private var owner: Any? = null
 
-    /** How often a batch is handed over, by a camera or by the module. */
     const val FLUSH_MS = 250L
 
     fun startStream() {
@@ -103,7 +88,6 @@ internal object PoseLog {
         }
     }
 
-    /** A camera attaching takes the flush unless another one already has it. */
     fun claimStream(candidate: Any) {
         synchronized(ring) { if (owner == null) owner = candidate }
     }
@@ -112,18 +96,7 @@ internal object PoseLog {
         synchronized(ring) { if (owner === candidate) owner = null }
     }
 
-    /**
-     * Everything buffered since the last batch, oldest first, for [flusher] to hand to JavaScript;
-     * null when there is nothing to hand over or the flush is somebody else's. A camera passes
-     * itself, and takes the flush if nobody has it. The module passes null and gets a batch only
-     * while no camera is attached, which is what lets `addLogListener()` hear a file detection or an
-     * export with no camera on screen.
-     *
-     * A stream nobody listens to costs one volatile read. The maps are built here rather than at the
-     * call site, because a disabled channel must not build anything. A drop count opens the batch as
-     * a warn entry rather than riding beside it, so a listener that only reads entries still sees
-     * that something was lost.
-     */
+    /** A camera passes itself and claims the flush if free; the module passes null and needs it free. */
     fun takeBatch(flusher: Any?): List<Map<String, Any?>>? {
         if (!streaming) return null
         synchronized(ring) {
@@ -136,6 +109,7 @@ internal object PoseLog {
 
             val batch = ArrayList<Map<String, Any?>>(count + 1)
             val start = (head - count + CAPACITY) % CAPACITY
+            // A warn entry, not a field, so a listener that reads only entries still sees the loss.
             if (dropped > 0) {
                 batch.add(
                     mapOf(
@@ -167,7 +141,7 @@ internal object PoseLog {
         }
     }
 
-    /** Buffers one entry for the next batch. Apart from [emit] so a test can reach it without Logcat. */
+    /** Apart from [emit] so a test can reach it without Logcat. */
     fun record(
         level: LogLevel,
         category: LogCategory,
@@ -200,12 +174,7 @@ internal object PoseLog {
         }
     }
 
-    /**
-     * A camera's `logLevel` prop: raises the level on top of `setLogLevel()` while the camera
-     * exists, and gives it back when the prop goes or the camera does. `null` withdraws the raise
-     * and leaves the global level alone rather than turning it off, which is what iOS needs because
-     * Expo hands it every prop on a view's first update, set or not.
-     */
+    /** A camera's logLevel prop, on top of setLogLevel(); null withdraws it rather than turning logs off. */
     fun raise(
         owner: Any,
         raised: Int?,
@@ -216,7 +185,6 @@ internal object PoseLog {
         }
     }
 
-    /** A level config as JavaScript sends it, a level or a map of categories to levels, as a mask. */
     fun levelMask(config: Any?): Int? =
         when (config) {
             is String -> packed(LogLevel.from(config))
@@ -224,7 +192,6 @@ internal object PoseLog {
             else -> null
         }
 
-    /** A map of category names to level names; a name this version does not know is skipped. */
     fun levelsFrom(config: Map<*, *>): Map<LogCategory, LogLevel> =
         config.entries
             .mapNotNull { (key, value) ->
@@ -309,7 +276,7 @@ internal object PoseLog {
         message: () -> String,
     ) = log(LogLevel.TRACE, category, message)
 
-    // Public because the inline functions above are, not because anything else should call it.
+    // Public only because the inline functions above call it.
     fun emit(
         level: LogLevel,
         category: LogCategory,

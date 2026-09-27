@@ -19,10 +19,7 @@ export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 /** Thrown by a runner that cannot apply on this device or in this scene. Reported, not failed. */
 class Skip extends Error {}
 
-/**
- * Every runner returns a report rather than throwing, so one failure does not stop a sweep and
- * the panel can show what happened on the run that failed next to the runs that did not.
- */
+/** Turns a throw into a failed report, so one failure does not stop a sweep. */
 export async function measure(
   id: string,
   iterations: number,
@@ -82,9 +79,8 @@ async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs: numbe
 }
 
 /**
- * Frames are reaching the model: the measured rate counts empty results too. The rate stays up for
- * two seconds after the last result, so right after a stop this passes on the old frames. A check
- * that frames came back has to see them stop first, see `framesStopped`.
+ * Ms until the measured rate is above zero; empty results count. The rate outlives the last result
+ * by 2 s, so to see frames come back, wait for `framesStopped` first.
  */
 async function framesFlow(context: ScenarioContext, timeoutMs = 5_000): Promise<number | null> {
   const started = Date.now();
@@ -92,10 +88,7 @@ async function framesFlow(context: ScenarioContext, timeoutMs = 5_000): Promise<
   return flowing ? Date.now() - started : null;
 }
 
-/**
- * A failure that says what the camera reported about itself when frames did not come, which is
- * where to start: stopped, not detecting, paused by heat, or running and simply getting nothing.
- */
+/** A failure carrying the camera's own state, which says why frames did not come. */
 async function noFrames(context: ScenarioContext, what: string): Promise<Error> {
   try {
     const camera = requireCamera(context);
@@ -110,7 +103,6 @@ async function noFrames(context: ScenarioContext, what: string): Promise<Error> 
   }
 }
 
-/** The measured rate has gone to zero, which it does two seconds after the last result. */
 async function framesStopped(context: ScenarioContext, timeoutMs = 4_000): Promise<boolean> {
   return waitFor(async () => (await profile(context)).measuredFps === 0, timeoutMs);
 }
@@ -187,15 +179,13 @@ export const SCENARIOS: readonly Scenario[] = [
           const initial = context.facing();
           const changesBefore = context.cameraChanges();
 
-          // No sleep between switches: `switchCamera()` resolves once the new lens delivers a frame,
-          // and the whole point of this run is to start the next one the instant that happens.
+          // No sleep: `switchCamera()` already waits for the new lens's first frame.
           for (let index = 0; index < 100; index += 1) {
             await withTimeout(requireCamera(context).switchCamera(), 5_000, `switch ${index + 1}`);
             if ((index + 1) % 25 === 0) log(`${index + 1} switches`);
           }
 
-          // The event and the promise travel separately, so the last event can land just after the
-          // last promise resolves. Missing for longer than that, it is lost.
+          // The last `onCameraChange` can trail the promise; still missing after 1 s, it is lost.
           await waitFor(() => context.cameraChanges() - changesBefore >= 100, 1_000);
           const reported = context.cameraChanges() - changesBefore;
           if (reported !== 100) throw new Error(`100 switches reported ${reported} camera changes`);
@@ -253,8 +243,7 @@ export const SCENARIOS: readonly Scenario[] = [
         async (log) => {
           for (let index = 0; index < 5; index += 1) {
             const { ready } = await context.remountNow();
-            // Before the session is up: this is the race that used to leave the camera running with
-            // no preview, and a resume that never brought the detector or onReady back.
+            // Before the session is up, which is the race under test.
             await requireCamera(context).pause();
             await sleep(600);
             await requireCamera(context).resume();
@@ -281,8 +270,7 @@ export const SCENARIOS: readonly Scenario[] = [
         3,
         async (log) => {
           for (let index = 0; index < 3; index += 1) {
-            // Longer than the two seconds the rate outlives the last result, so the check below
-            // sees frames that came back rather than ones from before the cover.
+            // Longer than the 2 s the rate outlives the last result, so the check sees new frames.
             await context.cover(2_500);
             const flowing = await framesFlow(context, 6_000);
             if (flowing === null)
@@ -482,9 +470,8 @@ export const SCENARIOS: readonly Scenario[] = [
           if (!headAboveFeet(turned)) throw new Error('the EXIF photo was detected sideways');
           log(`photo: EXIF copy within ${drift.toFixed(3)} of the upright one`);
 
-          // The clip: sampled in order at real positions, upright, and moving right. Detection is
-          // stopped on the camera for this one, so the job may take the GPU; the trimmed run below
-          // keeps it on, which holds the job to the CPU. Both paths run.
+          // Detection stopped, so this job may take the GPU; the trimmed run below keeps it on,
+          // which holds that job to the CPU. Both paths run.
           await requireCamera(context).stopDetection();
           let progressEvents = 0;
           const started = Date.now();
@@ -647,11 +634,7 @@ export const SCENARIOS: readonly Scenario[] = [
   },
 ];
 
-/**
- * Reproduced from outside the app, because neither platform lets a process put itself into a
- * thermal state, clear another process's preferences, or send itself a memory warning. The panel
- * shows the command and then watches for what it should have caused.
- */
+/** States an app cannot put itself into, so the panel shows the host command for each. */
 export const EXTERNAL: readonly {
   title: string;
   verifies: string;

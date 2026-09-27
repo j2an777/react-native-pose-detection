@@ -1,12 +1,7 @@
 #!/bin/sh
-# Runs a native linter if it is installed, and gets out of the way if it is not.
-#
-# SwiftLint, SwiftFormat, and ktlint come from Homebrew rather than npm, so `npm ci` produces a
-# working checkout without them. Failing the pre-commit hook over a missing Homebrew package
-# teaches people to pass --no-verify, and a hook that gets bypassed protects nothing.
-#
-# CI installs all three and runs them without this wrapper, so skipping here is a local
-# convenience and not a hole in the gate.
+# Usage: optional-lint.sh <tool> [args...]
+# Runs a Homebrew linter (SwiftLint, SwiftFormat, ktlint) if installed, else skips: failing the
+# hook over it teaches --no-verify. CI installs all three and runs them directly.
 
 set -e
 

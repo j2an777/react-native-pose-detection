@@ -39,25 +39,16 @@ const PROFILES = ['auto', 'efficient', 'balanced', 'quality', 'unrestricted'] as
 const THERMAL = ['adaptive', 'critical-only', 'off'] as const;
 const DATA_MODES = ['off', 'throttled', 'batched', 'live'] as const;
 const MAX_POSES = ['1', '2', '3', '4', '5'] as const;
-// 'auto' passes nothing, which is what makes the package take the threshold from People: 0.6 for a
-// single subject, 0.3 above that. The numbers override it, and 0.3 is the floor worth offering
-// because below it the model returns the same body twice rather than finding a second one.
+// 'auto' passes nothing, so the threshold comes from People: 0.6 for one, 0.3 above. 0.3 is the
+// lowest offered: below it the model returns the same body twice rather than a second one.
 const CONFIDENCE = ['auto', '0.3', '0.4', '0.5', '0.6', '0.7'] as const;
-// 'auto' is the package's own default: off for one pose, which MediaPipe already smooths, and on
-// for several. 'on' adds the package's filter anyway, with the two numbers below. It is
-// `cutoff = minCutoff + beta * speed`, speed in body spans per second: minCutoff sets how hard a
-// still body is smoothed, beta how quickly that relaxes once it moves. 0.05 and 80 are MediaPipe's.
+// 'auto' is off for one pose, which MediaPipe already smooths, and on for several. 'on' uses the
+// numbers below; 0.05 and 80 are MediaPipe's own, with speed in body spans per second.
 const SMOOTHING = ['auto', 'on', 'off'] as const;
 const MIN_CUTOFF = ['0.01', '0.05', '0.2', '1'] as const;
 const BETA = ['10', '40', '80', '160'] as const;
 
-/**
- * What the angle toggle draws when it is on.
- *
- * Off is an empty list rather than a hidden one: native skips the whole angle pass when the config
- * carries none, so switching this off stops the trigonometry and the arcs rather than drawing them
- * somewhere nobody looks.
- */
+/** Off passes `[]`: with no angles, native skips the angle pass entirely. */
 const ANGLE_JOINTS = [
   { joint: 'leftElbow' },
   { joint: 'rightElbow' },
@@ -65,20 +56,11 @@ const ANGLE_JOINTS = [
   { joint: 'rightKnee' },
 ] as const;
 
-/**
- * The camera, full bleed, with everything else floating at the edges.
- *
- * The controls are grouped into three categories rather than laid out as one long rail, because the
- * middle of the screen is the part that matters: it is where the person being detected is, and a
- * panel is only ever open while somebody is deliberately changing something. Opening one closes the
- * others, and tapping the preview closes all of them.
- */
 export function LiveScreen({ onClose }: { onClose: () => void }) {
   const camera = React.useRef<PoseCameraRef>(null);
   const permission = useCameraPermission();
   const insets = useSafeAreaInsets();
-  // Somebody doing a set stands back from the phone and stops touching it, and the screen would
-  // lock, stopping the camera, partway through. The package leaves this to the app.
+  // A screen lock mid-set would stop the camera, and the package leaves wake locks to the app.
   useKeepAwake();
 
   const [panel, setPanel] = React.useState<Category | null>(null);
@@ -106,10 +88,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   const [beta, setBeta] = React.useState<(typeof BETA)[number]>('80');
   const [poseCount, setPoseCount] = React.useState(0);
   const [snapshot, setSnapshot] = React.useState<string | null>(null);
-  /**
-   * Counted in a ref and shown a few times a second. A state update per frame re-rendered this
-   * whole screen thirty times a second, which is the JavaScript load the package is built to avoid.
-   */
+  /** A ref, not state: a state update per frame would re-render this screen 30 times a second. */
   const framesSeen = React.useRef(0);
 
   const [logLevel, setLevel] = React.useState<(typeof LOG_LEVELS)[number]>('off');
@@ -121,11 +100,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   const [measured, setMeasured] = React.useState<ProfileState | null>(null);
   const [notice, setNotice] = React.useState<{ message: string; fatal: boolean } | null>(null);
 
-  /**
-   * The measured rate changes every second and no event carries it: performance events fire when
-   * the configuration moves, not when the measurement does. Polled, and only while a readout is on
-   * screen, so a hidden stat bar and a closed debug panel cost nothing.
-   */
+  /** No event carries the measured rate, so it is polled, and only while a readout is showing. */
   const reading = showStats || panel === 'debug';
   React.useEffect(() => {
     if (!reading || !ready) return;
@@ -135,8 +110,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
         .then(setMeasured)
         .catch(() => undefined);
     };
-    // Once now, then on the interval: waiting a full period before the first read leaves the
-    // readout at zero next to a skeleton that is already tracking.
+    // Once now too, or the readout sits at zero beside a skeleton that is already tracking.
     read();
     const poll = setInterval(read, FPS_POLL_MS);
     return () => clearInterval(poll);
@@ -164,8 +138,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
     [],
   );
 
-  // The stream stays closed until somebody asks for a level, so an idle screen pays nothing for a
-  // console it is not showing.
+  // Logging stays off until a level is picked, so an unused console costs nothing.
   React.useEffect(() => {
     setLogLevel(logLevel);
     if (logLevel === 'off') {
@@ -179,12 +152,9 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   }, [logLevel]);
 
   /**
-   * Every ref method crosses to native and can fail, and a rejection nobody catches becomes a red
-   * box over the camera. Switching lenses is the one people hit: a device with a single camera, or
-   * one already mid-switch, rejects with `CAMERA_SWITCH_FAILED`.
+   * Ref methods reject on failure (a switch on a one-lens phone: `CAMERA_SWITCH_FAILED`), and an
+   * uncaught rejection is a red box over the camera.
    */
-  /// Every ref method rejects rather than throwing, so one place turns that into the notice bar.
-  /// Returns the promise so a caller that also has to know when the work ended can chain onto it.
   const call = React.useCallback((run: () => Promise<unknown> | undefined) => {
     return Promise.resolve(run()).catch((problem: unknown) => {
       setNotice({
@@ -195,10 +165,8 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   }, []);
 
   /**
-   * `switchCamera()` resolves when the new lens actually delivers a frame, not when the request is
-   * accepted, so awaiting it is what makes the pending state mean something. A second tap while one
-   * is in flight is dropped rather than queued: the native side rebinds the session, and asking it
-   * to rebind again mid-rebind is how a switch ends up failing for reasons nobody can see.
+   * `switchCamera()` resolves on the new lens's first frame. Taps until then are dropped: a second
+   * switch would queue behind it and head straight back.
    */
   const flip = React.useCallback(() => {
     if (switching) return;
@@ -289,7 +257,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
             <Divider />
             <Live label="limit" value={measured?.limitedBy ?? '–'} />
             <Divider />
-            {/* The profile's, which follows Android's move from the CPU to the GPU after onReady. */}
+            {/* The profile's, which follows Android's move from CPU to GPU after onReady. */}
             <Live label="gpu" value={measured?.resolved.delegate ?? ready?.delegate ?? '–'} />
             <Divider />
             {dataMode === 'off' ? (
@@ -497,8 +465,7 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
             />
           ))}
         </Glass>
-        {/* Its own container, because switching lenses is not one of the three things the panels
-            configure: it acts immediately and belongs beside them rather than among them. */}
+        {/* Apart from the panels, since switching lenses acts at once rather than configuring. */}
         <Glass style={styles.railInner} radius={theme.radius.pill} intensity={60}>
           <IconButton icon="sync-outline" label="Switch camera" busy={switching} onPress={flip} />
         </Glass>
@@ -510,9 +477,9 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
 const LOG_LIMIT = 40;
 /** The rail's own height, so the panel above it can be placed without measuring. */
 const RAIL_HEIGHT = 58;
-/** The native side refreshes its measurement once a second, so asking faster reads the same number. */
+/** Native refreshes the measurement once a second, so polling faster reads the same number. */
 const FPS_POLL_MS = 1000;
-/** Often enough to read as live, rarely enough that counting frames never costs a render per frame. */
+/** Often enough to read as live, rarely enough never to cost a render per frame. */
 const FRAME_COUNT_MS = 250;
 
 /** `Resolution` is a width and a height, not the preset name that was asked for. */
@@ -536,10 +503,7 @@ function Divider() {
   return <View style={styles.divider} />;
 }
 
-/**
- * Everything the governor knows, in one place: what it measured, what it chose, and why. What a
- * person needs to judge a device before and after a change, and to explain a rate below target.
- */
+/** What the governor measured, what it chose, and why. */
 function Readout({
   ready,
   measured,

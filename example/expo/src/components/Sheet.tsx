@@ -6,14 +6,8 @@ import { Glass } from './Glass';
 import { theme } from '../theme';
 
 /**
- * A floating panel that slides up rather than appearing.
- *
- * Over a live camera an element that pops in reads as a glitch in the video, so both bottom panels
- * animate. It stays mounted through the exit so the slide has something to run on, and unmounts
- * only once it is off screen.
- *
- * The driver is native, so the animation does not share a thread with the frames arriving from the
- * camera; a panel that stuttered every time a pose landed would defeat the point of animating it.
+ * Slides in and out, since a panel that pops in over live video reads as a glitch. Native driver,
+ * so pose callbacks on the JS thread cannot make it stutter.
  */
 export function Sheet({
   visible,

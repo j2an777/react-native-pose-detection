@@ -1,7 +1,7 @@
 import XCTest
 @testable import PoseEngine
 
-/// A condition the test drives directly, so the state machine is tested apart from the geometry.
+/// Drives the state machine directly, apart from the geometry.
 private final class Switch: PoseCondition {
   var on = false
 
@@ -203,7 +203,6 @@ final class TriggerRuntimeTests: XCTestCase {
     _ = trigger.evaluate(frame, nowMs: 1000)
     _ = trigger.evaluate(frame, nowMs: 1250)
 
-    // Mid-rep, the subject steps out of frame.
     trigger.onPoseLost()
 
     enter.on = false
@@ -245,7 +244,6 @@ final class TriggerRuntimeTests: XCTestCase {
     engine.evaluate(frame, nowMs: 1300, into: &fired)
     XCTAssertEqual(try XCTUnwrap(fired.first).count, 2, "the count survived")
 
-    // A different id is a different trigger, and starts from zero.
     engine.setTriggers([spec(.cycle, id: "other")])
     fired.removeAll()
     enter.on = true

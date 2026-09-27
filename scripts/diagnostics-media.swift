@@ -1,16 +1,10 @@
-// Makes the photo and the clip the example app's `files` diagnostics scenario reads, from the
-// exported frame in ss/. Run by scripts/device-diagnostics.sh:
+// Makes the media for the example app's `files` diagnostics, run by scripts/device-diagnostics.sh:
 //
 //   xcrun swift scripts/diagnostics-media.swift ss/export-frame.png <output directory>
 //
-// Three files, each checked against the upright picture before the script succeeds:
-//
-// - pose-photo.jpg: the picture as it is.
-// - pose-photo-exif6.jpg: stored a quarter turn counter-clockwise with EXIF orientation 6, which
-//   is how a phone saves a portrait photo. Decoded correctly, it is the upright picture again.
-// - pose-clip.mp4: three seconds at 30 fps, stored sideways with a clockwise track transform, the
-//   way a phone records portrait video, and the person drifting right 3 pixels a frame, so a
-//   detector has a movement to measure.
+// Writes pose-photo.jpg; pose-photo-exif6.jpg, stored sideways with EXIF orientation 6 as a phone
+// saves a portrait photo; and pose-clip.mp4, 3 s at 30 fps stored sideways with a track transform,
+// the person drifting 3 px a frame. Each is checked to decode upright.
 
 import AVFoundation
 import CoreGraphics

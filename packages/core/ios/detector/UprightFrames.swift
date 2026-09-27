@@ -3,21 +3,10 @@ import CoreVideo
 import ImageIO
 import UIKit
 
-/**
- Video frames turned upright and scaled for detection, as pixels MediaPipe reads as they are.
-
- MediaPipe takes an orientation alongside a buffer, and in VIDEO mode it loses the body on about a
- third of the frames of a clip stored sideways, which is how a phone records portrait video. The
- same clip stored upright is tracked on every frame. So the pixels are turned before MediaPipe sees
- them and handed over as `.up`, which is what the live camera does through its capture connection,
- and what Android does in GL.
-
- One Core Image pass turns and scales each sampled frame on the GPU, into a buffer from a small
- pool, so a job allocates a handful of buffers rather than one per sample. A frame that is already
- upright at the size asked for is handed back untouched.
- */
+/// Turns the pixels rather than passing an orientation: given a sideways clip, VIDEO mode loses the
+/// body on about a third of its frames.
 final class UprightFrames {
-  /// The upright size frames come out at, which is what landmarks are normalized against.
+  /// What landmarks are normalized against.
   let size: CGSize
 
   private let orientation: CGImagePropertyOrientation
@@ -30,7 +19,6 @@ final class UprightFrames {
     self.size = size
   }
 
-  /// The frame upright at `size`, or nil when no buffer could be had for it.
   func upright(_ buffer: CVPixelBuffer) -> CVPixelBuffer? {
     let width = CVPixelBufferGetWidth(buffer)
     let height = CVPixelBufferGetHeight(buffer)
@@ -69,7 +57,6 @@ final class UprightFrames {
     return buffer
   }
 
-  /// The EXIF orientation a UIKit one means, which is what Core Image turns by.
   static func imageOrientation(_ orientation: UIImage.Orientation) -> CGImagePropertyOrientation {
     switch orientation {
     case .up: return .up

@@ -15,8 +15,7 @@ android {
     versionCode 1
     versionName '0.0.0'
 
-    // MediaPipe reaches its own classes from JNI, and neither AAR ships keep rules, so the library
-    // owns them on the consumer's behalf.
+    // MediaPipe reaches its classes from JNI and its AARs ship no keep rules, so we supply them.
     consumerProguardFiles 'proguard-rules.pro'
   }
 }
@@ -24,13 +23,9 @@ android {
 dependencies {
   implementation 'com.facebook.react:react-android'
 
-  // The wire encoder is deliberately free of JNI so it can be tested on a plain JVM, which is
-  // where a byte-order or block-offset mistake is cheap to find rather than device-only.
   testImplementation 'junit:junit:4.13.2'
 
-  // Pinned deliberately. tasks-vision is a thin facade from 0.10.33 on; the native libraries
-  // live in tasks-core, which it pulls transitively with all four ABIs.
-  // See docs/adr/0007-pin-mediapipe-0-10-35.md.
+  // Pinned: see docs/adr/0007-pin-mediapipe-0-10-35.md.
   implementation 'com.google.mediapipe:tasks-vision:0.10.35'
 
   def cameraxVersion = '1.6.1'

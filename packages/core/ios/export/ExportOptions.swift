@@ -1,24 +1,12 @@
 import Foundation
 import UIKit
 
-/// What `exportPose` was asked for. Defaults from guides/files.md.
+/// Defaults must match guides/files.md.
 struct ExportOptions {
-  /// The same config the camera's `overlay` prop takes, so a painted file and a live preview are
-  /// configured with one vocabulary rather than two.
   let overlay: OverlayConfig
   let drawOverlay: Bool
   let maxPoses: Int
-  /**
-   How sure the model has to be before it calls something a body.
-
-   Left out, it follows `maxPoses`, because the two are one decision: 0.5 for a single subject,
-   which is MediaPipe's own, and 0.3 above that, which is where a second person actually appears
-   rather than the first person twice. A number overrides it, and what the right number is for a
-   given piece of footage is the caller's to know.
-   */
   let minConfidence: Float
-  /// Detection samples a second. Between samples the last pose is held, exactly as the live
-  /// overlay holds one between inferences.
   let sampleFps: Int
   /// Long edge of the output, or 0 for the source's own size.
   let maxSize: Int
@@ -53,20 +41,12 @@ struct ExportOptions {
     )
   }
 
-  /// 0.1 to 1, the range the guide documents. At 1 the model has to be certain, which it rarely is.
   private static func minConfidence(_ raw: Any?, maxPoses: Int) -> Float {
     let auto = Double(StillConfidence.forMaxPoses(maxPoses))
     return Float(clamped(JS.number(raw) ?? auto, 0.1, 1, auto))
   }
 
-  /**
-   Where the file lands, created if it is not there yet.
-
-   The default is the app's caches directory: an export is derived data, and a package that wrote
-   into Documents by default would put files the user never asked for into their iCloud backup.
-   Apps that want it kept pass a directory of their own, which is also how the file ends up
-   somewhere they can upload or move it from.
-   */
+  /// Caches by default: an export is derived data, and Documents would put it in iCloud backups.
   private static func directory(_ raw: String?) throws -> URL {
     let base: URL
     switch raw {
@@ -93,10 +73,7 @@ struct ExportOptions {
     return base
   }
 
-  /**
-   Whatever a dead process left mid-write. Exports run serially on one queue, so nothing swept
-   here can belong to an export that is still running.
-   */
+  /// What a dead process left mid-write; exports run serially, so none belongs to a running one.
   private static func sweepStaging(_ base: URL) {
     let contents = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
     for name in contents where name.hasSuffix(".partial.mp4") {
@@ -104,8 +81,7 @@ struct ExportOptions {
     }
   }
 
-  /// Sanitized rather than trusted: this reaches the filesystem, and a name with a slash in it
-  /// would write outside the directory the caller chose.
+  /// Sanitized: a slash would write outside the directory the caller chose.
   private static func fileName(_ raw: String?, sourceName: String) -> String {
     let candidate = raw.flatMap { $0.isEmpty ? nil : $0 } ?? "\(sourceName)-pose"
     let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_ ."))
@@ -137,7 +113,6 @@ struct ExportError: LocalizedError {
   }
 }
 
-/// What came back, for the JavaScript side to turn into an `ExportResult`.
 struct ExportSummary {
   let url: URL
   let width: Int

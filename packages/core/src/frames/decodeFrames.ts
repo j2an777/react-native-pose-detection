@@ -26,10 +26,8 @@ export type DecodedBatch = {
   /** Set when the buffer could not be trusted. No frames are returned. */
   error?: string;
   /**
-   * Set with `error` when the buffer is well formed but was encoded under a layout that has since
-   * changed: a `data.select` or angle change landed between native writing it and this read. The
-   * next drain is in the new layout, so dropping this one is the whole fix, and it is not a failure
-   * anyone can act on.
+   * Set with `error` when a `data.select` or angle change landed between native writing the buffer
+   * and this read. The next drain is in the new layout, so this one is dropped, not reported.
    */
   stale?: boolean;
 };
@@ -40,17 +38,10 @@ function isCount(value: number): boolean {
   return Number.isInteger(value) && value >= 0;
 }
 
-/**
- * Turns one drained buffer into frames. Landmarks are `subarray` views, so nothing is copied or
- * parsed.
- *
- * A malformed buffer returns an `error` rather than throwing: this runs inside the tick handler,
- * where a throw would stall the drain loop permanently.
- */
+/** Landmarks are `subarray` views, so nothing is copied. A malformed buffer returns `error`. */
 export function decodeFrames(buffer: ArrayBuffer, options: DecodeOptions): DecodedBatch {
   if (buffer.byteLength < HEADER_FLOAT64S * Float64Array.BYTES_PER_ELEMENT) {
-    // The empty drain is the common case, not an error: native returns a bare header when the
-    // ring buffer had nothing in it.
+    // The common case, not an error: an empty ring buffer drains as a bare header.
     return EMPTY;
   }
 

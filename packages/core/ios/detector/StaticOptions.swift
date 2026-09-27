@@ -1,11 +1,7 @@
 import Foundation
 
-/**
- How sure the model has to be before it calls something a body in a photo or a video, when the
- caller has not said. One decision with `maxPoses` rather than a second one: 0.5 for a single
- subject, which is MediaPipe's own, and 0.3 above that, which is where a second person actually
- appears rather than the first person twice. See guides/files.md for the measurements.
- */
+/// MediaPipe's 0.5 for one subject; 0.3 for several, where a second person appears rather than the
+/// first one twice. Measured in guides/files.md.
 enum StillConfidence {
   static let single: Float = 0.5
   static let several: Float = 0.3
@@ -15,10 +11,9 @@ enum StillConfidence {
   }
 }
 
-/// What `detectOnImage` and `detectOnVideo` were asked for. Defaults from `guides/files.md`.
+/// Defaults must match `guides/files.md`.
 struct StaticOptions {
   let maxPoses: Int
-  /// Follows `maxPoses` unless the caller chose one, exactly as an export's does.
   let minConfidence: Float
   let angles: Bool
   let worldLandmarks: Bool
@@ -36,7 +31,7 @@ struct StaticOptions {
       minConfidence: confidence(raw?["minConfidence"], maxPoses: maxPoses),
       angles: JS.bool(raw?["angles"]) ?? true,
       worldLandmarks: JS.bool(raw?["worldLandmarks"]) ?? false,
-      // A single frame has nothing to smooth against, so this is off whatever was asked.
+      // One frame has nothing to smooth against.
       smoothing: false,
       fps: 0,
       startMs: 0,
@@ -51,7 +46,6 @@ struct StaticOptions {
       minConfidence: confidence(raw?["minConfidence"], maxPoses: maxPoses),
       angles: JS.bool(raw?["angles"]) ?? true,
       worldLandmarks: JS.bool(raw?["worldLandmarks"]) ?? false,
-      // JavaScript resolves `'auto'` against `maxPoses`. VIDEO mode already smooths one pose.
       smoothing: JS.bool(raw?["smoothing"]) ?? false,
       fps: max(1, JS.int(raw?["fps"]) ?? 10),
       startMs: max(0, JS.int64(raw?["startMs"]) ?? 0),

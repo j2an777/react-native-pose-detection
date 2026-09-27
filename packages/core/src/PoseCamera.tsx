@@ -40,9 +40,8 @@ function collectAngleJoints(condition: Condition, into: Set<string>): void {
 }
 
 /**
- * Holds one array instance while its contents are unchanged. These props are usually inline
- * literals, and memoizing on identity would reshape the wire format every render and break the
- * `WeakMap` accessor cache that keys on `PoseFrame.selection`.
+ * One frozen array while the contents are unchanged: these props are usually inline literals, and
+ * the accessor cache keys on `PoseFrame.selection` by identity.
  */
 function useStableList<T extends string>(value: readonly T[] | undefined): readonly T[] {
   const key = value === undefined ? '' : value.join(' ');
@@ -64,8 +63,8 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
 
   const { triggers, data, overlay, active, detection } = props;
 
-  // During render, before anything walks the conditions: a bad config fails at the call site
-  // with a path. The validator's depth limit makes the walk below safe on a cyclic config.
+  // During render, so a bad config fails at the call site. The validator's depth limit is also
+  // what keeps the walk below finite on a cyclic config.
   if (triggers && triggers.length > 0) assertValidTriggers(triggers);
   assertValidCameraNumbers(props);
 
@@ -86,8 +85,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     }, [requestedAngles, triggers, overlay]),
   );
 
-  // Exactly what `data.select` named. Angles are computed from the full landmark set before the
-  // buffer is narrowed, so wanting one never widens the payload. See ADR 0005.
+  // Exactly `data.select`: angles never widen it. See ADR 0005.
   const selected = useStableList<JointName>(data?.select);
   const selection = selected.length > 0 ? selected : undefined;
 
@@ -143,11 +141,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     };
   }, []);
 
-  /**
-   * Synchronous, and on this thread: the read reaches the view's ring buffer through its stream id,
-   * so two drains can never overlap or deliver out of order, and answering a tick never waits on
-   * native's main queue. A buffer from a layout that has just changed is dropped, not reported.
-   */
+  // Synchronous on this thread, so two drains never overlap or deliver out of order.
   const handleFrames = React.useCallback(() => {
     if (!mounted.current) return;
     try {
@@ -182,7 +176,6 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
         deliver(rest);
         return;
       }
-      // The frame cannot ride the event, so it is claimed here, on this thread. See ADR 0009.
       let frame;
       try {
         const buffer = getNativeModule().takeTriggerSnapshot(streamId, snapshotId);
@@ -198,8 +191,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
   React.useImperativeHandle(
     ref,
     (): PoseCameraRef => {
-      // Every command goes through `callView`, so one made in the frame or two before Fabric has
-      // mounted the native view waits for it rather than failing.
+      // A view command made before Fabric has mounted the native view waits for it, not fails.
       const view = <Result,>(invoke: (native: NativePoseCameraView) => Promise<Result>) =>
         callView(() => nativeRef.current, invoke);
       return {
@@ -237,7 +229,6 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
           if (!profile) throw new Error('The camera was unmounted before it answered.');
           return profile;
         },
-        // The mirror of the events, with the two values that move between them read live.
         getState: () => {
           const live = getNativeModule().readLiveState(streamId);
           return {
@@ -294,8 +285,6 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     callbacks.current.onPerformanceChange?.(performance);
   }, []);
 
-  // The native stream runs only while something holds it, and `onLog` is a listener the
-  // `addLogListener()` registry never sees. Without this hold, `onLog` alone received nothing.
   const logs = props.onLog !== undefined;
   React.useEffect(() => (logs ? holdLogStream() : undefined), [logs]);
 
@@ -306,16 +295,15 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     emitLogEntries(entries);
   }, []);
 
-  // Listed rather than spread: `onPose`, `onPoseBatch` and `onFramesDropped` are JavaScript-only
-  // and have no native counterpart.
+  // Listed, not spread: `onPose`, `onPoseBatch` and `onFramesDropped` have no native counterpart.
   return (
     <NativeView
       style={props.style}
       profile={props.profile}
       facing={props.facing}
       delegate={props.delegate}
-      // Both native props are integers: the string would fail to convert and leave the previous
-      // explicit rate in force. Absent is what native reads as `auto`.
+      // Native takes an integer: 'auto' would fail to convert and keep the last explicit rate.
+      // Absent is what native reads as `auto`.
       targetFps={props.targetFps === 'auto' ? undefined : props.targetFps}
       streamId={streamId}
       resolution={props.resolution}

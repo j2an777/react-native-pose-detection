@@ -1,10 +1,6 @@
 package com.posedetection
 
-/**
- * BlazePose landmark order, the skeleton, and the joints that have an angle. These three tables
- * are the contract from `src/types/joints.ts`, and iOS carries the same three. Any divergence is
- * a bug even when each side looks right alone.
- */
+/** Mirrors the three tables in src/types/joints.ts, as iOS does; they must stay identical. */
 internal object Skeleton {
     const val LANDMARK_COUNT = 33
     const val LANDMARK_STRIDE = 4
@@ -167,7 +163,7 @@ internal object Skeleton {
 
     const val CONNECTION_COUNT = 35
 
-    /** `[proximal, vertex, distal]` for each of the 12 joints where two limb segments meet. */
+    /** `[proximal, vertex, distal]` per joint. */
     private val ANGLE_TRIPLES: Map<String, IntArray> =
         mapOf(
             "leftShoulder" to intArrayOf(LEFT_HIP, LEFT_SHOULDER, LEFT_ELBOW),
@@ -184,11 +180,7 @@ internal object Skeleton {
             "rightAnkle" to intArrayOf(RIGHT_KNEE, RIGHT_ANKLE, RIGHT_FOOT_INDEX),
         )
 
-    /**
-     * The 12 angle joints in wire order. Derived from the table above rather than listed again, so
-     * a reorder there cannot leave a second list disagreeing with it. `mapOf` keeps insertion
-     * order, and that order is `ANGLE_JOINT_NAMES` in `src/types/joints.ts`.
-     */
+    /** Wire order: mapOf keeps insertion order, which must match ANGLE_JOINT_NAMES in joints.ts. */
     val ANGLE_JOINT_NAMES: Array<String> = ANGLE_TRIPLES.keys.toTypedArray()
 
     fun angleTriple(joint: String): IntArray? = ANGLE_TRIPLES[joint]

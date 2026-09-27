@@ -5,9 +5,7 @@ import { basename } from 'node:path';
 
 import { MODEL_FILE_PATTERN } from './manifest';
 
-// Matches expo-font and expo-asset: one top-level virtual group, with file paths relative to
-// `ios/`. Following the first-party pattern rather than inventing one keeps this working across
-// Xcode project layout changes.
+// One top-level virtual group with paths relative to `ios/`, as expo-font and expo-asset do.
 const RESOURCE_GROUP = 'Resources';
 
 /** Every model reference, any variant. One left behind after a switch ships a second model. */
@@ -22,8 +20,7 @@ function findModelReferences(project: XcodeProject): string[] {
     const raw = entry.path ?? entry.name;
     if (typeof raw !== 'string') continue;
 
-    // A project written by an older run on Windows holds backslashes. Normalizing here is what
-    // lets that reference be recognized and cleaned up rather than left beside a new one.
+    // A project written on Windows can hold backslashes; normalized, its reference is still found.
     const filePath = raw.replace(/^"|"$/g, '').replace(/\\/g, '/');
     if (MODEL_FILE_PATTERN.test(basename(filePath))) paths.add(filePath);
   }
@@ -49,9 +46,7 @@ export function syncModelReference(
   IOSConfig.XcodeUtils.ensureGroupRecursively(project, RESOURCE_GROUP);
   const groupKey = project.findPBXGroupKey({ name: RESOURCE_GROUP });
 
-  // A pbxproj path is always forward-slashed, whatever the platform running prebuild. Xcode
-  // treats a backslash as part of the filename, so path.join here would write a reference that
-  // no Mac can build, and that the stale-reference comparison below would never match again.
+  // Not path.join: Xcode reads a backslash as part of the filename, so pbxproj paths use `/`.
   const filepath = [projectName, RESOURCE_GROUP, fileName].join('/');
 
   const targetUuid = applicationTargetUuid(project);
@@ -60,9 +55,7 @@ export function syncModelReference(
     project.removeResourceFile(stale, { target: targetUuid }, groupKey);
   }
 
-  // No targetUuid: config-plugins then resolves the application target itself, which is what
-  // expo-font and expo-asset rely on. The first target is not always the app, and a model added
-  // to a widget or a test target never reaches the bundle.
+  // No targetUuid, so config-plugins picks the application target rather than merely the first.
   IOSConfig.XcodeUtils.addResourceFileToGroup({
     filepath,
     groupName: RESOURCE_GROUP,

@@ -8,25 +8,13 @@ import { theme } from '../theme';
 type Props = {
   children?: React.ReactNode;
   style?: StyleProp<ViewStyle>;
-  /** Rounded corners have to be on the blur itself, or it bleeds past them on Android. */
   radius?: number;
   intensity?: number;
 };
 
 /**
- * A translucent panel for the camera screen.
- *
- * Blur alone will not keep dark text readable over a bright frame, so every panel also carries a
- * near-white scrim and a hairline edge: the blur gives depth, the scrim gives contrast, and the
- * edge is what stops the panel dissolving into a pale background. The scrim is the blur's own
- * background rather than a child, because on Android an absolutely positioned child is laid out in
- * the padded content box and draws a square slab inside the rounded card.
- *
- * **Android gets no blur.** Its only real implementation needs a `blurTarget` ref to the view being
- * blurred, which cannot work here: these panels sit over a camera preview, which is a surface the
- * view hierarchy cannot sample. Asking for it anyway logs a warning on every mount and then falls
- * back to nothing, so the fallback is chosen deliberately instead, and the scrim is made opaque
- * enough to carry the panel on its own.
+ * A panel over the camera: blur for depth, a near-white scrim for contrast. No blur on Android,
+ * where expo-blur needs a `blurTarget` view and cannot sample a camera preview.
  */
 export function Glass({ children, style, radius = theme.radius.lg, intensity = 40 }: Props) {
   if (Platform.OS !== 'ios') {

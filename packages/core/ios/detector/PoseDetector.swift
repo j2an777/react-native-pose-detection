@@ -2,7 +2,6 @@ import Foundation
 import MediaPipeTasksVision
 import UIKit
 
-/// Everything `PoseLandmarkerOptions` needs, so building one takes a value rather than a list.
 private struct LandmarkerSpec {
   let modelPath: String
   let delegateKind: Delegate
@@ -17,17 +16,13 @@ enum DelegateRequest {
   case cpu
 }
 
-/// What a live-stream result carries back, whichever thread MediaPipe delivers it on.
+/// Called on MediaPipe's callback thread.
 protocol PoseDetectorObserver: AnyObject {
   func poseDetector(_ detector: PoseDetector, didDetect result: PoseLandmarkerResult, timestampMs: Int)
   func poseDetector(_ detector: PoseDetector, didFail error: Error)
 }
 
-/**
- Sits between the landmarker and the detector, because `poseLandmarkerLiveStreamDelegate` is a
- weak reference and the detector cannot be built until its landmarker exists. The relay can, so it
- breaks the ordering problem without making the landmarker optional for the rest of the file.
- */
+/// The landmarker takes its delegate when built, before the detector that wraps it can exist.
 private final class LiveStreamRelay: NSObject, PoseLandmarkerLiveStreamDelegate {
   weak var detector: PoseDetector?
 
@@ -41,52 +36,31 @@ private final class LiveStreamRelay: NSObject, PoseLandmarkerLiveStreamDelegate 
   }
 }
 
-/**
- The landmarker, and the bookkeeping around handing it frames.
-
- Unlike Android there is no separate error listener: the live-stream delegate carries the result
- and the error in one callback, so both arrive through `PoseDetectorObserver`.
- */
 final class PoseDetector {
-  /// A power of two so the cursor masks rather than divides.
+  /// A power of two: the cursor masks.
   private static let dispatchSlots = 8
   private static let probeSize: CGFloat = 256
 
   private let landmarker: PoseLandmarker
-  /// Held strongly here and weakly by the landmarker, which is what keeps it alive to be called.
+  /// The landmarker holds its delegate weakly; this keeps the relay alive.
   private let relay: LiveStreamRelay?
   let delegateKind: Delegate
   let modelFileName: String
-  /// MediaPipe smooths a stream's landmarks only for one pose, which is what `VisibilityClock` undoes.
+  /// MediaPipe smooths visibility only when this is 1, and `VisibilityClock` re-times that.
   let maxPoses: Int
 
-  /**
-   What the GPU probe found, when this build ran one: nil when the request was explicit or a cached
-   answer was used instead. The caller persists it, which is what makes the probe run once per
-   device and model rather than once per build.
-   */
+  /// The GPU probe's answer when this build ran one, for the caller to cache; nil otherwise.
   let probedGpu: Bool?
 
   weak var observer: PoseDetectorObserver?
 
-  /**
-   Guards the two pieces of state the analysis queue writes and MediaPipe's callback queue reads.
-   Swift has no `volatile`, and both are read once per frame, so one uncontended lock is cheaper
-   than any of the alternatives that would be correct.
-   */
+  /// The analysis queue writes what MediaPipe's callback queue reads.
   private let lock = NSLock()
 
-  /**
-   LIVE_STREAM rejects a timestamp that does not strictly increase, and one rejection takes the
-   stream down. Camera timestamps can repeat within a millisecond, so the value is clamped.
-   */
+  /// Clamped: one non-increasing timestamp kills LIVE_STREAM, and camera ones can repeat in a ms.
   private var lastTimestamp = 0
 
-  /**
-   When each in-flight timestamp was handed to MediaPipe, so a result can report what it cost.
-   `detectAsync` returns before the result arrives, so more than one frame is in flight and a
-   single "last dispatch" field would time the wrong one.
-   */
+  /// A ring, not one field: `detectAsync` returns early, so several frames can be in flight.
   private var dispatchTimestamps = [Int](repeating: 0, count: dispatchSlots)
   private var dispatchNanos = [UInt64](repeating: 0, count: dispatchSlots)
   private var dispatchCursor = 0
@@ -113,7 +87,6 @@ final class PoseDetector {
     return lastTimestamp
   }
 
-  /// Nanoseconds at dispatch for `timestampMs`, or 0 when it has already been overwritten.
   func dispatchNanos(for timestampMs: Int) -> UInt64 {
     lock.lock()
     defer { lock.unlock() }
@@ -138,7 +111,6 @@ final class PoseDetector {
     return timestamp
   }
 
-  /// IMAGE and VIDEO mode are synchronous, so there is no result callback to route.
   func detectImage(_ image: MPImage) throws -> PoseLandmarkerResult {
     return try landmarker.detect(image: image)
   }
@@ -147,10 +119,7 @@ final class PoseDetector {
     return try landmarker.detect(videoFrame: image, timestampInMilliseconds: timestampMs)
   }
 
-  /**
-   ARC frees the landmarker when the last reference goes, so there is no `close()` to forget. The
-   observer is cleared first: a result already in flight must not reach a view that is tearing down.
-   */
+  /// ARC frees the landmarker; this stops a result in flight from reaching a view tearing down.
   func shutdown() {
     observer = nil
   }
@@ -168,10 +137,7 @@ extension PoseDetector {
 }
 
 extension PoseDetector {
-  /**
-   The plugin installs exactly one model, so listing beats being told which variant. Sorted, so a
-   bundle that somehow holds two picks the same one on every launch rather than an arbitrary one.
-   */
+  /// The plugin bundles one model; sorted so a bundle with two picks the same one every launch.
   static func findModelPath() -> String? {
     guard let resources = Bundle.main.resourcePath else { return nil }
     let contents = (try? FileManager.default.contentsOfDirectory(atPath: resources)) ?? []
@@ -186,11 +152,7 @@ extension PoseDetector {
     return (path as NSString).lastPathComponent
   }
 
-  /**
-   A detector for a file rather than a camera. The CPU unless the caller has decided otherwise: a
-   photo is one inference, and compiling the GPU's shaders costs more than running it. See
-   `FileDetector` for when a video gets the GPU.
-   */
+  /// CPU by default: for one photo, compiling the GPU's shaders costs more than the inference.
   static func createForStillInput(
     modelPath: String,
     maxPoses: Int,
@@ -214,11 +176,8 @@ extension PoseDetector {
     )
   }
 
-  /**
-   `knownGpu` is the GPU probe's answer from an earlier build on this device and model, or nil when
-   the probe has never run here. With it, `auto` skips the probe, which builds and throws away a whole
-   second landmarker and was half the time between a mount and the first skeleton.
-   */
+  /// `knownGpu` is an earlier probe's answer for this device and model. It lets `auto` skip the
+  /// probe, a throwaway landmarker that took half the time from mount to the first skeleton.
   static func create(
     modelPath: String,
     request: DelegateRequest,
@@ -267,18 +226,8 @@ extension PoseDetector {
     #endif
   }
 
-  /**
-   Which delegate to actually build with.
-
-   **The simulator never gets the GPU.** MediaPipe converts a frame to a tensor through Metal, and
-   on a simulator that conversion fails inside an `absl` check, which calls `abort()`. There is no
-   catching that: the process is gone, and the crash lands on the first camera frame rather than at
-   setup, so nothing before it looks wrong. The probe below cannot help, because a probe that
-   reproduced the failure would take the app down with it.
-
-   Simulators have no real GPU to measure anyway, so the only thing lost is a configuration that
-   could not have told anyone anything true about performance.
-   */
+  /// Never the GPU on a simulator: MediaPipe's Metal frame conversion `abort()`s there on the first
+  /// frame, which no probe can catch.
   private static func resolveDelegate(_ request: DelegateRequest, modelPath: String) -> Delegate {
     #if targetEnvironment(simulator)
     if request != .cpu {
@@ -294,11 +243,7 @@ extension PoseDetector {
     #endif
   }
 
-  /**
-   Construction succeeds on devices whose GPU delegate then fails on the first real frame, so the
-   probe runs a real inference in IMAGE mode, where failure is catchable, before committing to GPU.
-   Costs one inference on a blank image at setup.
-   */
+  /// Some GPU delegates build fine and fail on the first frame; IMAGE mode makes that catchable.
   private static func gpuProducesAnInference(modelPath: String) -> Bool {
     do {
       let probe = try build(LandmarkerSpec(

@@ -9,11 +9,7 @@ import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-/**
- * These assert the buffer `src/frames/decodeFrames.ts` will be handed. The checks below are the ones that
- * decoder performs, restated: if a change here passes and that decoder would reject it, the two
- * have diverged and this suite is where it should surface, not on a device.
- */
+/** Restates the checks src/frames/decodeFrames.ts makes, so a divergence fails here, not on a device. */
 class FrameRingBufferTest {
     private fun shape(
         joints: IntArray = FrameShape.ALL_JOINTS,
@@ -23,7 +19,7 @@ class FrameRingBufferTest {
 
     private fun buffer(shape: FrameShape): FrameRingBuffer = FrameRingBuffer().apply { setLayout(shape) }
 
-    /** A frame whose every float is `seed + index`, so a misplaced block is visible as a wrong number. */
+    /** Every float is `seed + index`, so a misplaced block shows up as a wrong number. */
     private fun frame(
         shape: FrameShape,
         seed: Float,
@@ -47,7 +43,6 @@ class FrameRingBufferTest {
         return copy.asFloatBuffer()
     }
 
-    /** The block arithmetic `decodeFrames` rejects a buffer over. */
     private fun assertBlocksAddUp(raw: ByteBuffer) {
         val floatsPerFrame = header(raw, Wire.INDEX_FLOATS_PER_FRAME).toInt()
         val jointCount = header(raw, Wire.INDEX_JOINT_COUNT).toInt()
@@ -274,7 +269,6 @@ class FrameRingBufferTest {
         val frames = buffer(shape(angles = arrayOf("leftKnee")))
         frames.submit(frame(shape(angles = arrayOf("leftKnee")), 1f), 1.0, 0.0, buffered = true)
 
-        // A re-render that changes nothing about data must not throw away a pending flush.
         frames.setLayout(shape(angles = arrayOf("leftKnee")))
 
         assertEquals(1.0, header(frames.drain(), Wire.INDEX_FRAME_COUNT), 0.0)
@@ -290,7 +284,7 @@ class FrameRingBufferTest {
     }
 
     private companion object {
-        /** Mirrors the ring buffer's own capacity. A change there should fail these tests. */
+        /** Mirrors the ring buffer's capacity, so a change there fails these tests. */
         const val CAPACITY = 64
     }
 }

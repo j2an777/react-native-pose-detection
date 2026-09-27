@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Thin entry point. The implementation lives in plugin/build so the config plugin and the CLI
-// share one downloader, one manifest, and one installer.
+// The implementation lives in plugin/build, shared with the config plugin.
 const { run } = require('../plugin/build/cli');
 
 run(process.argv.slice(2))

@@ -1,10 +1,7 @@
 import XCTest
 @testable import PoseEngine
 
-/**
- The rate model from `guides/performance.md`. The first test is its worked table, so a change that
- moves one of those numbers has to come here and say so.
- */
+/// The first test is the worked table in `guides/performance.md`; keep the two in step.
 final class RateGovernorTests: XCTestCase {
   private func decide(
     profile: Profile = .auto,
@@ -74,7 +71,7 @@ final class RateGovernorTests: XCTestCase {
 
   func testAnExplicitTargetIsCappedAtWhatTheDeviceCanFinish() {
     XCTAssertEqual(decide(p50: 16, fps: 24), RateDecision(fps: 24, limitedBy: .target))
-    // 1000 / 50 = 20: asking for 30 would only queue frames behind each other.
+    // 1000 / 50 = 20.
     XCTAssertEqual(decide(p50: 50, fps: 30), RateDecision(fps: 20, limitedBy: .device))
   }
 

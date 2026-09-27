@@ -1,16 +1,8 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
-/**
- A test harness, not a distribution channel. The package this repository ships is the podspec
- beside this file; consumers never see this manifest, and `files` in package.json leaves it out
- of the tarball.
-
- It exists so the platform-independent half of the iOS source has a suite that runs anywhere Swift
- does, with no simulator, no Xcode project and no MediaPipe. That half is exactly the half Android
- covers with JUnit: the engine, the wire format, and the performance resolver. Everything touching
- AVFoundation, MediaPipe or ExpoModulesCore is compiled by the pod and is not listed here.
- */
+/// A test harness for the sources that need no UIKit, AVFoundation, MediaPipe or Expo. The podspec
+/// is what ships; package.json's `files` leaves this manifest out.
 let package = Package(
   name: "PoseEngine",
   platforms: [.macOS(.v12)],
@@ -20,10 +12,6 @@ let package = Package(
       path: ".",
       exclude: [
         "Tests",
-        // `view` and `export` are listed file by file rather than as directories so that
-        // OverlayProjection and ExportCanvas can be compiled in: where the picture lands and how
-        // big the output is are exactly the kind of arithmetic that deserves tests, and the rest
-        // of both directories needs UIKit, AVFoundation or MediaPipe.
         "view/OverlayParsing.swift",
         "view/OverlayView.swift",
         "view/OverlayRenderer.swift",

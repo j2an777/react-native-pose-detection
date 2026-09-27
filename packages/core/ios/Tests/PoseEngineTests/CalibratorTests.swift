@@ -1,10 +1,7 @@
 import XCTest
 @testable import PoseEngine
 
-/**
- The measured half of the governor: what this device's inference costs, how soon it is known, and
- what survives a restart and a relaunch. The numbers are the ones `guides/performance.md` promises.
- */
+/// The numbers are the ones `guides/performance.md` promises.
 final class CalibratorTests: XCTestCase {
   private let model = "pose_landmarker_full.task"
   private var suiteName = ""
@@ -25,7 +22,6 @@ final class CalibratorTests: XCTestCase {
     return Calibrator(defaults: defaults, memoryGiB: { memoryGiB })
   }
 
-  /// Feeds a steady inference cost at a camera-like cadence, returning whether anything moved.
   @discardableResult
   private func feed(
     _ calibrator: Calibrator,
@@ -82,7 +78,7 @@ final class CalibratorTests: XCTestCase {
     calibrator.start(modelFileName: model)
 
     let first = feed(calibrator, ms: 20, count: 15, from: 1_000)
-    // Past the cooldown and a full window: nothing left to move is what settled means.
+    // Past the cooldown and a full window.
     let second = feed(calibrator, ms: 20, count: 120, from: first.endMs)
     XCTAssertTrue(second.moved, "settling is reported once so it can be persisted")
     XCTAssertEqual(calibrator.phase, .settled)

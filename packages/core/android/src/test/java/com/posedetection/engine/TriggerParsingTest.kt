@@ -19,9 +19,8 @@ class TriggerParsingTest {
 
     @Test
     fun `a zero throttle is floored to one, because emit while promises not to fire every frame`() {
-        // Zero would put the whole trigger payload allocation into the steady-state frame path.
         assertEquals(1L, duration(0, 250L, floor = 1L))
-        // Debounce and minDuration are genuinely allowed to be zero: that means no delay.
+        // Debounce and minDuration may be zero, meaning no delay.
         assertEquals(0L, duration(0, 0L))
     }
 }

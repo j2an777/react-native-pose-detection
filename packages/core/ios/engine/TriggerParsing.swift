@@ -2,11 +2,7 @@ import Foundation
 
 let defaultWhileThrottleMs: Int64 = 250
 
-/**
- JavaScript validates every trigger before native sees one, so this half is lenient by design:
- what it cannot read becomes a condition that never matches, and says so in the log rather than
- failing a camera over a config the validator already approved.
- */
+/// Lenient: JavaScript already validated, so what this cannot read is logged and never matches.
 func parseTriggers(_ raw: [Any]?) -> [TriggerSpec] {
   guard let raw = raw, !raw.isEmpty else { return [] }
 
@@ -16,8 +12,7 @@ func parseTriggers(_ raw: [Any]?) -> [TriggerSpec] {
   for entry in raw {
     guard let map = JS.dictionary(entry), let id = JS.string(map["id"]) else { continue }
     let enter = parseCondition(map["enter"])
-    // Absent means "when `enter` stops holding". A JavaScript null arrives as NSNull rather than
-    // as a missing key, and reading that as a condition would make it one that never matches.
+    // No exit means "until `enter` stops holding". A JS null arrives as NSNull, not a missing key.
     let rawExit = map["exit"]
     let exit: any PoseCondition = JS.isNull(rawExit) ? NotCondition(inner: enter) : parseCondition(rawExit)
 
@@ -35,11 +30,7 @@ func parseTriggers(_ raw: [Any]?) -> [TriggerSpec] {
   return specs
 }
 
-/**
- `floor` is 1 for `throttleMs`: zero would emit on every frame under a name that promises not to,
- and it would put the whole trigger payload allocation into the steady-state frame path. Debounce
- and minDuration are genuinely allowed to be zero, which means "no delay".
- */
+/// Intervals pass floor 1: zero would emit on every frame. Debounce and minDuration may be zero.
 func duration(_ value: Any?, _ fallback: Int64, floor: Int64 = 0) -> Int64 {
   guard let number = JS.int64(value) else { return fallback }
   return max(number, floor)
@@ -106,7 +97,6 @@ func landmarkCondition(_ map: [String: Any], _ joint: String, _ axis: Int) -> an
 }
 
 func velocityCondition(_ map: [String: Any], _ subject: String, _ axis: Int) -> any PoseCondition {
-  // `centerOfMass` is not a joint, and it is the only non-joint a velocity can name.
   var index = noJoint
   if subject != "centerOfMass" {
     guard let resolved = jointIndex(subject) else { return NeverCondition() }
@@ -122,7 +112,7 @@ func jointIndex(_ name: String) -> Int? {
   return nil
 }
 
-/// An absent bound and an unmeasurable value are both NaN, and both mean "does not constrain".
+/// NaN when absent, which constrains nothing.
 func bound(_ value: Any?) -> Float {
   guard let number = JS.number(value) else { return .nan }
   return Float(number)

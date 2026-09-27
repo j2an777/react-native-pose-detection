@@ -12,17 +12,8 @@ import { UploadScreen } from './src/screens/UploadScreen';
 import { theme } from './src/theme';
 
 /**
- * Three screens and a floating bar.
- *
- * This file is deliberately identical to the bare app's. The two are kept as separate copies rather
- * than sharing a directory, because the point of having both is that each proves its own install
- * path end to end: a shared source tree would mean one app's build proving very little about the
- * other's. When one changes, copy it across.
- *
- * The camera is mounted only while its tab is selected, so leaving the tab genuinely releases it
- * rather than leaving it running behind a screen nobody is looking at. On that tab the bar is
- * hidden and the screen's own close button takes over, because the camera is the one thing here
- * that deserves the whole display.
+ * Identical in both example apps, kept as copies so each proves its own install path. The camera
+ * mounts only while its tab is selected, so leaving the tab releases it.
  */
 export default function App() {
   const [tab, setTab] = React.useState<TabId>('home');
@@ -31,7 +22,6 @@ export default function App() {
   const [autoRun, setAutoRun] = React.useState<DiagnosticsRequest | null>(null);
   const live = tab === 'live';
 
-  // A launch that asks for a diagnostics sweep opens the harness and runs it with nobody tapping.
   React.useEffect(() => {
     void diagnosticsRequest().then((request) => {
       if (!request) return;

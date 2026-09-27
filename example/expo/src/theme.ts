@@ -1,15 +1,7 @@
 import { Platform } from 'react-native';
 
-/**
- * One palette, one scale.
- *
- * Light by default, with a single accent taken from the cyan the package paints with, darkened
- * enough to hold contrast on white. Everything else is neutral: on a screen whose subject is a
- * camera frame or a painted photo, the interface should be the quietest thing on it.
- */
 export const theme = {
   color: {
-    /** A tinted page with white cards on it, rather than white on white: depth without shadow. */
     background: '#F4F6F8',
     surface: '#FFFFFF',
     surfaceSunken: '#E9EDF1',
@@ -22,7 +14,7 @@ export const theme = {
 
     accent: '#0B7C93',
     accentSoft: '#DBF1F6',
-    /** What the overlay paints with. Vivid, because it sits on video rather than on paper. */
+    /** The skeleton's color: vivid, because it is drawn over video. */
     overlay: '#00E5FF',
 
     danger: '#D93A4B',
@@ -31,7 +23,7 @@ export const theme = {
 
     /** Behind glass over the camera, so a control stays readable on a bright frame. */
     scrim: 'rgba(255,255,255,0.72)',
-    /** Android has no blur behind a camera surface, so its panels carry the contrast alone. */
+    /** Android's glass, which has no blur and carries the contrast alone. */
     scrimSolid: 'rgba(255,255,255,0.94)',
   },
 
@@ -52,13 +44,7 @@ export const theme = {
     tiny: 11,
   },
 
-  /**
-   * One soft shadow, used only where an element genuinely floats.
-   *
-   * Android's `elevation` follows a different curve from an iOS shadow, and a value that reads as a
-   * gentle lift on one reads as a dark halo on the other, so the two are tuned apart rather than
-   * shared.
-   */
+  /** Tuned per platform: Android's `elevation` at an iOS shadow's strength reads as a dark halo. */
   lift: Platform.select({
     ios: {
       shadowColor: '#0B1220',
@@ -69,14 +55,7 @@ export const theme = {
     default: { elevation: 2 },
   }),
 
-  /**
-   * For the one element that floats over everything else.
-   *
-   * iOS renders a wide, soft, tinted shadow and needs a strong one before it reads as lifted at
-   * all. Android's `elevation` draws a tighter grey shape that turns into a dark halo at the same
-   * apparent strength, so it goes the other way. The two numbers are not a conversion of each
-   * other; they are what each platform needs to produce the same impression.
-   */
+  /** For the one element that floats over everything, tuned per platform as `lift` is. */
   liftStrong: Platform.select({
     ios: {
       shadowColor: '#0B1220',

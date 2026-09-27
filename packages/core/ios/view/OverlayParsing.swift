@@ -1,10 +1,6 @@
 import UIKit
 
-/**
- Packed ARGB, the same representation Android's `Color` uses, so a config that draws one color
- there cannot quietly draw another here. The `UIColor` is derived once when the view adopts a
- config, never on the draw path.
- */
+/// ARGB, packed the way Android's `Color` is, so a config draws the same color on both.
 struct PackedColor: Equatable {
   let argb: UInt32
 
@@ -37,7 +33,7 @@ struct OverlayConfig: Equatable {
   var pointRadius: CGFloat = 4
   var minVisibility: Float = 0.5
 
-  /// `nil` means every joint. A mask of indices when `only` narrows it.
+  /// nil draws every joint; otherwise a mask indexed by landmark.
   var only: [Bool]?
   var angles: [AngleOverlaySpec] = []
 }
@@ -49,8 +45,7 @@ func parseOverlay(_ raw: [String: Any]) -> OverlayConfig {
 
   if let value = JS.bool(raw["landmarks"]) { config.landmarks = value }
   if let value = JS.bool(raw["connections"]) { config.connections = value }
-  // Clamped rather than trusted: these come from a JavaScript object that may have been built
-  // dynamically and skipped validation, and a negative stroke or radius draws nothing.
+  // Clamped: a config built dynamically may have skipped the JavaScript validation.
   config.lineWidth = size(raw["lineWidth"], fallback: 3)
   config.pointRadius = size(raw["pointRadius"], fallback: 4)
   if let value = JS.number(raw["minVisibility"]) { config.minVisibility = Float(clamped(value, 0, 1, 0.5)) }
@@ -83,8 +78,6 @@ private func jointMask(_ names: [Any]) -> [Bool] {
 
 func parseAngle(_ raw: [String: Any]) -> AngleOverlaySpec? {
   guard let joint = JS.string(raw["joint"]) else { return nil }
-  // JS validation rejects a non-angle joint before it reaches here, so a miss means a config built
-  // dynamically that skipped that check. Skipping the arc beats drawing a wrong one.
   guard let triple = Skeleton.angleTriple(joint) else {
     PoseLog.warn(.overlay, "\(joint) has no angle, skipping its arc")
     return nil
@@ -96,23 +89,19 @@ func parseAngle(_ raw: [String: Any]) -> AngleOverlaySpec? {
     label: JS.bool(raw["label"]) ?? true,
     radius: CGFloat(JS.number(raw["radius"]).map { clamped($0, 1, .greatestFiniteMagnitude, 40) } ?? 40),
     color: parseColor(raw["color"]),
-    // Capped because a large value would build a long string on the draw path every frame.
+    // Capped: a large value would build a long string on the draw path every frame.
     decimals: min(max(JS.int(raw["decimals"]) ?? 0, 0), maxLabelDecimals),
     minVisibility: Float(JS.number(raw["minVisibility"]).map { clamped($0, 0, 1, 0.5) } ?? 0.5)
   )
 }
 
-/// NaN survives a clamp, and a NaN `minVisibility` should disable the gate rather than clamp to it.
+/// NaN survives min/max, and a NaN `minVisibility` would pass every joint, so it gets the fallback.
 func clamped(_ value: Double, _ low: Double, _ high: Double, _ fallback: Double) -> Double {
   if value.isNaN { return fallback }
   return min(max(value, low), high)
 }
 
-/**
- `#RRGGBB` and `#AARRGGBB`, plus the same handful of names Android's `Color.parseColor` accepts.
- The names are here rather than left to iOS so that `color: 'red'` means the same thing on both
- platforms instead of drawing on one and warning on the other.
- */
+/// `#RRGGBB`, `#AARRGGBB`, and the names Android's `Color.parseColor` accepts, so both agree.
 func parseColor(_ value: Any?) -> PackedColor? {
   guard let text = JS.string(value)?.trimmingCharacters(in: .whitespaces) else { return nil }
 
@@ -130,7 +119,6 @@ func parseColor(_ value: Any?) -> PackedColor? {
     PoseLog.warn(.overlay, "could not parse the color \"\(text)\"")
     return nil
   }
-  // Six digits carry no alpha, so it is opaque, which is what Color.parseColor does too.
   return PackedColor(argb: digits.count == 6 ? value | 0xFF00_0000 : value)
 }
 

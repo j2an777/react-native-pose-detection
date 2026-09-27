@@ -11,11 +11,11 @@ export type StaticOptions = {
   /** 1 to 5. Default 1. The subject, the largest body, is always the first frame. */
   maxPoses?: number;
   /**
-   * How sure the model has to be before it calls something a body, 0.1 to 1. Left out, it follows
-   * `maxPoses`: `0.5` for one subject and `0.3` above that, the same rule `exportPose` uses.
+   * How sure the model must be to call something a body, 0.1 to 1. Default 0.5 at `maxPoses: 1`,
+   * 0.3 above it.
    */
   minConfidence?: number;
-  /** `true` computes all twelve. Default `true`, unlike the live path, where the default is none. */
+  /** `true` computes all twelve, a list only those. Default `true`, unlike the live camera. */
   angles?: boolean | readonly AngleJointName[];
   worldLandmarks?: boolean;
   /** Narrows the landmark buffer, exactly as `data.select` does. */
@@ -23,17 +23,11 @@ export type StaticOptions = {
 };
 
 export type VideoOptions = StaticOptions & {
-  /**
-   * Sampling rate, not the video's own frame rate. Default 10. Each frame is the subject's, the
-   * largest body in it, and carries its real position in the video as its `timestamp`.
-   */
+  /** Samples per second, not the video's own frame rate. Default 10. */
   fps?: number;
   startMs?: number;
   endMs?: number;
-  /**
-   * Temporal, so unlike a still image this one means something. `'auto'` (the default) is off for
-   * one pose, which MediaPipe's VIDEO mode already smooths, and on for several, where it does not.
-   */
+  /** `'auto'` (default): off for one pose, which MediaPipe already smooths, on for several. */
   smoothing?: 'auto' | boolean;
   /** 0 to 1. Never receives frames. */
   onProgress?: (progress: number) => void;
@@ -42,8 +36,7 @@ export type VideoOptions = StaticOptions & {
 export type VideoTask = {
   /**
    * Resolves with everything decoded, including after `cancel()`. Rejects with
-   * `VIDEO_DECODE_FAILED` when the file cannot be read, `MODEL_NOT_FOUND` when no model is bundled,
-   * and `DETECTION_FAILED` when inference itself fails.
+   * `VIDEO_DECODE_FAILED`, `MODEL_NOT_FOUND` or `DETECTION_FAILED`.
    */
   readonly frames: Promise<PoseFrame[]>;
   /** Stops sampling. `frames` then resolves with what was decoded up to that point. */
@@ -63,7 +56,6 @@ function nativeOptions(
   // onProgress is a JavaScript callback and cannot cross. Progress arrives as an event instead.
   const rest = { ...((options ?? {}) as VideoOptions) };
   delete rest.onProgress;
-  // Native reads a boolean. `'auto'` is resolved here, where `maxPoses` is.
   const smoothing = resolveSmoothing(rest.smoothing, rest.maxPoses);
   return { ...rest, smoothing, angles: angleJoints.length > 0, angleJoints: [...angleJoints] };
 }
@@ -82,11 +74,8 @@ function decode(
 }
 
 /**
- * The same detector, no camera. One `PoseFrame` per detected pose, the subject first, so a photo of
- * two people decodes to two. The photo is decoded upright, with its EXIF orientation applied.
- *
- * Rejects with `IMAGE_DECODE_FAILED` when the file cannot be read, `MODEL_NOT_FOUND` when no model
- * is bundled, and `DETECTION_FAILED` when inference itself fails.
+ * One `PoseFrame` per pose found, largest body first, EXIF orientation applied. Rejects with
+ * `IMAGE_DECODE_FAILED`, `MODEL_NOT_FOUND` or `DETECTION_FAILED`.
  */
 export async function detectOnImage(uri: string, options?: StaticOptions): Promise<PoseFrame[]> {
   assertValidFileOptions(options);
@@ -98,9 +87,8 @@ export async function detectOnImage(uri: string, options?: StaticOptions): Promi
 let nextTaskId = 1;
 
 /**
- * A task rather than a bare promise: a clip can take minutes, and something has to be able to stop
- * it. Cancelling resolves `frames` with what was decoded rather than rejecting, because those
- * frames are real and throwing them away is not what cancel means.
+ * One frame per sample with a body in it, the largest body's, stamped with its position in the
+ * video. Cancelling resolves with the frames so far, since those are real.
  */
 export function detectOnVideo(uri: string, options?: VideoOptions): VideoTask {
   assertValidFileOptions(options);

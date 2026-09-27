@@ -60,42 +60,21 @@ internal enum class ThermalState {
     fun nameForJs(): String = name.lowercase()
 }
 
-/**
- * Why the inference rate is what it is. Reported with every rate, so a number below what was asked
- * for always comes with its reason.
- */
+/** The public `LimitedBy`; each value is documented in `src/types/camera.ts`. */
 internal enum class LimitedBy(
     val forJs: String,
 ) {
-    /** The camera's own frame rate: nothing faster exists to run on. */
     CAMERA("camera"),
-
-    /** What this device can finish within its duty budget, as measured. */
     DEVICE("device"),
-
-    /** An explicit `targetFps`. */
     TARGET("target"),
-
-    /** The ceiling a named profile sets below the camera's rate. */
     PROFILE("profile"),
-
-    /** Heat, including detection paused at `critical`. */
     THERMAL("thermal"),
-
-    /** Battery Saver. */
     LOW_POWER("lowPower"),
-
-    /** Nobody has been in frame for a while. */
     IDLE("idle"),
-
-    /** Detection is off, or the camera is not running. */
     PAUSED("paused"),
 }
 
-/**
- * Inference rates while nobody is in frame: soon after they leave, and once they have been gone
- * long enough that the device is probably propped up on a stand.
- */
+/** With nobody in frame: [first] soon after they leave, [deep] once the phone is likely on a stand. */
 internal data class IdleRates(
     val first: Int,
     val deep: Int,
@@ -114,13 +93,7 @@ internal data class IdleRates(
     }
 }
 
-/**
- * One profile's row of the governor, the table in `guides/performance.md`.
- *
- * The duty is the share of time inference may occupy. Running near capacity but not at it keeps
- * MediaPipe's one-frame queue empty, which is the lowest latency the landmarker has, and leaves the
- * thermal margin that keeps a long session cool: at 100% every frame waits for the one before it.
- */
+/** Duty is inference's share of time; under 1 it keeps MediaPipe's queue empty and the device cool. */
 internal data class ProfileBudget(
     /** A ceiling below the camera's rate, or null for the camera's own. */
     val ceiling: Int?,
@@ -130,7 +103,6 @@ internal data class ProfileBudget(
     val idle: IdleRates?,
     /** False for the one profile that opts out of every heat response short of critical. */
     val heatBelowCritical: Boolean,
-    /** `efficient` also scales its rate at `fair`: it is the profile that treats warmth as a reason. */
     val scaleAtFair: Boolean,
     /** Null follows the device's memory, otherwise a preset. */
     val preview: String?,
@@ -159,18 +131,14 @@ internal object Budgets {
         }
 }
 
-/** Preview and analysis presets. Fixed for a session: nothing the governor learns may restart the camera. */
+/** Fixed for a session: nothing the governor learns may restart the camera. */
 internal data class CameraGeometry(
     val preview: String,
     val analysis: String,
 )
 
 internal object GeometryResolver {
-    /**
-     * Where `auto` moves the preview to 1080p. A phone sold as 6 GB reports a little under 6 GiB,
-     * so the threshold sits below the marketing number rather than on it; the old one sat on it,
-     * stepped down once more on top, and opened those phones at 640x480.
-     */
+    /** Below 6: a phone sold as 6 GB reports a little under 6 GiB. */
     const val HIGH_MEMORY_GIB = 5.5f
 
     fun resolve(
@@ -190,7 +158,6 @@ internal object GeometryResolver {
     private const val AUTO = "auto"
 }
 
-/** Every input the rate depends on, so the governor takes one value rather than seven. */
 internal data class RateRequest(
     val profile: Profile,
     val policy: ThermalPolicy,
@@ -203,7 +170,6 @@ internal data class RateRequest(
     val requestedFps: Int?,
 )
 
-/** What the governor decided. A rate of zero means detection is paused. */
 internal data class RateDecision(
     val fps: Int,
     val limitedBy: LimitedBy,
@@ -211,33 +177,15 @@ internal data class RateDecision(
     val detectionPaused: Boolean get() = fps <= 0
 }
 
-/**
- * The rate model from `guides/performance.md`, in one place so it cannot be applied in two
- * different orders by two different callers.
- *
- * ```text
- * nominal  min(camera, capacity(duty nominal))
- * fair     min(camera, capacity(duty fair))
- * serious  min(camera / 2, capacity(0.5))
- * critical detection paused, preview kept
- * ```
- *
- * where `capacity(d) = floor(d × 1000 ÷ p50)`: the rate at which inference is busy a share `d` of
- * the time. The camera is the ceiling because inferring faster than frames arrive is impossible,
- * and 30 is where it is pinned: a phone asked for 60 ran warm within minutes for a skeleton that
- * looked identical at half that.
- */
+/** The rate model from `guides/performance.md`, in one place so no two callers order it differently. */
 internal object RateGovernor {
-    /** Below this a governed skeleton reads as broken. Heat and idle may go lower; the device may not. */
+    /** Below this a skeleton reads as broken. Heat and idle may go lower; device capacity may not. */
     const val FLOOR_FPS = 10
     const val LOW_POWER_CEILING = 24
     const val FAIR_SCALE = 0.75f
     const val SERIOUS_DUTY = 0.5f
 
-    /**
-     * The rate at which inference is busy a share [duty] of the time. Null before anything has been
-     * measured, which is not a slow device but an unknown one: the ceiling applies until it is known.
-     */
+    /** The rate keeping inference busy [duty] of the time. Null when unmeasured: unknown is not slow. */
     fun capacity(
         duty: Float,
         p50Ms: Float,
@@ -246,7 +194,6 @@ internal object RateGovernor {
         return kotlin.math.floor(duty * 1_000f / p50Ms).toInt()
     }
 
-    /** The heat the rules act on: the policy and the profile decide which readings count at all. */
     fun effectiveHeat(request: RateRequest): ThermalState {
         val critical = if (request.thermal == ThermalState.CRITICAL) ThermalState.CRITICAL else ThermalState.NOMINAL
         return when (request.policy) {
@@ -271,8 +218,7 @@ internal object RateGovernor {
             if (halved < decision.fps) decision = RateDecision(halved, LimitedBy.THERMAL)
         }
 
-        // The person asking for less work. An explicit target and `unrestricted` are someone having
-        // already decided, so they keep their rate and the OS throttles the silicon on its own.
+        // An explicit target or `unrestricted` has already decided; the OS throttles those itself.
         if (request.lowPower &&
             requested == null &&
             request.profile != Profile.UNRESTRICTED &&
@@ -283,10 +229,7 @@ internal object RateGovernor {
         return decision
     }
 
-    /**
-     * An explicit target, capped at what the device can finish. Feeding MediaPipe faster than that
-     * only queues frames behind each other, which adds a frame of latency and buys nothing.
-     */
+    /** Capped at device capacity: feeding MediaPipe faster only queues frames and adds latency. */
     private fun explicit(
         requested: Int,
         camera: Int,
@@ -333,13 +276,7 @@ internal object RateGovernor {
     }
 }
 
-/**
- * The thermal state the governor acts on, which is not always the one the OS just reported.
- *
- * Heat is adopted the moment it rises. Cooling is adopted only after it has held for thirty
- * seconds, at the warmest level seen during that time, so a device hovering on a boundary does not
- * flap the rate up and down every second, which reads as stutter and saves nothing.
- */
+/** Heat is adopted at once, cooling only after [COOL_DOWN_MS], at the warmest level seen meanwhile. */
 internal class ThermalHysteresis {
     var state = ThermalState.NOMINAL
         private set
@@ -347,7 +284,7 @@ internal class ThermalHysteresis {
     private var coolerSinceMs = 0L
     private var coolerCandidate = ThermalState.NOMINAL
 
-    /** Feeds one reading. Returns true when the state the governor acts on changed. */
+    /** True when [state] changed. */
     fun update(
         raw: ThermalState,
         nowMs: Long,
@@ -376,9 +313,8 @@ internal class ThermalHysteresis {
     }
 }
 
-/** The tier is a label now, reported so an app can reason about the device. It drives nothing. */
+/** The tier is only a label reported to the app; it drives nothing. */
 internal object AutoTuner {
-    /** A p50 that sustains ~25 fps and up is a device that can carry high-tier work. */
     const val HIGH_TIER_MAX_P50_MS = 22f
     const val MEDIUM_TIER_MAX_P50_MS = 45f
 

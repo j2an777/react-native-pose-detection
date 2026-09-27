@@ -50,7 +50,7 @@ test('a joint with no angle is rejected with a message that says why', () => {
 });
 
 test('a prototype key is not a joint name', () => {
-  // `key in object` walks the prototype chain, so this used to pass every guard in the file.
+  // `key in object` walks the prototype chain, so a guard built on it would pass this.
   const issues = issuesFor({
     id: 'a',
     emit: 'enter',
@@ -133,7 +133,7 @@ test('a misspelled key is reported rather than silently ignored', () => {
 });
 
 test('an explicitly undefined bound counts as absent, not as present', () => {
-  // This is what spreading an optional field produces, and it used to be read as a bound.
+  // What spreading an optional field produces.
   const issues = issuesFor({
     id: 'a',
     emit: 'enter',

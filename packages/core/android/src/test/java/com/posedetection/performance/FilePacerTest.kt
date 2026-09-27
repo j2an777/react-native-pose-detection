@@ -5,7 +5,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Heat costs a file job time, never frames: full speed, half speed, or a pause. */
 class FilePacerTest {
     private var now = 0L
     private var heat = ThermalState.NOMINAL

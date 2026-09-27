@@ -4,8 +4,7 @@ import { LANDMARK_OFFSET, LANDMARK_STRIDE } from '../types/frame';
 import type { JointName } from '../types/joints';
 import { JOINT_INDEX } from '../types/joints';
 
-// `PoseFrame.selection` is the same frozen array on every frame of a session, so the position
-// lookup is built once per selection rather than scanned per access.
+// Keyed by the frozen `selection` every frame shares, so each lookup is built once, not per read.
 const selectionIndexCache = new WeakMap<readonly JointName[], Partial<Record<JointName, number>>>();
 
 function positionOf(frame: PoseFrame, joint: JointName): number {
@@ -50,8 +49,8 @@ export function hasLandmark(frame: PoseFrame, joint: JointName): boolean {
 }
 
 /**
- * Reads four floats out of the frame buffer. Nothing is parsed and the buffer is never copied,
- * but the returned object is an allocation. Use `landmarkInto()` on the per-frame path.
+ * Allocates one small object; use `landmarkInto()` on a per-frame path. Throws `PoseConfigError`
+ * for a joint the frame does not carry.
  */
 export function landmark(frame: PoseFrame, joint: JointName): Landmark {
   const base = floatOffset(frame, frame.landmarks, joint);
@@ -98,7 +97,7 @@ export function worldLandmark(frame: PoseFrame, joint: JointName): Landmark | nu
   };
 }
 
-/** One float, no allocation. `0` when the joint is absent, rather than throwing. */
+/** No allocation. `0` when the joint is absent, rather than throwing. */
 export function visibilityOf(frame: PoseFrame, joint: JointName): number {
   if (frame.landmarks.length === 0) return 0;
   const position = positionOf(frame, joint);
@@ -106,7 +105,7 @@ export function visibilityOf(frame: PoseFrame, joint: JointName): number {
   return read(frame.landmarks, position * LANDMARK_STRIDE + LANDMARK_OFFSET.visibility);
 }
 
-/** Gate on this before trusting a coordinate from a joint that can leave frame. */
+/** Visibility at or above `minVisibility`, 0.5 by default. Gate a coordinate on it. */
 export function isVisible(frame: PoseFrame, joint: JointName, minVisibility = 0.5): boolean {
   return visibilityOf(frame, joint) >= minVisibility;
 }

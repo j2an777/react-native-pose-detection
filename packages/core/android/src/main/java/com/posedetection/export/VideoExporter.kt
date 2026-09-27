@@ -18,19 +18,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
-/**
- * Two passes: detect the poses, then transcode the video with them painted on.
- *
- * Detection runs first, over the whole clip at `sampleFps`, and keeps only landmarks: a minute of
- * video at ten samples a second is about three hundred kilobytes, so the whole result fits in
- * memory and the transcode never has to wait for an inference. The alternative, detecting inside
- * the transcode loop, would mean reading frames back off the GPU to get pixels MediaPipe can see,
- * upside down and at full resolution, on every sampled frame.
- *
- * The transcode itself never leaves the GPU: decoder to [ExportGl] to encoder. The skeleton is
- * drawn into a bitmap only when the pose changes, ten times a second rather than thirty, and
- * uploaded as a texture.
- */
+/** Detect, then transcode: a minute of landmarks is ~300 KB, and the transcode's pixels stay on the GPU. */
 internal class VideoExporter(
     private val context: Context,
     private val uri: String,
@@ -49,13 +37,7 @@ internal class VideoExporter(
         return transcode(poses)
     }
 
-    // MARK: Pass one, the poses
-
-    /**
-     * Frames come back already turned upright, which is the same space the transcode draws in, so
-     * the landmarks need no correction between the two passes. Each pose carries its frame's real
-     * position in the video, which is what the transcode matches frames against.
-     */
+    /** Frames arrive upright, the space the transcode draws in, so landmarks need no correction. */
     private fun detect(): List<Pose> {
         var sampler: VideoFrameSampler? = null
         var detector: FileDetector? = null
@@ -81,10 +63,8 @@ internal class VideoExporter(
                 val timestamp = maxOf(frame.timestampMs, lastTimestamp + 1)
                 lastTimestamp = timestamp
                 val bodies = PoseExport.poses(detector.detect(BitmapImageBuilder(frame.bitmap).build(), timestamp))
-                // Every sample, the empty ones too: an empty one is what stops the skeleton being
-                // painted once the person has left, as on iOS.
+                // Empty samples too: they stop the skeleton being painted after the person leaves.
                 poses.add(Pose(frame.timestampMs, bodies))
-                // The detect pass is the slow half, so it owns most of the progress bar.
                 report(DETECT_SHARE * sampler.progress(frame))
                 if (!pacer.rest { cancelled.get() }) break
             }
@@ -94,8 +74,6 @@ internal class VideoExporter(
         }
         return poses
     }
-
-    // MARK: Pass two, the picture
 
     @Suppress("LongMethod")
     private fun transcode(poses: List<Pose>): ExportSummary {
@@ -108,11 +86,7 @@ internal class VideoExporter(
         var audio: ExportAudio? = null
         val output = File(options.directory, "${options.fileName}.mp4")
 
-        // Written under a staging name and renamed into place at the end, so a process that dies
-        // mid-write can never leave behind something that looks like a finished export. Whatever
-        // a dead process does leave is swept the next time the directory is prepared. The last
-        // export under this name stays where it is until then: the rename replaces it in one
-        // step, so a cancel or a failure never costs the file this one would have replaced.
+        // Staged, then renamed in one step: a failure leaves no fake finished file and keeps the old one.
         val staging = File(options.directory, "${options.fileName}${PoseExport.STAGING_SUFFIX}.mp4")
         staging.delete()
         var complete = false
@@ -145,8 +119,7 @@ internal class VideoExporter(
             gl.setViewport(canvas[0], canvas[1])
 
             decoder = MediaCodec.createDecoderByType(format.getString(MediaFormat.KEY_MIME)!!)
-            // The rotation is applied by the renderer, so it must not travel to the decoder as
-            // well: some devices honour it on a surface and the frame would come out turned twice.
+            // GL applies the rotation; some decoders also honour it on a surface, turning the frame twice.
             format.setInteger(MediaFormat.KEY_ROTATION, 0)
             decoder.configure(format, gl.decoderSurface, null, 0)
             decoder.start()
@@ -163,9 +136,7 @@ internal class VideoExporter(
                     report(DETECT_SHARE + (1f - DETECT_SHARE) * done)
                 }
 
-            // Finalized here rather than in the cleanup below, because the rename must not happen
-            // before the muxer has written the file's index, and a rename that fails has to be a
-            // failed export rather than a summary pointing at nothing.
+            // Here, not in the finally: the rename needs the index stop() writes, and must fail the export.
             muxer.stop()
             if (!staging.renameTo(output)) throw ExportError("the export could not be moved into place")
             complete = true
@@ -188,7 +159,6 @@ internal class VideoExporter(
             runCatching { muxer?.release() }
             audio?.release()
             extractor.release()
-            // A half written file looks like a finished export to anything that finds it later.
             if (!complete) staging.delete()
         }
     }
@@ -220,10 +190,7 @@ internal class VideoExporter(
         return encoder
     }
 
-    /**
-     * The source's frame rate, which some containers store as a float: `getInteger` on one throws.
-     * A rate the encoder cannot use falls back to 30.
-     */
+    /** Some containers store the rate as a float, and getInteger throws on one. */
     private fun frameRate(source: MediaFormat): Int {
         if (!source.containsKey(MediaFormat.KEY_FRAME_RATE)) return DEFAULT_FRAME_RATE
         val rate =
@@ -233,10 +200,6 @@ internal class VideoExporter(
         return rate?.takeIf { it.isFinite() && it >= 1f }?.roundToInt() ?: DEFAULT_FRAME_RATE
     }
 
-    /**
-     * Throttled, because a frame by frame progress event is thirty crossings a second for a number
-     * nobody can read that fast.
-     */
     private fun report(progress: Float) {
         val clamped = progress.coerceIn(0f, 1f)
         if (clamped < lastReported + PROGRESS_STEP && clamped < 1f) return

@@ -5,18 +5,9 @@ import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.sqrt
 
-/** Pure functions over the flat landmark buffer. No allocation, no state, no camera. */
+/** Pure and allocation-free, over the flat landmark buffer. */
 internal object Geometry {
-    /**
-     * The angle at `vertex`, in degrees, 0 to 180.
-     *
-     * MediaPipe divides x by width and y by height, so on a non-square frame the normalized space
-     * is anisotropic and an angle read straight off it is wrong by tens of degrees. The frame size
-     * is what puts both axes back in a common unit.
-     *
-     * `Float.NaN` when the triangle is degenerate: 0 would be indistinguishable from a folded
-     * joint.
-     */
+    /** Degrees, 0 to 180. `NaN` when the triangle is degenerate: 0 would read as a folded joint. */
     fun angleDegrees(
         landmarks: FloatArray,
         proximal: Int,
@@ -26,6 +17,7 @@ internal object Geometry {
         frameHeight: Int,
     ): Float {
         if (frameWidth <= 0 || frameHeight <= 0) return Float.NaN
+        // x is normalized by width and y by height; uncorrected, angles skew by tens of degrees.
         val aspect = frameWidth.toFloat() / frameHeight.toFloat()
 
         val vx = landmarks[vertex * Skeleton.LANDMARK_STRIDE]
@@ -44,10 +36,7 @@ internal object Geometry {
         return Math.toDegrees(acos(cosine).toDouble()).toFloat()
     }
 
-    /**
-     * Direction of the angle's bisector, for placing the arc and its label. Takes projected screen
-     * pixels: a direction taken before projection lands outside the joint on a mirrored preview.
-     */
+    /** In projected screen pixels: taken before projection, it lands outside a mirrored joint. */
     fun bisectorRadians(
         proximalX: Float,
         proximalY: Float,
@@ -77,18 +66,7 @@ internal object Geometry {
         joint: Int,
     ): Float = landmarks[joint * Skeleton.LANDMARK_STRIDE + Skeleton.OFFSET_VISIBILITY]
 
-    /**
-     * Visibility-weighted center of mass, written to `out[offset]` and `out[offset + 1]`.
-     *
-     * Hip 0.5, ankle 0.3, knee 0.2, each side carrying half of its pair's weight and scaled by its
-     * own visibility, so one occluded leg shifts the result toward the leg that is actually
-     * visible rather than toward the midpoint of a guess. `NaN` when nothing is visible enough to
-     * weigh: a fallback would be a position the body is not in.
-     *
-     * Normalized frame coordinates, uncorrected. It is compared against other normalized
-     * positions, which are anisotropic in the same way, and correcting one side of that
-     * comparison is what would make it wrong.
-     */
+    /** `NaN` when nothing is visible. Not aspect-corrected: it is compared with uncorrected positions. */
     fun centerOfMass(
         landmarks: FloatArray,
         out: FloatArray,
@@ -117,10 +95,7 @@ internal object Geometry {
         out[offset + 1] = y / total
     }
 
-    /**
-     * Shoulder midpoint to ankle midpoint, in normalized units and uncorrected for the same reason
-     * as [centerOfMass]: it exists to be divided into other normalized distances.
-     */
+    /** Normalized and uncorrected like [centerOfMass]: it divides other normalized distances. */
     fun bodySpan(landmarks: FloatArray): Float {
         val shoulderX = midpoint(landmarks, Skeleton.LEFT_SHOULDER, Skeleton.RIGHT_SHOULDER, 0)
         val shoulderY = midpoint(landmarks, Skeleton.LEFT_SHOULDER, Skeleton.RIGHT_SHOULDER, 1)
@@ -155,21 +130,14 @@ internal object Geometry {
     private const val EPSILON = 1e-6f
 }
 
-/**
- * The box around one pose's landmarks, in normalized frame coordinates.
- *
- * What tells one person from another across frames when several are tracked. The largest body is
- * chosen as primary on every frame, so when someone else becomes the largest the primary changes
- * identity between two frames, and smoothing or velocity carried across that boundary glides from
- * one person to the other, or reports a speed nobody moved at.
- */
+/** Normalized. Overlap across frames tells when the primary pose has become somebody else. */
 internal data class PoseBox(
     val minX: Float,
     val minY: Float,
     val maxX: Float,
     val maxY: Float,
 ) {
-    /** Intersection over union, 0 for disjoint boxes and 1 for identical ones. */
+    /** Intersection over union. */
     fun overlap(other: PoseBox): Float {
         val width = minOf(maxX, other.maxX) - maxOf(minX, other.minX)
         val height = minOf(maxY, other.maxY) - maxOf(minY, other.minY)
@@ -185,15 +153,9 @@ internal data class PoseBox(
         /** Below this much overlap two consecutive primary poses are different people. */
         const val SAME_BODY_OVERLAP = 0.3f
 
-        /** Two areas closer than this are a tie, which the distance from the frame's centre breaks. */
         const val AREA_TIE_EPSILON = 1e-4f
 
-        /**
-         * The subject among several bodies: the largest box, ties broken by distance from the
-         * frame's centre. MediaPipe's own order is detection order and means nothing about who the
-         * subject is. The live view applies the same rule to MediaPipe's landmarks without building
-         * boxes first.
-         */
+        /** The largest box, ties to the most central. The live view's `primaryPose` must agree. */
         fun primary(boxes: List<PoseBox>): Int {
             var best = 0
             var bestArea = -1f
@@ -213,7 +175,6 @@ internal data class PoseBox(
             return best
         }
 
-        /** The landmarks' bounding box, read from the flat landmark buffer. */
         fun of(landmarks: FloatArray): PoseBox {
             var minX = Float.MAX_VALUE
             var minY = Float.MAX_VALUE
@@ -232,16 +193,10 @@ internal data class PoseBox(
 }
 
 /**
- * From the frame MediaPipe answers in to the upright one everything else works in.
- *
- * Android hands MediaPipe the sensor buffer as it is and asks for a rotation, which is only how
- * the model looks at it: the landmarks come back in the unrotated buffer's frame. They are turned
- * here, once, as they are copied out, so the overlay, the geometry, the triggers and the wire all
- * see what iOS sees, where the capture connection turns the buffers themselves. [quarter] is the
- * number of clockwise quarter turns that make the buffer upright, CameraX's `rotationDegrees / 90`.
+ * MediaPipe answers in the unrotated buffer's frame whatever rotation it is given; this turns the
+ * landmarks upright, as iOS gets them. [quarter] is clockwise quarter turns, `rotationDegrees / 90`.
  */
 internal object Upright {
-    /** A point normalized to the buffer, to the upright frame. */
     fun x(
         x: Float,
         y: Float,

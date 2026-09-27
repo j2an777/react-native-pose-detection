@@ -1,6 +1,4 @@
-// Mirrors the ModelVariant union in src/types/camera.ts. The plugin compiles as a separate
-// Node program, so it cannot import from the runtime sources without dragging them into a
-// build that only ever runs on a developer machine at prebuild time.
+// Mirrors ModelVariant in src/types/camera.ts: the plugin is a separate Node build.
 export type ModelVariant = 'lite' | 'full' | 'heavy';
 
 export const MODEL_VARIANTS: readonly ModelVariant[] = ['lite', 'full', 'heavy'];
@@ -53,10 +51,8 @@ const MODEL_MANIFEST: Readonly<Record<ModelVariant, ModelEntry>> = {
 };
 
 /**
- * Exactly what the native side loads: any name that starts `pose_landmarker_` and ends `.task`. A
- * file this misses survives cleanup and `doctor` while the runtime can still load it ahead of the
- * installed model; the narrower pattern it replaced let a hand-copied `pose_landmarker_full (1).task`
- * do exactly that.
+ * Exactly what native loads, so no stray copy such as `pose_landmarker_full (1).task` can outlive
+ * cleanup and `doctor` and then load ahead of the installed model.
  */
 export const MODEL_FILE_PATTERN = /^pose_landmarker_.*\.task$/;
 

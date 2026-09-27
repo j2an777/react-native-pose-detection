@@ -1,10 +1,6 @@
 import Foundation
 
-/**
- The parts of one camera view that JavaScript reads synchronously: its frames and a live reading of
- its rate. Every one of them is thread-safe, which is what lets a read run on the JavaScript thread
- rather than queue behind everything else on main. See ADR 0008.
- */
+/// One view's synchronous reads, all thread-safe so they run on the JS thread. See ADR 0010.
 final class FrameStream {
   let frames: FrameRingBuffer
   private let readLive: () -> [String: Any]
@@ -30,14 +26,8 @@ final class FrameStream {
   }
 }
 
-/**
- Streams by the id `<PoseCamera>` gives each view.
-
- A view function would be simpler, but ExpoModulesCore runs every view function on the main queue,
- so each drain queued behind layout and the overlay twice per tick. A module function runs on the
- JavaScript thread that calls it; this is how it finds the view's frames without touching the view.
- Held weakly: the view owns its stream, and one that has gone reads as empty rather than stale.
- */
+/// Streams by view id, for module functions: ExpoModulesCore runs view functions on main.
+/// Held weakly: the view owns its stream, and a gone one reads as empty rather than stale.
 final class FrameStreams {
   static let shared = FrameStreams()
 
@@ -54,7 +44,7 @@ final class FrameStreams {
     streams[id] = Entry(stream: stream)
   }
 
-  /// Only removes the entry if it is still this stream's, so a remount reusing an id is safe.
+  /// Identity-checked, so a remount that reused the id keeps its entry.
   func unregister(_ stream: FrameStream, id: Int) {
     lock.lock()
     defer { lock.unlock() }
@@ -85,7 +75,6 @@ final class FrameStreams {
     return stream(id)?.live() ?? [:]
   }
 
-  /// Whether any mounted camera is running inference right now.
   func anyDetecting() -> Bool {
     lock.lock()
     let all = streams.values.compactMap { $0.stream }

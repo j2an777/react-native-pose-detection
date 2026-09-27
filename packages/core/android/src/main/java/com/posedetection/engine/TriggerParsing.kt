@@ -4,11 +4,7 @@ import com.posedetection.LogCategory
 import com.posedetection.PoseLog
 import com.posedetection.Skeleton
 
-/**
- * JavaScript validates every trigger before native sees one, so this half is lenient by design:
- * what it cannot read becomes a condition that never matches, and says so in the log rather than
- * failing a camera over a config the validator already approved.
- */
+/** Lenient: JavaScript already validated, so what cannot be read is logged and never matches. */
 internal fun parseTriggers(raw: List<*>?): List<TriggerSpec> {
     if (raw.isNullOrEmpty()) return emptyList()
 
@@ -35,11 +31,7 @@ internal fun parseTriggers(raw: List<*>?): List<TriggerSpec> {
     return specs
 }
 
-/**
- * [floor] is 1 for `throttleMs`: zero would emit on every frame under a name that promises not to,
- * and it would put the whole trigger payload allocation into the steady-state frame path. Debounce
- * and minDuration are genuinely allowed to be zero, which means "no delay".
- */
+/** [floor] is 1 for `throttleMs`, where 0 would fire every frame. Debounce and minDuration allow 0. */
 internal fun duration(
     value: Any?,
     fallback: Long,
@@ -120,7 +112,6 @@ internal fun velocityCondition(
     subject: String,
     axis: Int,
 ): PoseCondition {
-    // `centerOfMass` is not a joint, and it is the only non-joint a velocity can name.
     val index = if (subject == "centerOfMass") NO_JOINT else jointIndex(subject) ?: return NeverCondition
     return VelocityCondition(axis, index, bound(map["below"]), bound(map["above"]))
 }
@@ -132,7 +123,7 @@ internal fun jointIndex(name: String): Int? {
     return null
 }
 
-/** An absent bound and an unmeasurable value are both NaN, and both mean "does not constrain". */
+/** `NaN` when absent, see [withinBounds]. */
 internal fun bound(value: Any?): Float = (value as? Number)?.toFloat() ?: Float.NaN
 
 internal const val DEFAULT_WHILE_THROTTLE_MS = 250L
