@@ -8,7 +8,10 @@ import Foundation
  ignoring the rest is how a valid config silently becomes a default.
 
  `Bool` bridges to `NSNumber` as 0 or 1, so it has to be rejected before the numeric cast rather
- than after: `{ smoothing: true }` read as a number is `minCutoff: 1`.
+ than after: `{ smoothing: true }` read as a number is `minCutoff: 1`. It is told apart by its
+ CoreFoundation type, not by `is Bool`: every `NSNumber` holding exactly 0 or 1 passes `is Bool`, and
+ a JavaScript number arrives as one, so testing that way dropped every 0 and 1 in a config, a
+ `beta: 0` or a `lineWidth: 1`, for the default.
  */
 enum JS {
   /// JavaScript `null` crosses as `NSNull`, which is not nil and is not any of the types below.
@@ -16,8 +19,14 @@ enum JS {
     return value == nil || value is NSNull
   }
 
+  /// A JavaScript `true` or `false`, which crosses as the `CFBoolean` singletons.
+  static func isBoolean(_ value: Any?) -> Bool {
+    guard let number = value as? NSNumber else { return false }
+    return CFGetTypeID(number) == CFBooleanGetTypeID()
+  }
+
   static func number(_ value: Any?) -> Double? {
-    if value is Bool { return nil }
+    if isBoolean(value) { return nil }
     if let double = value as? Double { return double }
     if let int = value as? Int { return Double(int) }
     if let number = value as? NSNumber { return number.doubleValue }
@@ -50,8 +59,10 @@ enum JS {
     return int64(value).map { Int(clamping: $0) }
   }
 
+  /// Only a real boolean: a number is not one, whatever it would bridge to.
   static func bool(_ value: Any?) -> Bool? {
-    return value as? Bool
+    guard isBoolean(value), let number = value as? NSNumber else { return nil }
+    return number.boolValue
   }
 
   static func string(_ value: Any?) -> String? {
