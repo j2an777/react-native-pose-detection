@@ -53,10 +53,12 @@ const MODEL_MANIFEST: Readonly<Record<ModelVariant, ModelEntry>> = {
 };
 
 /**
- * Matches what the native side matches (`pose_landmarker_*.task`): a file this misses is one the
- * runtime can still load ahead of the installed model.
+ * Exactly what the native side loads: any name that starts `pose_landmarker_` and ends `.task`. A
+ * file this misses survives cleanup and `doctor` while the runtime can still load it ahead of the
+ * installed model; the narrower pattern it replaced let a hand-copied `pose_landmarker_full (1).task`
+ * do exactly that.
  */
-export const MODEL_FILE_PATTERN = /^pose_landmarker_[A-Za-z0-9_.-]*\.task$/;
+export const MODEL_FILE_PATTERN = /^pose_landmarker_.*\.task$/;
 
 /** The three names this package installs, for the places that map a file back to a variant. */
 export const KNOWN_MODEL_FILE_PATTERN = /^pose_landmarker_(?:lite|full|heavy)\.task$/;
