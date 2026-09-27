@@ -29,7 +29,7 @@ layout moves them.
 | --- | --- | --- | --- |
 | `profile` | `'auto' \| 'efficient' \| 'balanced' \| 'quality' \| 'unrestricted'` | `'auto'` | [performance](../performance.md) |
 | `facing` | `'auto' \| 'front' \| 'back'` | `'auto'` | auto prefers front, falls back to the other lens on the first bind |
-| `delegate` | `'auto' \| 'gpu' \| 'cpu'` | `'auto'` | auto verifies GPU, falls back to CPU |
+| `delegate` | `'auto' \| 'gpu' \| 'cpu'` | `'auto'` | auto verifies GPU, falls back to CPU. On Android it starts on the CPU and moves to the GPU once that has built |
 | `targetFps` | `'auto' \| number` | `'auto'` | a number replaces the governed rate, capped by the camera and by what the device can finish. [performance](../performance.md) |
 | `resolution` | `'auto' \| '480p' \| '720p' \| '1080p'` | `'auto'` | preview |
 | `analysisResolution` | `'auto' \| '360p' \| '480p' \| '720p'` | `'auto'` | what the model sees |

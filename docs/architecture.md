@@ -30,9 +30,11 @@ CameraX ImageAnalysis (RGBA_8888, KEEP_ONLY_LATEST)   ┐
 AVCaptureVideoDataOutput (discardsLateVideoFrames)    ┘
         ↓  zero copy, downscaled to analysisResolution
 MediaPipe PoseLandmarker, verified GPU → CPU fallback
-  Android: VIDEO, answered on the analysis thread before the next frame is taken
+  Android: VIDEO, answered on the analysis thread before the next frame is taken;
+           `auto` starts on the CPU and the GPU takes over once built (DetectorCache, StartPlan)
   iOS:     LIVE_STREAM, async callback
         ↓
+  ├─ visibility   MediaPipe's per-frame smoothing re-timed to elapsed time (VisibilityClock)
   ├─ geometry     angles · centerOfMass · velocity · bodySpan   (angles: only those asked for)
   ├─ smoothing    One-Euro filter on landmarks
   ├─ triggers     declarative state machines

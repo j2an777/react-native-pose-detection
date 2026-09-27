@@ -52,7 +52,9 @@ Bare: add `NSCameraUsageDescription` (iOS) and `android.permission.CAMERA` (Andr
 ## `GPU_UNAVAILABLE` (non-fatal)
 
 Not a bug. The device's GPU delegate failed and it fell back to CPU. Expect lower frame rates.
-Check `onReady`'s `delegate` field to confirm which one is running.
+Check `getState().delegate` to confirm which one is running. On Android, `onReady` says `'CPU'` on
+most devices under `delegate="auto"`, because the session starts on the CPU and the GPU takes over
+a moment later; that move is an `onPerformanceChange` with `reason: 'delegate'`, not this error.
 
 ## `UnsatisfiedLinkError` on an emulator
 
@@ -130,7 +132,20 @@ rate means expensive inference, not a stuck setting. What you can change:
   `npx react-native-pose-detection fetch-model lite` on bare RN. See the
   [config plugin reference](./reference/config-plugin.md)
 - `analysisResolution`, which is what the model actually sees
-- check `onReady`'s `delegate`: on CPU, a lower frame rate is expected
+- check `getState().delegate`: on CPU, a lower frame rate is expected
+- `maxPoses`: above 1, MediaPipe runs its person detector on every frame in which fewer people are
+  in view than `maxPoses` allows, which on a slow phone costs about as much again
+
+A budget Android phone runs `full` at about 10 fps and `lite` at about 15; the measured table is in
+[budget Android phones](./performance.md#budget-android-phones).
+
+## The skeleton takes a moment to appear on Android
+
+On a phone with a slow GPU the GPU landmarker takes a couple of seconds to build, so `auto` answers
+the first frames on the CPU landmarker, which builds in well under a second, and moves to the GPU
+once it is ready. The first skeleton comes about a second after mount on a Redmi Note 12. A camera
+screen closed and opened again within a minute takes back the landmarker it left, and is faster
+still. `delegate="gpu"` waits for the GPU build instead.
 
 ## The screen locks during a workout
 

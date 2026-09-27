@@ -37,6 +37,25 @@ the first list is what to check when upgrading.
 - **`exportPose`'s `minConfidence` goes up to 1**, the documented range, instead of stopping at 0.9.
 - **The `logLevel` prop raises the level while its camera is mounted**, on top of `setLogLevel()`,
   and gives it back on unmount, as documented. It used to overwrite the global level and keep it.
+- **Android: `delegate="auto"` starts on the CPU and moves to the GPU** once the GPU landmarker has
+  built, primed with a live frame so it takes over mid-track. `onReady` reports `'CPU'` on such a
+  device, and `onPerformanceChange` reports the move with the new reason `'delegate'`.
+- **Visibility follows time, not frames**, with one pose on both platforms. MediaPipe smooths it
+  once per frame, so below 30 fps a joint took proportionally longer to appear or disappear: 0.7 s
+  at 10 fps against 0.23 s at 30. The same smoothing now runs on elapsed time. At 30 fps nothing
+  changes; below it, frames and the overlay carry the visibility a 30 fps session would.
+- **`emit: 'while'` fires only while `enter` holds**, as the schema says. It used to keep firing
+  between the two thresholds of a trigger with both.
+- **A `minDurationMs` hold ends when frames stop**: a pause, detection off, the app in the
+  background or a camera switch. It used to count the time across them.
+- **An explicit `delegate="gpu"` that cannot run** reports `DETECTOR_INIT_FAILED` at start, where
+  it used to build and then report `DETECTION_FAILED` on every frame.
+- **A pinned `facing` the device does not have** reports `CAMERA_UNAVAILABLE`, as documented,
+  rather than `CAMERA_START_FAILED`.
+- **Android reports the sizes the camera bound** in `onReady` and `onPerformanceChange`, rather
+  than the preset it asked for: a Redmi Note 12 asked for 854x480 analysis delivers 864x480.
+- **`detectOnVideo` reports progress in steps of 2%**, as documented and as exports do, instead of
+  once per sampled frame.
 
 ### Added
 
@@ -52,6 +71,7 @@ the first list is what to check when upgrading.
 - Low Power Mode and Battery Saver cap the rate at 24 fps.
 - Non-finite numbers in props and file options are refused at the call site with a path, instead
   of crashing an iOS app when converted.
+- The `'delegate'` reason on `onPerformanceChange`.
 
 ### Faster, cooler
 
@@ -72,6 +92,16 @@ the first list is what to check when upgrading.
   LIVE_STREAM, which copied every frame back into a new bitmap for a callback that only read its
   size: 17 MB a second at ten frames. The process uses about a fifth less CPU, the collector
   mostly goes quiet, and a frame never waits behind another.
+- Android: the first skeleton comes about twice as fast. The landmarker builds while the camera
+  opens instead of after it, and `auto` answers frames on the CPU, built in 0.7 s, while the GPU
+  builds in 1.9 s. On a Redmi Note 12 the first skeleton came 2.2 s after mount and now comes at
+  1.1 s.
+- Android: a camera screen closed and opened again within a minute takes back the landmarker it
+  left behind, and its skeleton is up in 0.6 s on the same phone.
+- Android: the first launch on a device no longer builds a second GPU landmarker only to check that
+  the GPU works; the warm-up of the one that is used is the check.
+- The warm-up runs before the first camera frame on both platforms. It used to run after it, feed a
+  blank frame into the track that frame had started, and make the model find the person twice.
 
 ### Fixed
 
@@ -107,6 +137,20 @@ the first list is what to check when upgrading.
 - iOS: mounting a camera without a `logLevel` prop turned logging off for the whole app, undoing an
   earlier `setLogLevel()`, so the documented setup delivered nothing.
 - A camera's `onLog` received nothing unless something had also called `addLogListener()`.
+- Android: an exported video kept painting the last skeleton after the person left, frozen where
+  they were last seen, and frames before the first detection carried a pose from later in the clip.
+- Android: exporting a video picked as a `content://` link without a file extension failed as an
+  image that could not be read.
+- Android: an image export that failed part-way could leave a truncated `.jpg` behind, and a JPEG
+  encode that failed was not reported. Images are staged and renamed into place, as videos are.
+- Android: a rep that finished while the `triggers` prop was being updated could be lost from the
+  count, and a `NaN` or infinite trigger duration became 0 or forever instead of the default.
+- iOS: a prop value of exactly 0 or 1, such as `smoothing={{ beta: 0 }}`, `overlay={{ lineWidth: 1 }}`
+  or a trigger bound of 0, was read as missing and replaced by the default.
+- `batched` frames buffered before somebody left the frame waited for somebody to come back before
+  they were delivered.
+- A hand-copied model such as `pose_landmarker_full (1).task` survived the plugin's cleanup and
+  `doctor`, while the runtime could load it ahead of the installed model.
 
 ## 0.1.0
 

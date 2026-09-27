@@ -234,9 +234,24 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
   handed the picture upside down.
 - LIVE_STREAM on Android copies every frame back into a new bitmap for the result listener, which
   is why the camera path there uses VIDEO mode and answers each frame in place.
-- Landmarker construction is expensive, first inference can stall for seconds. It is created
-  once per process and pre-warmed during camera setup.
-- GPU delegate success is verified by a successful first inference, not by construction alone.
+- Landmarker construction is expensive, first inference can stall for seconds. It is built while
+  the camera opens and warmed up on a blank frame before the analyzer can reach it: warmed up after
+  the first camera frame instead, the blank frame ended the track that frame had started.
+- GPU delegate success is verified by a successful first inference, not by construction alone. On
+  Android that inference is the warm-up of the landmarker that is kept, so no second one is built.
+- Android builds on `DetectorCache`'s thread, not the analysis thread, so `auto` can answer frames
+  on a CPU landmarker (0.7 s to build on a Redmi Note 12) while the GPU one builds (1.9 s). The GPU
+  one is primed with a live frame before it replaces the CPU one, so it takes over mid-track.
+- A camera view going away parks its landmarker in `DetectorCache` for a minute, and the next view
+  built for the same model, delegate, `maxPoses` and `minConfidence` takes it back.
+- With one pose MediaPipe low-passes visibility once per frame, alpha 0.1, first frame through.
+  `VisibilityClock` inverts that exactly and applies it again against elapsed time, which is
+  identical at 30 fps and keeps a slow device's joints appearing as fast. It resets whenever
+  MediaPipe's filter may have: a lost pose, a result dropped after MediaPipe answered it, a new
+  landmarker. A handover between landmarkers keeps its value instead.
+- Do not declare `libOpenCL.so` with `<uses-native-library>`. MediaPipe tries OpenCL first when it
+  can load it; on a Redmi Note 12 that took the GPU build from 1.9 s to 3.5 to 4 s and still ran on
+  OpenGL. The GPU kernel cache is OpenCL-only, so it writes nothing without it.
 
 ## Debugging
 
@@ -249,4 +264,6 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
 | Overlay misaligned | the projection in `OverlayView`, and the frame size it was handed |
 | Landmarks sideways or upside down, iOS | the connection's rotation, set in `CaptureRotation` |
 | Landmarks sideways or upside down, Android | `mediaPipeDegrees` in `PoseDetector`, and `Upright` |
+| Skeleton slow to appear, Android | `StartPlan` and the build timeline in `ensureDetector`; a GPU build is seconds on a low-end phone |
+| Joints slow to appear or linger | `VisibilityClock`, and whether a reset was missed where MediaPipe's filter started over |
 | Memory climbing | allocations in the frame path: profile it |

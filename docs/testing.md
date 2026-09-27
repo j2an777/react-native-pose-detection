@@ -134,11 +134,19 @@ analysis frame with its landmarks plotted is what caught it: the shoulders sat a
 On the iPhone the full model ran on the GPU at 16 to 18 ms per inference and held the camera's 30
 fps, a mount reached `onReady` in about a second, a restarted detector had frames back in about
 120 ms, and the three-second test clip was sampled in about one second. The Redmi is a low-end
-phone: the full model costs it about 80 ms a frame on the GPU and 110 ms on the CPU, so it runs at
-about 10 fps, and building the GPU landmarker takes about 1.7 s against 0.6 s on the CPU. The
+phone: tracking a person, the full model costs it 89 ms a frame on the GPU and 122 ms on the CPU,
+and `lite` 63 and 80 ms, so `full` runs at 10 fps. Building the GPU landmarker takes 1.9 s against
+0.7 s on the CPU, which is why `auto` starts on the CPU there: the first skeleton comes 1.1 s after
+mount instead of 2.2 s, and a camera screen opened again within a minute is back in 0.6 s. The
 earlier figures of 120 and 195 ms were frames waiting behind each other in LIVE_STREAM, not the
-model. `idle` skips
-itself when anybody is in frame, so it needs the phone pointed at an empty room.
+model. `idle` skips itself when anybody is in frame, so it needs the phone pointed at an empty room.
+
+**Timing a phone with nobody in front of it.** Per-frame cost depends on whether a person is being
+tracked: with nobody in view MediaPipe runs its person detector on every frame instead of the
+landmark model. A temporary build that hands the model a bundled photo of a person in place of each
+camera frame, after converting the real one so that cost is still paid, times the tracked path on
+a phone lying on a desk. It is how the table in the performance guide was measured, and it never
+ships.
 
 The emulator proves lifecycle and correctness, not speed or heat: its camera is a rendered scene,
 it runs MediaPipe on emulated hardware, and its timings move with whatever else the host is doing.

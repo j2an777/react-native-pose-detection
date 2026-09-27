@@ -128,3 +128,4 @@ xcrun
 xcworkspace
 yolo
 Redmi
+Adreno

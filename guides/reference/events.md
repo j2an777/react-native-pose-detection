@@ -2,10 +2,10 @@
 
 | Callback | Fires | Rate |
 | --- | --- | --- |
-| `onReady` | camera + detector up | once |
+| `onReady` | camera up, and the landmarker running or failed to start | once per session start |
 | `onError` | a failure occurred | rare |
 | `onCameraChange` | switch complete and stable | per switch |
-| `onPerformanceChange` | calibration settled or thermal adaptation | rare |
+| `onPerformanceChange` | the rate, the delegate or the reason for either changed | rare |
 | `onTrigger` | a trigger transitioned | ~1 per event |
 | `onPose` | frame delivered | 10/s or 30/s |
 | `onPoseBatch` | buffer flushed | 2/s |
@@ -27,6 +27,7 @@ type ReadyEvent = {
   delegate: 'GPU' | 'CPU';              // what was actually used
   delegateRequested: 'auto' | 'gpu' | 'cpu';
   targetFps: number;
+  limitedBy: LimitedBy;                 // why targetFps is what it is
   deviceTier: 'high' | 'medium' | 'low';
   resolution: { width: number; height: number };
   analysisResolution: { width: number; height: number };
@@ -34,9 +35,19 @@ type ReadyEvent = {
 };
 ```
 
+A session starts on mount, and again when `active` goes back to `true` or when a `resolution`,
+`analysisResolution` or `profile` change moves the camera's sizes and restarts it, so each of those
+fires one more `onReady`. When the landmarker cannot be built, `onError` reports `DETECTOR_INIT_FAILED` first and
+`onReady` still follows, because the camera did come up.
+
 `targetFps` and `deviceTier` are what the session opened with: the cached calibration when this
 device has run before, the static probe's guess when it has not. The governor refines both within
-a couple of seconds and reports each move through `onPerformanceChange`.
+a couple of seconds and reports each move through `onPerformanceChange`. `limitedBy` takes the
+values listed in [performance](../performance.md#why-the-rate-is-what-it-is).
+
+On Android, `delegate="auto"` reports `'CPU'` here on a device whose GPU works: the session starts
+on the CPU landmarker, which builds in a fraction of the time, and the GPU one takes over once it
+has built, reported by `onPerformanceChange` with `reason: 'delegate'`.
 
 ## `onError`
 
@@ -56,8 +67,8 @@ exhaustive and a new failure mode has to be added here rather than appearing as 
 | --- | --- | --- |
 | `PERMISSION_DENIED` | ✅ | Camera permission refused |
 | `MODEL_NOT_FOUND` | ✅ | Plugin didn't run, or prebuild was skipped |
-| `MODEL_LOAD_FAILED` | ✅ | The model file is present but could not be read |
-| `CAMERA_UNAVAILABLE` | ✅ | No camera for the requested facing |
+| `MODEL_LOAD_FAILED` | ✅ | Reserved, not sent today: a model that is present but will not load reports `DETECTOR_INIT_FAILED` |
+| `CAMERA_UNAVAILABLE` | ✅ | No camera for the requested facing, including a pinned `facing` the device does not have |
 | `CAMERA_START_FAILED` | ✅ | The capture session could not be started |
 | `DETECTOR_INIT_FAILED` | ✅ | Landmarker could not be created on either delegate |
 | `INVALID_CONFIG` | ✅ | Native rejected a prop or trigger config |
@@ -103,9 +114,12 @@ Fires **after** the session is stable, not when the switch begins.
 
 ```ts
 type PerformanceEvent = {
-  reason: 'calibration' | 'thermal' | 'load' | 'headroom' | 'gpu_fallback';
+  reason:
+    | 'calibration' | 'thermal' | 'lowPower' | 'idle'
+    | 'delegate' | 'gpu_fallback' | 'load' | 'headroom';
   delegate: 'GPU' | 'CPU';
   targetFps: number;
+  limitedBy: LimitedBy;   // why targetFps is what it is
   analysisResolution: { width: number; height: number };
   actualFps: number;
 };
@@ -113,6 +127,16 @@ type PerformanceEvent = {
 
 Fires on every automatic adjustment. Still fires under `thermalPolicy="off"`, the library
 stops acting, never stops reporting.
+
+| `reason` | When |
+| --- | --- |
+| `calibration` | The measured cost of inference moved the rate |
+| `thermal` | Heat moved the rate, or paused detection |
+| `lowPower` | Battery Saver or Low Power Mode came on or went off |
+| `idle` | Nobody in frame for a while, or somebody back |
+| `delegate` | Android, `delegate="auto"`: the GPU took over from the CPU the session started on |
+| `gpu_fallback` | The GPU kept failing and detection moved to the CPU |
+| `load`, `headroom` | Reserved, not sent today |
 
 ## `onTrigger`
 

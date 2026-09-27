@@ -178,15 +178,56 @@ So this does exactly what it reads like:
 
 | | What it does |
 | --- | --- |
-| **Pre-warm** | One dummy inference during camera setup, so the first real frame is never the slow one |
-| **GPU check, once** | The GPU probe runs once per device and model and is remembered. A GPU that fails at runtime is swapped for the CPU and the answer flips |
-| **Parked landmarker** | Turning detection or the camera off, a trip to the background, or a screen pushed on top keeps the landmarker built for 30–60 s, so coming back is instant |
+| **Built while the camera opens** | The landmarker starts building on mount, beside the camera, not after it |
+| **Pre-warm** | One inference on a blank frame before the camera's first reaches the landmarker, so the first real frame is never the slow one |
+| **CPU first, then the GPU (Android)** | `auto` answers frames on the CPU landmarker, which builds in a fraction of the time, while the GPU one builds beside it; the GPU takes over mid-track once it has built. See [budget Android phones](#budget-android-phones) |
+| **GPU check, once** | The warm-up of the GPU landmarker is the check that the GPU works, run once per device and model and remembered. A GPU that fails at runtime is swapped for the CPU and the answer flips |
+| **Parked landmarker** | Turning detection or the camera off, a trip to the background, or a screen pushed on top keeps the landmarker built for 30–60 s, so coming back is instant. On Android a camera screen closed and opened again within a minute takes back the landmarker it left |
+| **Visibility on a clock** | MediaPipe smooths each joint's visibility once per frame; it is re-timed to elapsed time, so a joint appears as fast at 10 fps as at 30 |
 | **Idle search** | No person for 2 s drops to the profile's first idle rate, 20 s to its deep one; the frame that finds a pose ends it |
 | **Smoothing `'auto'`** | Off for one pose, which MediaPipe already smooths; on for several, with MediaPipe's own constants |
 | **Lazy angles** | Computes only the angles an `angle` condition, `overlay.angles` or `data.angles` asked for |
 | **Analysis ≠ preview** | Model sees a small frame; preview stays sharp |
 | **GPU-composited overlay** | Shape layers on iOS and a hardware canvas on Android: no full-screen redraw per result |
 | **Frames read on the JavaScript thread** | A drain reads the ring buffer directly, never queued behind native's main thread |
+
+## Budget Android phones
+
+What a low-end phone can do, measured on a Redmi Note 12 (Snapdragon 685, Adreno 610 GPU) with a
+person in view:
+
+| Model | Delegate | Build | Per frame | Top rate |
+| --- | --- | --- | --- | --- |
+| `full` | GPU | 1.9 s | 89 ms | about 11 fps |
+| `full` | CPU | 0.7 s | 122 ms | about 8 fps |
+| `lite` | GPU | 1.6 s | 63 ms | about 15 fps |
+| `lite` | CPU | 0.7 s | 80 ms | about 12 fps |
+
+The GPU is the faster and the cooler of the two once running, at half the CPU time, and the slower
+to build, so `auto` starts on the CPU and hands over. The first skeleton comes about 1.1 s after
+mount, the GPU takes over about 3 s in, and a screen opened again within a minute is back in 0.6 s.
+The governor then runs `full` at 10 fps on this phone: its 85% duty allows 9, and 10 is the floor a
+governed rate never goes below.
+
+**For more frames on budget phones, ship `lite`.** It is one word in the plugin config and runs
+about half again as fast here, for the accuracy the [model table](../README.md#choosing-a-model)
+describes. Keep `maxPoses` at 1 unless you need more: with more, MediaPipe runs its person detector
+on every frame in which it is tracking fewer people than `maxPoses`, and that detector costs about
+as much as the landmark model.
+
+Tried on this phone, and not used:
+
+- **OpenCL.** Declaring `libOpenCL.so` lets MediaPipe load it, and its first attempt then took the
+  GPU build from 1.9 s to 3.5 to 4 s and ran no faster. Without the declaration MediaPipe goes
+  straight to OpenGL, which is what ships.
+- **The GPU kernel cache.** MediaPipe writes it only from its OpenCL path, so it saves nothing here.
+- **More CPU threads.** MediaPipe's Java API runs the CPU delegate on one thread and has no setting
+  for more.
+- **The NPU.** MediaPipe's NPU delegate needs vendor dispatch libraries this chip does not have.
+- **Gliding the skeleton between results.** Drawing it moving toward each new result, instead of
+  stepping to it, looked smoother and took detection from 9.8 fps to 7.2 at 30 redraws a second and
+  to 4.2 at 60: every redraw is GPU work competing with the model's. The overlay redraws once per
+  result.
 
 ## Resource budgets
 
