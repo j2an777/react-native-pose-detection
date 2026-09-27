@@ -28,8 +28,8 @@ internal class PoseDetector private constructor(
     val probedGpu: Boolean? = null,
 ) {
     /**
-     * LIVE_STREAM rejects a timestamp that does not strictly increase, and one rejection takes the
-     * stream down. Camera timestamps can repeat within a millisecond, so the value is clamped.
+     * VIDEO mode rejects a timestamp that does not strictly increase. Camera timestamps can repeat
+     * within a millisecond, so the value is clamped.
      *
      * Written on the analysis thread, read on main when a switch completes. A stale read there
      * costs one dropped frame.
@@ -39,45 +39,23 @@ internal class PoseDetector private constructor(
         private set
 
     /**
-     * When each in-flight timestamp was handed to MediaPipe, so a result can report what it cost.
-     * `detectAsync` returns before the result arrives, so more than one frame is in flight and a
-     * single "last dispatch" field would time the wrong one.
+     * One camera frame, answered before this returns, on the analysis thread.
+     *
+     * VIDEO mode rather than LIVE_STREAM, which tracks across frames the same way. LIVE_STREAM
+     * hands every result back with a copy of the frame it came from, a new bitmap the size of the
+     * analysis buffer, for a caller that only reads its size. On a Redmi Note 12 that was 17 MB a
+     * second for the collector at ten frames, and moving to VIDEO took a fifth off the process's
+     * CPU. Answered in place, a frame also never waits behind another: CameraX drops what arrives
+     * while this runs, and the next frame converted is the newest one.
      */
-    private val dispatchTimestamps = LongArray(DISPATCH_SLOTS)
-    private val dispatchNanos = LongArray(DISPATCH_SLOTS)
-
-    @Volatile
-    private var dispatchCursor = 0
-
-    /**
-     * Nanoseconds at dispatch for [timestampMs], or 0 when it has already been overwritten.
-     * Written on the analysis thread, read on MediaPipe's callback thread: reading the volatile
-     * cursor first is what makes the array writes that preceded it visible here.
-     */
-    fun dispatchNanosFor(timestampMs: Long): Long {
-        @Suppress("UNUSED_VARIABLE")
-        val fence = dispatchCursor
-        for (slot in 0 until DISPATCH_SLOTS) {
-            if (dispatchTimestamps[slot] == timestampMs) return dispatchNanos[slot]
-        }
-        return 0
-    }
-
     fun detect(
         image: MPImage,
         rotationDegrees: Int,
         cameraTimestampMs: Long,
-    ): Long {
+    ): PoseLandmarkerResult {
         val timestamp = maxOf(cameraTimestampMs, lastTimestampMs + 1)
         lastTimestampMs = timestamp
-
-        val slot = dispatchCursor and (DISPATCH_SLOTS - 1)
-        dispatchTimestamps[slot] = timestamp
-        dispatchNanos[slot] = System.nanoTime()
-        dispatchCursor = slot + 1
-
-        landmarker.detectAsync(image, rotationOptions(rotationDegrees), timestamp)
-        return timestamp
+        return landmarker.detectForVideo(image, rotationOptions(rotationDegrees), timestamp)
     }
 
     fun close() {
@@ -116,8 +94,6 @@ internal class PoseDetector private constructor(
                     maxPoses = maxPoses,
                     minConfidence = minConfidence,
                     runningMode = if (video) RunningMode.VIDEO else RunningMode.IMAGE,
-                    onResult = null,
-                    onError = null,
                 )
             return PoseDetector(landmarker, delegate, modelFileName)
         }
@@ -141,8 +117,6 @@ internal class PoseDetector private constructor(
             request: DelegateRequest,
             maxPoses: Int,
             minConfidence: Float,
-            onResult: (PoseLandmarkerResult, MPImage) -> Unit,
-            onError: (RuntimeException) -> Unit,
             knownGpu: Boolean? = null,
         ): PoseDetector {
             var probed: Boolean? = null
@@ -169,9 +143,7 @@ internal class PoseDetector private constructor(
                     delegate = delegate,
                     maxPoses = maxPoses,
                     minConfidence = minConfidence,
-                    runningMode = RunningMode.LIVE_STREAM,
-                    onResult = onResult,
-                    onError = onError,
+                    runningMode = RunningMode.VIDEO,
                 )
 
             val how =
@@ -208,8 +180,6 @@ internal class PoseDetector private constructor(
                         maxPoses = 1,
                         minConfidence = 0.5f,
                         runningMode = RunningMode.IMAGE,
-                        onResult = null,
-                        onError = null,
                     )
                 val bitmap = Bitmap.createBitmap(PROBE_SIZE, PROBE_SIZE, Bitmap.Config.ARGB_8888)
                 blank = bitmap
@@ -234,8 +204,6 @@ internal class PoseDetector private constructor(
             maxPoses: Int,
             minConfidence: Float,
             runningMode: RunningMode,
-            onResult: ((PoseLandmarkerResult, MPImage) -> Unit)?,
-            onError: ((RuntimeException) -> Unit)?,
         ): PoseLandmarker {
             val baseOptions =
                 BaseOptions
@@ -253,12 +221,7 @@ internal class PoseDetector private constructor(
                     .setMinPoseDetectionConfidence(minConfidence)
                     .setMinPosePresenceConfidence(minConfidence)
                     .setMinTrackingConfidence(minConfidence)
-                    .apply {
-                        if (runningMode == RunningMode.LIVE_STREAM) {
-                            onResult?.let { setResultListener(it) }
-                            onError?.let { setErrorListener(it) }
-                        }
-                    }.build()
+                    .build()
 
             return PoseLandmarker.createFromOptions(context, options)
         }
@@ -295,8 +258,5 @@ internal class PoseDetector private constructor(
         private const val DEGREES_PER_QUARTER = 90
 
         private const val PROBE_SIZE = 256
-
-        /** A power of two so the cursor masks rather than divides. */
-        private const val DISPATCH_SLOTS = 8
     }
 }

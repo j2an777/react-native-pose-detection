@@ -57,8 +57,9 @@ used `switchCamera(viewTag)`; that pattern is not used here.
 ```text
 capture callback (camera/inference queue)
   → downscale to analysisResolution
-  → PoseDetector.detectAsync(buffer, timestamp)
-      ↓ async, MediaPipe callback thread
+  → PoseDetector.detect(buffer, timestamp)
+      ↓ Android: VIDEO mode, answered before it returns, on the analysis thread
+      ↓ iOS: LIVE_STREAM, async, on MediaPipe's callback thread
   → PoseEngine.process(landmarks)
       ├→ geometry (lazy: only referenced joints)
       ├→ smoothing
@@ -226,11 +227,13 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
 
 ## MediaPipe on both platforms
 
-- `LIVE_STREAM` mode rejects non-increasing timestamps. Clamp, never trust the source.
+- `VIDEO` and `LIVE_STREAM` modes reject non-increasing timestamps. Clamp, never trust the source.
 - Android hands MediaPipe CameraX's `rotationDegrees` negated: MediaPipe turns the image the other
   way by what it is given. Check a change there against a dumped analysis frame with its landmarks
   plotted, not by eye: a close face gathers the landmarks around itself even when the model was
   handed the picture upside down.
+- LIVE_STREAM on Android copies every frame back into a new bitmap for the result listener, which
+  is why the camera path there uses VIDEO mode and answers each frame in place.
 - Landmarker construction is expensive, first inference can stall for seconds. It is created
   once per process and pre-warmed during camera setup.
 - GPU delegate success is verified by a successful first inference, not by construction alone.

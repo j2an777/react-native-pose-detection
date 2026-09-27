@@ -72,8 +72,8 @@ internal class FrameConverter {
     }
 
     /**
-     * Drops the bitmaps without recycling. MediaPipe may still be reading one after `detectAsync`
-     * returns, and recycling there is a read of freed native memory.
+     * Drops the bitmaps and leaves them to the collector. MediaPipe copies a frame's pixels before
+     * its detection returns, so nothing reads them past the frame they were converted for.
      */
     fun release() {
         source = null

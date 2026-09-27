@@ -68,6 +68,10 @@ the first list is what to check when upgrading.
   switch and resume.
 - Photo and video detection run on a thread of their own below the camera's. They used to run on
   the thread Expo shares between every module, which a long video held up for the whole app.
+- Android: the live camera runs MediaPipe's VIDEO mode on the analysis thread instead of
+  LIVE_STREAM, which copied every frame back into a new bitmap for a callback that only read its
+  size: 17 MB a second at ten frames. The process uses about a fifth less CPU, the collector
+  mostly goes quiet, and a frame never waits behind another.
 
 ### Fixed
 

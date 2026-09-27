@@ -29,8 +29,10 @@ the VisionCamera adapter (0.2.0) a ~200-line addition instead of a fork.
 CameraX ImageAnalysis (RGBA_8888, KEEP_ONLY_LATEST)   ┐
 AVCaptureVideoDataOutput (discardsLateVideoFrames)    ┘
         ↓  zero copy, downscaled to analysisResolution
-MediaPipe PoseLandmarker: LIVE_STREAM, verified GPU → CPU fallback
-        ↓  async callback, camera thread
+MediaPipe PoseLandmarker, verified GPU → CPU fallback
+  Android: VIDEO, answered on the analysis thread before the next frame is taken
+  iOS:     LIVE_STREAM, async callback
+        ↓
   ├─ geometry     angles · centerOfMass · velocity · bodySpan   (angles: only those asked for)
   ├─ smoothing    One-Euro filter on landmarks
   ├─ triggers     declarative state machines

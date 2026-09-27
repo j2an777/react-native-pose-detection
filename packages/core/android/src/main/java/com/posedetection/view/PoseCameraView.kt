@@ -95,8 +95,9 @@ class PoseCameraView(
         }
     private val overlayView = OverlayView(context)
 
-    // One dedicated thread. The analyzer runs here and calls detectAsync here, so sample buffers
-    // never hop threads and the UI never waits on inference.
+    // One dedicated thread. The analyzer runs here and so does the landmarker, which answers each
+    // frame before the analyzer returns, so sample buffers never hop threads and the UI never waits
+    // on inference.
     private val analysisExecutor =
         Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "pose-analysis").apply { priority = Thread.NORM_PRIORITY + 1 }
@@ -130,7 +131,7 @@ class PoseCameraView(
     /** Set when the GPU failed at runtime, so the rebuild is reported once it has landed on the CPU. */
     private var fellBackToCpu = false
 
-    /** Callback-thread only. When the GPU last failed, which is how a broken delegate is noticed. */
+    /** Analysis thread only. When the GPU last failed, which is how a broken delegate is noticed. */
     private val gpuFailureTimes = ArrayDeque<Long>(GPU_FAILURE_LIMIT)
     private var modelFileName: String? = null
 
@@ -231,18 +232,19 @@ class PoseCameraView(
     private var nextDetectDueMs = 0.0
 
     /**
-     * Written on the inference thread, read on the analysis thread to decide idle-search. Volatile
-     * for visibility and because a 64-bit read is not guaranteed atomic on armeabi-v7a, where a
-     * torn value pins the analyzer at the idle rate with somebody standing in front of it.
+     * Written on the analysis thread as each pose is found and on main when a landmarker is adopted,
+     * read on the analysis thread to decide idle-search. Volatile for visibility and because a 64-bit
+     * read is not guaranteed atomic on armeabi-v7a, where a torn value pins the analyzer at the idle
+     * rate with somebody standing in front of it.
      */
     @Volatile
     private var lastPoseMs = 0L
 
     /**
-     * Measured on the result callback, so `getState().fps` is what the model completed rather
-     * than what it was handed. The two differ exactly when the device cannot keep up, which is
-     * the moment the number matters. The window fields belong to the callback thread; the totals
-     * are shared.
+     * Counted as each frame is answered, so `getState().fps` is what the model completed rather
+     * than what the camera delivered. The two differ exactly when the device cannot keep up, which
+     * is the moment the number matters. The window fields belong to the analysis thread; the
+     * totals are shared.
      */
     private var framesInWindow = 0
     private var fpsWindowStartMs = 0L
@@ -262,14 +264,14 @@ class PoseCameraView(
     private var hasPreviousLandmarks = false
 
     /**
-     * Reassigned on the main thread when the layout changes, read on the inference thread. Volatile
+     * Reassigned on the main thread when the layout changes, read on the analysis thread. Volatile
      * so the new array's contents are published with the reference rather than after it.
      */
     @Volatile
     private var frameLayout: FrameShape? = null
 
     /**
-     * Velocity is a difference, so it needs the frame before this one. Written on the inference
+     * Velocity is a difference, so it needs the frame before this one. Written on the analysis
      * thread; `previousFrameMs` is also cleared from main on a camera switch, which is what makes
      * it volatile and the other two not: they are only read when it is greater than zero.
      */
@@ -343,13 +345,13 @@ class PoseCameraView(
     private var propAnalysis: String = "auto"
     private var overlayEnabled: Boolean = true
 
-    /** [overlayEnabled] for the result thread: while it is off, results are not handed to the overlay. */
+    /** [overlayEnabled] for the analysis thread: while it is off, results are not handed to the overlay. */
     @Volatile
     private var overlayOn = true
     private var pendingOverlayConfig: OverlayConfig = OverlayConfig()
     private var propMode: DataMode = DataMode.OFF
 
-    // Written on main, read on the inference thread, and 64-bit: same tearing exposure as above.
+    // Written on main, read on the analysis thread, and 64-bit: same tearing exposure as above.
     @Volatile
     private var propThrottleMs: Long = DEFAULT_THROTTLE_MS
 
@@ -706,8 +708,6 @@ class PoseCameraView(
                             request = request,
                             maxPoses = maxPoses,
                             minConfidence = minConfidence,
-                            onResult = ::onLandmarks,
-                            onError = ::onDetectionError,
                             knownGpu = knownGpu,
                         )
                     mainHandler.post { adoptDetector(created, request, generation) }
@@ -770,8 +770,7 @@ class PoseCameraView(
             } catch (error: Throwable) {
                 PoseLog.debug(LogCategory.DETECTOR) { "pre-warm did not run: ${error.message}" }
             } finally {
-                // The result arrives asynchronously and MediaPipe copies the pixels in, so the
-                // bitmap is not needed past this point.
+                // The answer is back before detect returns, so nothing is reading the pixels now.
                 blank?.recycle()
             }
         }
@@ -871,7 +870,7 @@ class PoseCameraView(
     }
 
     /**
-     * The analysis thread may be inside `detectAsync` right now, so the field is cleared on main,
+     * The analysis thread may be inside a detection right now, so the field is cleared on main,
      * stopping the next frame, and the close is queued behind the frame already running.
      */
     private fun releaseDetector() {
@@ -925,7 +924,16 @@ class PoseCameraView(
                 frameRotationDegrees = rotation
                 val bitmap = converter.convert(proxy)
                 val image = BitmapImageBuilder(bitmap).build()
-                detector.detect(image, rotation, proxy.imageInfo.timestamp / 1_000_000)
+                val started = System.nanoTime()
+                val result =
+                    try {
+                        detector.detect(image, rotation, proxy.imageInfo.timestamp / 1_000_000)
+                    } catch (error: RuntimeException) {
+                        onDetectionError(error)
+                        return@Analyzer
+                    }
+                val processingMs = (System.nanoTime() - started) / NANOS_PER_MILLI
+                onLandmarks(result, bitmap.width, bitmap.height, processingMs)
             } catch (error: Throwable) {
                 PoseLog.warn(LogCategory.DETECTOR) { "frame dropped: ${error.message}" }
             } finally {
@@ -984,7 +992,7 @@ class PoseCameraView(
         return effective ?: fps
     }
 
-    /** On the result thread. An empty result still counts: the model ran. */
+    /** On the analysis thread. An empty result still counts: the model ran. */
     private fun countResult(nowMs: Long) {
         val previous = lastResultMs
         lastResultMs = nowMs
@@ -1038,9 +1046,15 @@ class PoseCameraView(
         applyPerformance(reason = if (heatMoved) "thermal" else "lowPower")
     }
 
+    /**
+     * On the analysis thread, straight after the frame it answers. [imageWidth] and [imageHeight]
+     * are the buffer's, before the rotation that stands it upright.
+     */
     private fun onLandmarks(
         result: PoseLandmarkerResult,
-        image: com.google.mediapipe.framework.image.MPImage,
+        imageWidth: Int,
+        imageHeight: Int,
+        processingMs: Double,
     ) {
         // Empty frames are what an honest rate is made of while the camera points at a room, and
         // skipping them would freeze the number instead.
@@ -1115,8 +1129,8 @@ class PoseCameraView(
         // upright size too. The mirror flag comes from the session, which is main-thread state,
         // and is pushed in from there.
         val rotation = frameRotationDegrees
-        val frameWidth = if (rotation % 180 == 0) image.width else image.height
-        val frameHeight = if (rotation % 180 == 0) image.height else image.width
+        val frameWidth = if (rotation % 180 == 0) imageWidth else imageHeight
+        val frameHeight = if (rotation % 180 == 0) imageHeight else imageWidth
 
         // Before anything reads a coordinate: the overlay, the geometry, the evaluators and the
         // wire all have to agree about where the body is. Speed is measured in body spans, so a
@@ -1132,7 +1146,17 @@ class PoseCameraView(
 
         if (overlayOn) overlayView.submit(landmarkBuffer, frameWidth, frameHeight)
 
-        buildFrame(result, primaryIndex, pose.size, frameWidth, frameHeight, nowMs, comparable, elapsedSeconds)
+        buildFrame(
+            result,
+            primaryIndex,
+            pose.size,
+            frameWidth,
+            frameHeight,
+            nowMs,
+            comparable,
+            elapsedSeconds,
+            processingMs,
+        )
     }
 
     /**
@@ -1190,8 +1214,8 @@ class PoseCameraView(
     }
 
     /**
-     * Encodes one frame into the wire layout and hands it to the ring buffer. Runs on MediaPipe's
-     * callback thread. The latest frame is recorded whatever the mode is, because `snapshotFrame()`
+     * Encodes one frame into the wire layout and hands it to the ring buffer. Runs on the analysis
+     * thread. The latest frame is recorded whatever the mode is, because `snapshotFrame()`
      * is documented to answer at `mode: 'off'`; only buffering and the tick are the mode's business.
      */
     @Suppress("LongParameterList")
@@ -1204,6 +1228,7 @@ class PoseCameraView(
         nowMs: Long,
         comparable: Boolean,
         elapsedSeconds: Float,
+        processingMs: Double,
     ) {
         // One volatile read: the scratch buffer belongs to the shape, so a layout change swaps
         // both together and this can never pair an old shape with a new buffer.
@@ -1263,10 +1288,6 @@ class PoseCameraView(
         val velocityX = scratch[cursor - 2]
         val velocityY = scratch[cursor - 1]
         scratch[cursor] = Geometry.bodySpan(landmarkBuffer)
-
-        val dispatchNanos = detector?.dispatchNanosFor(result.timestampMs()) ?: 0L
-        val processingMs =
-            if (dispatchNanos == 0L) 0.0 else (System.nanoTime() - dispatchNanos) / NANOS_PER_MILLI
 
         evaluateTriggers(
             nowMs = nowMs,
@@ -1427,7 +1448,7 @@ class PoseCameraView(
         }
     }
 
-    /** On MediaPipe's callback thread. Rate limited: a dead delegate fails every frame. */
+    /** On the analysis thread. Rate limited: a dead delegate fails every frame. */
     private fun onDetectionError(error: RuntimeException) {
         PoseLog.warn(LogCategory.DETECTOR) { "inference failed: ${error.message}" }
         val now = SystemClock.elapsedRealtime()
@@ -1439,7 +1460,7 @@ class PoseCameraView(
         post { emitError(ErrorCode.DETECTION_FAILED, message) }
     }
 
-    /** Three failures inside a second on the GPU is a delegate that does not work here. Callback thread. */
+    /** Three failures inside a second on the GPU is a delegate that does not work here. Analysis thread. */
     private fun noteGpuFailure(now: Long): Boolean {
         while (gpuFailureTimes.isNotEmpty() && now - gpuFailureTimes.first() > GPU_FAILURE_WINDOW_MS) {
             gpuFailureTimes.removeFirst()

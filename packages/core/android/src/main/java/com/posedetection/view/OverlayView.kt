@@ -15,7 +15,7 @@ import com.posedetection.Skeleton
 internal class OverlayView(
     context: Context,
 ) : View(context) {
-    // The detector's result thread writes `incoming`, the UI thread draws from `landmarks`, and
+    // The analysis thread writes `incoming`, the UI thread draws from `landmarks`, and
     // `frameLock` is held only for the copy between them. Without it a draw already in flight can
     // read some joints from one frame and the rest from the next, and the skeleton snaps apart.
     private val frameLock = Any()
@@ -60,7 +60,7 @@ internal class OverlayView(
     }
 
     /**
-     * Called from the detector's result thread; copies into the view's buffer and posts a redraw.
+     * Called from the analysis thread; copies into the view's buffer and posts a redraw.
      *
      * The size travels with the landmarks rather than in a call of its own. Two critical sections
      * let `onDraw` land between them and draw new landmarks against the previous frame size, which

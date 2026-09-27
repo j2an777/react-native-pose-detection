@@ -168,7 +168,7 @@ internal object WireWriter {
 }
 
 /**
- * Bounded, drop-oldest, written on the inference thread and drained on the module queue.
+ * Bounded, drop-oldest, written on the analysis thread and drained on the module queue.
  *
  * Backing storage is allocated once per layout and reused, so the frame path copies and does not
  * allocate. A drain allocates exactly one direct buffer, which JavaScript then owns.

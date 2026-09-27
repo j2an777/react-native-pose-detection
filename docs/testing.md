@@ -134,8 +134,10 @@ analysis frame with its landmarks plotted is what caught it: the shoulders sat a
 On the iPhone the full model ran on the GPU at 16 to 18 ms per inference and held the camera's 30
 fps, a mount reached `onReady` in about a second, a restarted detector had frames back in about
 120 ms, and the three-second test clip was sampled in about one second. The Redmi is a low-end
-phone: the full model costs it about 120 ms on the GPU and 195 ms on the CPU, so it runs at the
-10 fps floor, and building the GPU landmarker adds over a second to every mount. `idle` skips
+phone: the full model costs it about 80 ms a frame on the GPU and 110 ms on the CPU, so it runs at
+about 10 fps, and building the GPU landmarker takes about 1.7 s against 0.6 s on the CPU. The
+earlier figures of 120 and 195 ms were frames waiting behind each other in LIVE_STREAM, not the
+model. `idle` skips
 itself when anybody is in frame, so it needs the phone pointed at an empty room.
 
 The emulator proves lifecycle and correctness, not speed or heat: its camera is a rendered scene,
