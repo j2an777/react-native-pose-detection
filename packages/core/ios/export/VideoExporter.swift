@@ -131,6 +131,8 @@ final class VideoExporter {
         reader.add(output)
         audio = output
         audioFormat = format
+      } else {
+        PoseLog.warn(.detector, "the export reader refused the audio track, writing video only")
       }
     }
     return ReadSide(reader: reader, video: video, audio: audio, audioFormat: audioFormat)
@@ -169,6 +171,8 @@ final class VideoExporter {
       if writer.canAdd(input) {
         writer.add(input)
         audio = input
+      } else {
+        PoseLog.warn(.detector, "the export writer refused the audio track, writing video only")
       }
     }
     return WriteSide(writer: writer, video: video, audio: audio, adaptor: adaptor)
