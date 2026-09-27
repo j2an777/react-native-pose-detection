@@ -265,7 +265,10 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
   }, []);
 
   const handleError = React.useCallback((event: NativeEvent<ErrorEvent>) => {
-    if (event.nativeEvent.fatal) state.current = { ...state.current, active: false };
+    const { code, fatal } = event.nativeEvent;
+    // Fatal to detection only: the preview keeps running.
+    if (fatal && code !== 'DETECTOR_INIT_FAILED')
+      state.current = { ...state.current, active: false };
     callbacks.current.onError?.(event.nativeEvent);
   }, []);
 
