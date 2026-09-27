@@ -147,6 +147,9 @@ final class TriggerRuntime {
 
     holdSince = 0
     guard spec.emit == .whileActive else { return nil }
+    // `while` needs `enter` to hold, not only `exit` not to: between the two thresholds of a
+    // trigger with both, it is still active but `enter` no longer holds.
+    guard spec.enter.matches(frame) else { return nil }
     if lastWhileMs != 0 && nowMs - lastWhileMs < spec.throttleMs { return nil }
 
     lastWhileMs = nowMs

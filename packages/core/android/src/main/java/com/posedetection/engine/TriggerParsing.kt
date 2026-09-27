@@ -44,7 +44,13 @@ internal fun duration(
     value: Any?,
     fallback: Long,
     floor: Long = 0L,
-): Long = (value as? Number)?.toLong()?.coerceAtLeast(floor) ?: fallback
+): Long =
+    // NaN and the infinities fall back, as on iOS: toLong() would turn them into 0 and Long.MAX_VALUE.
+    (value as? Number)
+        ?.toDouble()
+        ?.takeIf { it.isFinite() }
+        ?.toLong()
+        ?.coerceAtLeast(floor) ?: fallback
 
 internal fun parseCondition(raw: Any?): PoseCondition {
     val map =

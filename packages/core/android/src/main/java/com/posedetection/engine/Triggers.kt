@@ -51,6 +51,10 @@ internal class TriggerFiring(
  * ACTIVE + exit  holds → IDLE   ; count++ ; emit if 'cycle' or 'exit'
  * ACTIVE + enter holds → emit if 'while', throttled
  * ```
+ *
+ * `while` needs `enter` to hold, not only `exit` not to: between the two thresholds of a trigger
+ * with both, the trigger is still active but `enter` no longer holds, and it used to keep firing
+ * there against the schema.
  */
 internal class TriggerRuntime(
     val spec: TriggerSpec,
@@ -146,6 +150,7 @@ internal class TriggerRuntime(
 
         holdSince = 0L
         if (spec.emit != TriggerEmit.WHILE) return null
+        if (!spec.enter.matches(frame)) return null
         if (lastWhileMs != 0L && nowMs - lastWhileMs < spec.throttleMs) return null
 
         lastWhileMs = nowMs
@@ -162,9 +167,15 @@ internal class TriggerRuntime(
  */
 internal class TriggerEngine {
     /**
-     * Volatile because an array reference gets no final-field freeze: without it the inference
-     * thread can see a published array whose elements have not landed yet, and evaluate a null.
+     * `setTriggers` runs on main and `evaluate` on the analysis thread, and the count a new set
+     * carries across has to be the one after the frame in flight, not before it. Without the lock
+     * a rep that finished during a props update was counted by the old runtime and lost from the
+     * new one. Held around the whole evaluation, as on iOS: it is uncontended on every frame but
+     * the one a props update lands on.
      */
+    private val lock = Any()
+
+    /** Volatile as well, for [isEmpty], the one read taken without the lock. */
     @Volatile
     private var runtimes: Array<TriggerRuntime> = emptyArray()
 
@@ -172,17 +183,21 @@ internal class TriggerEngine {
         get() = runtimes.isEmpty()
 
     fun setTriggers(specs: List<TriggerSpec>) {
-        val previous = runtimes
-        runtimes =
-            Array(specs.size) { index ->
-                val spec = specs[index]
-                val carried = previous.firstOrNull { it.spec.id == spec.id }
-                TriggerRuntime(spec, carried?.count ?: 0)
-            }
+        synchronized(lock) {
+            val previous = runtimes
+            runtimes =
+                Array(specs.size) { index ->
+                    val spec = specs[index]
+                    val carried = previous.firstOrNull { it.spec.id == spec.id }
+                    TriggerRuntime(spec, carried?.count ?: 0)
+                }
+        }
     }
 
     fun onPoseLost() {
-        for (runtime in runtimes) runtime.onPoseLost()
+        synchronized(lock) {
+            for (runtime in runtimes) runtime.onPoseLost()
+        }
     }
 
     /** Appends to [into] rather than returning a list, so a frame that fires nothing allocates nothing. */
@@ -191,9 +206,11 @@ internal class TriggerEngine {
         nowMs: Long,
         into: MutableList<TriggerFiring>,
     ) {
-        for (runtime in runtimes) {
-            val firing = runtime.evaluate(frame, nowMs) ?: continue
-            into.add(firing)
+        synchronized(lock) {
+            for (runtime in runtimes) {
+                val firing = runtime.evaluate(frame, nowMs) ?: continue
+                into.add(firing)
+            }
         }
     }
 }

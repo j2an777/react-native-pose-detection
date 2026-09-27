@@ -180,6 +180,22 @@ final class TriggerRuntimeTests: XCTestCase {
     XCTAssertNil(trigger.evaluate(frame, nowMs: 1400), "exiting is not a while emission")
   }
 
+  func testEmitWhileStopsBetweenTheThresholds() {
+    let trigger = runtime(.whileActive, throttleMs: 250)
+
+    enter.on = true
+    _ = trigger.evaluate(frame, nowMs: 1000)
+    XCTAssertNotNil(trigger.evaluate(frame, nowMs: 1050))
+
+    // Past enter's threshold on the way back, short of exit's: still active, not holding.
+    enter.on = false
+    XCTAssertNil(trigger.evaluate(frame, nowMs: 1400), "enter no longer holds")
+    XCTAssertNil(trigger.evaluate(frame, nowMs: 1700), "enter no longer holds")
+
+    enter.on = true
+    XCTAssertNotNil(trigger.evaluate(frame, nowMs: 1800), "holding again, and outside the throttle")
+  }
+
   func testLosingThePoseBreaksAHoldWithoutAbandoningAnActiveTrigger() {
     let trigger = runtime(.cycle, minDurationMs: 200)
 

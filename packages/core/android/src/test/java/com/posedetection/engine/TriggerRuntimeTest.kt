@@ -168,6 +168,23 @@ class TriggerRuntimeTest {
     }
 
     @Test
+    fun `emit while stops between the thresholds, where the trigger is active but enter no longer holds`() {
+        val trigger = runtime(TriggerEmit.WHILE, throttleMs = 250)
+
+        enter.on = true
+        trigger.evaluate(frame, 1000)
+        assertNotNull(trigger.evaluate(frame, 1050))
+
+        // Past enter's threshold on the way back, short of exit's: still active, not holding.
+        enter.on = false
+        assertNull("enter no longer holds", trigger.evaluate(frame, 1400))
+        assertNull("enter no longer holds", trigger.evaluate(frame, 1700))
+
+        enter.on = true
+        assertNotNull("holding again, and outside the throttle", trigger.evaluate(frame, 1800))
+    }
+
+    @Test
     fun `losing the pose breaks a hold without abandoning an active trigger`() {
         val trigger = runtime(TriggerEmit.CYCLE, minDurationMs = 200)
 
