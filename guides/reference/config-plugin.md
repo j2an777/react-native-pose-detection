@@ -70,6 +70,10 @@ See [ADR 0006](../../docs/adr/0006-checksums-are-fatal-except-in-the-cache.md).
 | `full` | ~9.0 MB | most apps |
 | `heavy` | ~29.2 MB | accuracy-critical, flagships |
 
+`full` is the default on both platforms. An app aimed at budget Android phones gets more frames
+from `lite`: a Redmi Note 12 runs `full` at about 10 fps and `lite` at about 15. See
+[budget Android phones](../performance.md#budget-android-phones).
+
 ## Offline
 
 A cache hit needs no network. A cache miss with no network fails with the URL and cache path

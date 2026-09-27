@@ -72,6 +72,8 @@ the first list is what to check when upgrading.
 - Non-finite numbers in props and file options are refused at the call site with a path, instead
   of crashing an iOS app when converted.
 - The `'delegate'` reason on `onPerformanceChange`.
+- The README lists every event, ref method, function, trigger field and CLI command, each linked to
+  its reference, and a new functions reference covers every export on one page.
 
 ### Faster, cooler
 
@@ -151,6 +153,14 @@ the first list is what to check when upgrading.
   they were delivered.
 - A hand-copied model such as `pose_landmarker_full (1).task` survived the plugin's cleanup and
   `doctor`, while the runtime could load it ahead of the installed model.
+- A video export under a name already taken, such as a second export of the same clip, deleted the
+  earlier file before it started, so a re-export that was cancelled or failed lost both. The
+  earlier file now stays until the new one is finished and is replaced in one step. Both platforms.
+- `addLogListener()` heard nothing unless a camera was mounted, so photo and video detection and
+  exports could not be watched from JavaScript. With no camera on screen the module now hands the
+  batches over itself.
+- `doctor` failed on a project with only `android/` or only `ios/`. The missing platform is now
+  skipped, and only a directory with neither fails.
 
 ## 0.1.0
 

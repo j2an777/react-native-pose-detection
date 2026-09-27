@@ -31,11 +31,12 @@ Working *on* the library? See [docs/](../docs/README.md).
 | [`<PoseCamera>` props](./reference/pose-camera.md) | Every prop and its default |
 | [Ref methods](./reference/ref-methods.md) | `switchCamera`, `snapshot`, `getState`, … |
 | [Events](./reference/events.md) | Every callback, payload, and error code |
+| [Functions](./reference/functions.md) | `detectOnImage`, `exportPose`, `setLogLevel`, every other export |
 | [Types](./reference/types.md) | `PoseFrame`, `JointName`, wire format |
 | [Camera permission](./reference/permissions.md) | `useCameraPermission`, and why blocked is not denied |
 | [Trigger schema](./reference/trigger-schema.md) | Conditions, emit modes, validation |
 | [Config plugin](./reference/config-plugin.md) | `app.json` options |
-| [CLI](./reference/cli.md) | `fetch-model`, `doctor` |
+| [CLI](./reference/cli.md) | `fetch-model`, `doctor`, `clear-cache` |
 
 ## Getting the best performance
 

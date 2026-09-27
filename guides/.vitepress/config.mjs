@@ -204,6 +204,7 @@ export default {
           { text: '<PoseCamera> props', link: '/reference/pose-camera' },
           { text: 'Ref methods', link: '/reference/ref-methods' },
           { text: 'Events', link: '/reference/events' },
+          { text: 'Functions', link: '/reference/functions' },
           { text: 'Types', link: '/reference/types' },
           { text: 'Camera permission', link: '/reference/permissions' },
           { text: 'Trigger schema', link: '/reference/trigger-schema' },

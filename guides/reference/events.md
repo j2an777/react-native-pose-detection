@@ -2,15 +2,15 @@
 
 | Callback | Fires | Rate |
 | --- | --- | --- |
-| `onReady` | camera up, and the landmarker running or failed to start | once per session start |
-| `onError` | a failure occurred | rare |
-| `onCameraChange` | switch complete and stable | per switch |
-| `onPerformanceChange` | the rate, the delegate or the reason for either changed | rare |
-| `onTrigger` | a trigger transitioned | ~1 per event |
-| `onPose` | frame delivered | 10/s or 30/s |
-| `onPoseBatch` | buffer flushed | 2/s |
-| `onFramesDropped` | the ring buffer dropped frames | per delivery |
-| `onLog` | a batch of log entries | ~4/s while logging |
+| [`onReady`](#onready) | camera up, and the landmarker running or failed to start | once per session start |
+| [`onError`](#onerror) | a failure occurred; every code is in [error codes](#error-codes) | rare |
+| [`onCameraChange`](#oncamerachange) | switch complete and stable | per switch |
+| [`onPerformanceChange`](#onperformancechange) | the rate, the delegate or the reason for either changed | rare |
+| [`onTrigger`](#ontrigger) | a trigger transitioned | ~1 per event |
+| [`onPose`](#onpose-and-onposebatch) | frame delivered | 10/s or 30/s |
+| [`onPoseBatch`](#onpose-and-onposebatch) | buffer flushed | 2/s |
+| [`onFramesDropped`](#onframesdropped) | the ring buffer dropped frames | per delivery |
+| [`onLog`](#onlog) | a batch of log entries | ~4/s while logging |
 
 Every one is implemented on both platforms. Three of them are not native events at all:
 `onPose`, `onPoseBatch` and `onFramesDropped` are called by `<PoseCamera>` after it drains the
@@ -58,6 +58,8 @@ type ErrorEvent = {
   fatal: boolean;
 };
 ```
+
+### Error codes
 
 This is the complete list. Native emits nothing outside it, so a `switch` on `code` can be
 exhaustive and a new failure mode has to be added here rather than appearing as a new string.
@@ -164,7 +166,7 @@ therefore not ordered against plain ones, and `timestamp` is what you should sor
 not arrival order. If the redemption fails, or the ticket was already spent, `onTrigger` still
 fires with `snapshot` absent rather than not firing at all.
 
-## `onPose` / `onPoseBatch`
+## `onPose` and `onPoseBatch`
 
 ```ts
 onPose?: (frame: PoseFrame) => void;
@@ -200,3 +202,16 @@ still information and it used to be decoded on every drain and discarded.
 It is reported per delivery, not cumulatively. A single spike is normal, for instance a slow first
 render. A steady trickle means your `onPose` or `onPoseBatch` handler is doing too much work, and
 the fix is to do less in the callback rather than to raise `flushMs`.
+
+## `onLog`
+
+```ts
+onLog?: (entries: readonly LogEntry[]) => void;
+```
+
+Diagnostic entries in batches of about every 250 ms, for as long as the level set by
+`setLogLevel()` or this camera's `logLevel` prop lets any through. At the default `'off'` nothing
+arrives. The batches are the ones `addLogListener()` receives, which also hears photo detections
+and exports with no camera on screen; with two cameras mounted, the first one's `onLog` receives
+them. `LogEntry` and the levels are under [functions → diagnostics](./functions.md#diagnostics),
+and what each level shows in [the log channel](../troubleshooting.md#watching-it-work-the-log-channel).

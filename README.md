@@ -14,7 +14,7 @@ projects alike. Nothing crosses the bridge until you ask.
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-black)
 
-[Installation](#installation) · [Quick start](#quick-start) · [Do more](#do-more) · [Full surface](#the-whole-surface-at-a-glance) · [Example](./example) · [Docs site](https://khalid999devs.github.io/react-native-pose-detection/)
+[Installation](#installation) · [Quick start](#quick-start) · [Do more](#do-more) · [API](#api) · [Docs](#documentation) · [Example](./example) · [Docs site](https://khalid999devs.github.io/react-native-pose-detection/)
 
 ![A frame of an exported video with the skeleton painted in](./ss/export-frame.png)
 
@@ -117,7 +117,13 @@ Exactly one ships, whichever you pick. Changing it is one word in the config plu
 | `full` *(default)* | most apps: the accuracy and cost balance |
 | `heavy` | accuracy-critical work on flagship hardware |
 
-Sizes and the full trade-off table: [app size](./guides/performance.md#app-size).
+`full` is the default on both platforms and the right call for most phones. **On a budget
+Android phone, ship `lite` instead**: a Redmi Note 12 runs `full` at about 10 fps and `lite` at
+about 15. It is one word in the plugin config, `"model": "lite"`, or
+`npx react-native-pose-detection fetch-model lite` on bare React Native.
+
+Sizes and the full trade-off table: [app size](./guides/performance.md#app-size). Measured
+budget-phone numbers: [budget Android phones](./guides/performance.md#budget-android-phones).
 
 ## Quick start
 
@@ -193,7 +199,13 @@ await cam.current.getProfile();
 Every axis is still yours: `profile`, `targetFps`, `resolution`, `analysisResolution`,
 `delegate`, `thermalPolicy`.
 
-## The whole surface at a glance
+## API
+
+Everything the package exports, each linked to its full reference: the component's
+[props](#posecamera-props), [events](#events) and [ref methods](#ref-methods), then the
+[functions](#functions), the [trigger](#triggers) format and the [CLI](#cli).
+
+### `<PoseCamera>` props
 
 Every prop on one component. All of them optional; an explicit value pins that axis and the
 rest stay automatic.
@@ -262,6 +274,96 @@ rest stay automatic.
 
 Exact types, clamping rules and edge behavior: [`<PoseCamera>` reference](./guides/reference/pose-camera.md).
 
+### Events
+
+| Callback | Fires | Carries |
+| --- | --- | --- |
+| [`onReady`](./guides/reference/events.md#onready) | the camera is up and the model running, once per session | `delegate`, `model`, `targetFps`, sizes |
+| [`onError`](./guides/reference/events.md#onerror) | something failed; `fatal` says whether the camera stopped | `code`, `message`, `fatal` |
+| [`onCameraChange`](./guides/reference/events.md#oncamerachange) | a lens switch finished | `facing` |
+| [`onPerformanceChange`](./guides/reference/events.md#onperformancechange) | the rate or the delegate moved | `reason`, `targetFps`, `delegate`, `limitedBy` |
+| [`onTrigger`](./guides/reference/events.md#ontrigger) | a trigger entered, exited or completed a cycle | `id`, `phase`, `count`, `durationMs` |
+| [`onPose`](./guides/reference/events.md#onpose-and-onposebatch) | a frame, with `data.mode` `'throttled'` or `'live'` | a `PoseFrame` |
+| [`onPoseBatch`](./guides/reference/events.md#onpose-and-onposebatch) | frames, with `data.mode: 'batched'` | `PoseFrame[]` |
+| [`onFramesDropped`](./guides/reference/events.md#onframesdropped) | your frame handler fell behind | a count |
+| [`onLog`](./guides/reference/events.md#onlog) | diagnostic entries, while logging is on | `LogEntry[]` |
+
+Every error code, and which ones stop the camera: [error codes](./guides/reference/events.md#error-codes).
+
+### Ref methods
+
+```tsx
+const cam = useRef<PoseCameraRef>(null);
+// <PoseCamera ref={cam} />
+await cam.current?.switchCamera();
+```
+
+| Method | Does |
+| --- | --- |
+| `switchCamera()`, `setFacing(facing)` | flips the lens or picks one, resolving once the new one delivers |
+| `pause()`, `resume()` | stops and restarts the camera session |
+| `startDetection()`, `stopDetection()` | turns inference on and off with the preview still running |
+| `setOverlayEnabled(enabled)` | shows or hides the skeleton |
+| `setProfile(profile)`, `getProfile()` | picks a performance profile; reads what was measured and why |
+| `getState()` | facing, rate, delegate and more, synchronously |
+| `snapshot()` | the current frame, whatever `data.mode` is |
+
+Guarantees and edge cases: [ref methods reference](./guides/reference/ref-methods.md).
+
+### Functions
+
+```ts
+import { detectOnImage, exportPose, useCameraPermission } from 'react-native-pose-detection';
+```
+
+| Function | Does |
+| --- | --- |
+| [`detectOnImage(uri, options?)`](./guides/reference/functions.md#detectonimage) | landmarks from a photo |
+| [`detectOnVideo(uri, options?)`](./guides/reference/functions.md#detectonvideo) | landmarks from a video, sampled and cancellable |
+| [`exportPose(uri, options?)`](./guides/reference/functions.md#exportpose) | a copy of a photo or video with the skeleton painted in |
+| [`useCameraPermission(options?)`](./guides/reference/functions.md#usecamerapermission) | the camera permission as React state |
+| [`getCameraPermission()`, `requestCameraPermission()`](./guides/reference/functions.md#camera-permission) | reads the permission, or asks for it |
+| [`validateTriggers()`, `assertValidTriggers()`](./guides/reference/functions.md#triggers) | checks trigger configs before they render |
+| [`landmark()`, `isVisible()` and the other accessors](./guides/reference/functions.md#reading-a-frame) | read one joint out of a `PoseFrame` |
+| [`setLogLevel()`, `addLogListener()`](./guides/reference/functions.md#diagnostics) | the diagnostic log channel |
+
+Every export on one page, constants included: [functions reference](./guides/reference/functions.md).
+
+### Triggers
+
+A trigger is a condition on the body, checked natively on every frame, that sends one
+`onTrigger` event when it starts or stops holding:
+
+```ts
+type Trigger = {
+  id: string;
+  enter: Condition;          // when it starts holding
+  exit?: Condition;          // when it stops; required for 'cycle' and 'exit'
+  emit: 'enter' | 'exit' | 'cycle' | 'while';
+  debounceMs?: number;       // ignore re-fires this soon after one
+  minDurationMs?: number;    // must hold this long first
+  snapshot?: boolean;        // attach the frame it fired on
+  throttleMs?: number;       // 'while' only
+};
+```
+
+A `Condition` is one of `angle`, `landmarkX`, `landmarkY`, `velocityX`, `velocityY` or
+`visibility`, with `below` and `above` bounds, or `between` for an angle. `all` and `any`
+combine them. Writing them: [triggers guide](./guides/triggers.md). Every field and validation
+rule: [trigger schema](./guides/reference/trigger-schema.md). Worked ones for squats, holds and
+jumps: [what you can build](./guides/recipes.md).
+
+### CLI
+
+| Command | Does |
+| --- | --- |
+| `npx react-native-pose-detection fetch-model <lite\|full\|heavy>` | downloads, verifies and installs a model, for bare React Native |
+| `npx react-native-pose-detection doctor` | checks the install and names anything missing |
+| `npx react-native-pose-detection clear-cache` | deletes the downloaded models |
+
+Flags and output: [CLI reference](./guides/reference/cli.md). Expo's equivalent is the
+[config plugin](./guides/reference/config-plugin.md).
+
 ## Alternatives, honestly
 
 - **VisionCamera with an ML Kit pose plugin**, such as `react-native-vision-camera-v3-pose-detection`:
@@ -306,8 +408,19 @@ searchable, with a page per guide.
 | [Photos and video files](./guides/files.md) | Landmarks from files, painted copies |
 | [Performance](./guides/performance.md) | Profiles, the governor, thermal, app size |
 | [What you can build](./guides/recipes.md) | Trigger syntax, feasibility, limits |
-| [API reference](./guides/reference) | Every prop, method, event, type, error code |
 | [Troubleshooting](./guides/troubleshooting.md) | Real problems, and the log channel |
+
+| Reference | Covers |
+| --- | --- |
+| [`<PoseCamera>` props](./guides/reference/pose-camera.md) | Every prop, its default and its range |
+| [Events](./guides/reference/events.md) | Every callback, its payload, every error code |
+| [Ref methods](./guides/reference/ref-methods.md) | `switchCamera`, `snapshot`, `getProfile`, … |
+| [Functions](./guides/reference/functions.md) | Files, permission, validation, accessors, logging, constants |
+| [Types](./guides/reference/types.md) | `PoseFrame`, the wire format, joint names |
+| [Trigger schema](./guides/reference/trigger-schema.md) | Conditions, emit modes, validation rules |
+| [Camera permission](./guides/reference/permissions.md) | The four states, and why blocked is not denied |
+| [Config plugin](./guides/reference/config-plugin.md) | `app.json` options |
+| [CLI](./guides/reference/cli.md) | `fetch-model`, `doctor`, `clear-cache` |
 
 The [example app](./example) shows all of it running: a live camera with every prop on a
 panel, a studio that paints picked files, and a diagnostics screen with stress scenarios. It

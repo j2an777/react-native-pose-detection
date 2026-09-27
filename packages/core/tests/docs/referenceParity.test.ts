@@ -80,7 +80,10 @@ test('the events table lists exactly the callbacks the props declare', () => {
   const table = /\| Callback \| Fires \| Rate \|\n\|[^\n]*\|\n([\s\S]*?)\n\n/.exec(source)?.[1];
   assert.ok(table !== undefined, 'could not find the callback table in events.md');
 
-  const documented = [...table.matchAll(/^\| `(on\w+)` \|/gm)].map((match) => match[1]).sort();
+  // A row names its callback in backticks, and may link it to the callback's own section.
+  const documented = [...table.matchAll(/^\| \[?`(on\w+)`(?:\]\([^)]*\))? \|/gm)]
+    .map((match) => match[1])
+    .sort();
   const declared = membersOf('PoseCameraProps')
     .filter((name) => name.startsWith('on'))
     .sort();
@@ -99,4 +102,44 @@ test('every error code has a row in the events reference', () => {
   // switching on a code native can never send.
   const stale = documented.filter((code) => !ERROR_CODES.includes(code as never));
   assert.deepEqual(stale, []);
+});
+
+/** Every value `src/index.ts` exports: functions, classes and constants, but not types. */
+function runtimeExports(): string[] {
+  const entry = resolve(CORE, 'src/index.ts');
+  const program = ts.createProgram([entry], {
+    target: ts.ScriptTarget.ES2022,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    jsx: ts.JsxEmit.ReactJSX,
+    strict: true,
+    noEmit: true,
+  });
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(entry);
+  assert.ok(source !== undefined, `${entry} is not in the program`);
+  const module = checker.getSymbolAtLocation(source);
+  assert.ok(module !== undefined, `${entry} has no module symbol`);
+
+  return checker
+    .getExportsOfModule(module)
+    .filter((symbol) => {
+      const target =
+        symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+      return (target.flags & ts.SymbolFlags.Value) !== 0;
+    })
+    .map((symbol) => symbol.getName())
+    .sort();
+}
+
+test('every function, class and constant the package exports is documented in the reference', () => {
+  const docs = reference();
+  const undocumented = runtimeExports().filter(
+    (name) => !documents(docs, name) && !docs.includes(`<${name}`),
+  );
+
+  assert.deepEqual(
+    undocumented,
+    [],
+    'these are exported from src/index.ts but appear nowhere in guides/reference/',
+  );
 });
