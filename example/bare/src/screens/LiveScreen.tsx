@@ -289,7 +289,8 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
             <Divider />
             <Live label="limit" value={measured?.limitedBy ?? '–'} />
             <Divider />
-            <Live label="gpu" value={ready?.delegate ?? '–'} />
+            {/* The profile's, which follows Android's move from the CPU to the GPU after onReady. */}
+            <Live label="gpu" value={measured?.resolved.delegate ?? ready?.delegate ?? '–'} />
             <Divider />
             {dataMode === 'off' ? (
               <Live label="in" value={shortSize(ready?.analysisResolution)} />
