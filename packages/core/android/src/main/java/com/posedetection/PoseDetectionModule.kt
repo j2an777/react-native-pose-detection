@@ -3,6 +3,8 @@ package com.posedetection
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.posedetection.camera.Facing
 import com.posedetection.detector.StaticDetection
@@ -34,17 +36,43 @@ class PoseDetectionModule : Module() {
             PackageManager.PERMISSION_GRANTED
     }
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * The log flush while no camera is attached. A camera hands batches over as its own `onLog`
+     * while it is, and with none on screen nothing did: `addLogListener()` heard nothing from a
+     * file detection or an export. It runs while the stream does, which is only while something in
+     * JavaScript listens, and a tick with a camera attached is one volatile read and a lock.
+     */
+    private val logFlush =
+        object : Runnable {
+            override fun run() {
+                mainHandler.postDelayed(this, PoseLog.FLUSH_MS)
+                val entries = PoseLog.takeBatch(null) ?: return
+                sendEvent("onLog", mapOf("entries" to entries))
+            }
+        }
+
     override fun definition() =
         ModuleDefinition {
             Name("PoseDetection")
 
             Function("setLogLevel") { config: Any? -> applyLogLevel(config) }
 
-            // The buffer is global because the level mask is. A view runs the flush, see PoseLog.
-            Function("startLogStream") { PoseLog.startStream() }
-            Function("stopLogStream") { PoseLog.stopStream() }
+            // The buffer is global because the level mask is. A camera runs the flush while one is
+            // attached, and the module while none is, see PoseLog.
+            Function("startLogStream") {
+                PoseLog.startStream()
+                mainHandler.removeCallbacks(logFlush)
+                mainHandler.postDelayed(logFlush, PoseLog.FLUSH_MS)
+            }
+            Function("stopLogStream") {
+                PoseLog.stopStream()
+                mainHandler.removeCallbacks(logFlush)
+            }
+            OnDestroy { mainHandler.removeCallbacks(logFlush) }
 
-            Events("onVideoProgress", "onExportProgress")
+            Events("onVideoProgress", "onExportProgress", "onLog")
 
             // Both handed to this package's own thread rather than run on Expo's, which every
             // module in the app shares: a video job there held all of them up while it ran.

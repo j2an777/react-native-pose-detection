@@ -15,9 +15,26 @@ import type {
 // remove() unsubscribe both.
 const listeners: LogListener[] = [];
 
+/**
+ * Batches the module hands over itself, which it does only while no camera is attached: a mounted
+ * camera flushes through its own `onLog`, and `<PoseCamera>` passes those on to the registry.
+ * Without this a file detection or an export with no camera on screen reached no listener at all.
+ */
+let moduleBatches: { remove(): void } | null = null;
+
 const stream = logStreamGate(
-  () => getNativeModule().startLogStream(),
-  () => getNativeModule().stopLogStream(),
+  () => {
+    const native = getNativeModule();
+    moduleBatches = native.addListener('onLog', (event: { entries: LogEntry[] }) => {
+      emitLogEntries(event.entries);
+    });
+    native.startLogStream();
+  },
+  () => {
+    getNativeModule().stopLogStream();
+    moduleBatches?.remove();
+    moduleBatches = null;
+  },
 );
 
 function isLogLevel(value: unknown): value is LogLevel {

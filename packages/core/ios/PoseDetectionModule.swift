@@ -2,6 +2,14 @@ import AVFoundation
 import ExpoModulesCore
 
 public class PoseDetectionModule: Module {
+  /**
+   The log flush while no camera is attached. A camera hands batches over as its own `onLog` while
+   it is, and with none on screen nothing did: `addLogListener()` heard nothing from a file
+   detection or an export. It runs while the stream does, which is only while something in
+   JavaScript listens. Started and stopped on the JavaScript thread, and fired on main.
+   */
+  private var logFlush: DispatchSourceTimer?
+
   // The two functions below are declarations rather than logic: every line names one prop, one
   // function or one event, and splitting them further would only scatter the surface this module
   // exports across several places to satisfy a line count.
@@ -13,11 +21,21 @@ public class PoseDetectionModule: Module {
       applyLogLevel(unwrap(config))
     }
 
-    // The buffer is global because the level mask is. A view runs the flush, see PoseLog.
-    Function("startLogStream") { PoseLog.startStream() }
-    Function("stopLogStream") { PoseLog.stopStream() }
+    // The buffer is global because the level mask is. A camera runs the flush while one is
+    // attached, and the module while none is, see PoseLog.
+    Function("startLogStream") { [weak self] in
+      PoseLog.startStream()
+      self?.startLogFlush()
+    }
+    Function("stopLogStream") { [weak self] in
+      PoseLog.stopStream()
+      self?.stopLogFlush()
+    }
+    OnDestroy { [weak self] in
+      self?.stopLogFlush()
+    }
 
-    Events("onVideoProgress", "onExportProgress")
+    Events("onVideoProgress", "onExportProgress", "onLog")
 
     // Both handed to this package's own queue rather than run on Expo's, which every module in the
     // app shares: a video job there held all of them up while it ran, at the camera's priority.
@@ -119,6 +137,23 @@ public class PoseDetectionModule: Module {
     }
 
     cameraView()
+  }
+
+  private func startLogFlush() {
+    logFlush?.cancel()
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(deadline: .now() + PoseLog.flushSeconds, repeating: PoseLog.flushSeconds)
+    timer.setEventHandler { [weak self] in
+      guard let entries = PoseLog.takeBatch(nil) else { return }
+      self?.sendEvent("onLog", ["entries": entries])
+    }
+    timer.resume()
+    logFlush = timer
+  }
+
+  private func stopLogFlush() {
+    logFlush?.cancel()
+    logFlush = nil
   }
 }
 

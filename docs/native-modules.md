@@ -18,6 +18,7 @@ TypeScript is lying.
 Name("PoseDetection")
 
 Function("setLogLevel") · Function("startLogStream") · Function("stopLogStream")
+Events("onVideoProgress", "onExportProgress", "onLog")
 
 View(PoseCameraView) {
   Prop("profile") · Prop("facing") · Prop("delegate") · …

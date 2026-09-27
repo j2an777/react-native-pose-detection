@@ -1,7 +1,8 @@
 import XCTest
 @testable import PoseEngine
 
-/// The level `setLogLevel()` sets, and what a camera's `logLevel` prop does on top of it.
+/// The level `setLogLevel()` sets, what a camera's `logLevel` prop does on top of it, and who hands
+/// the buffered entries to JavaScript.
 final class PoseLogTests: XCTestCase {
   private let camera = NSObject()
   private let other = NSObject()
@@ -10,7 +11,21 @@ final class PoseLogTests: XCTestCase {
     PoseLog.raise(camera, to: nil)
     PoseLog.raise(other, to: nil)
     PoseLog.setLevel(.off)
+    PoseLog.releaseStream(camera)
+    PoseLog.releaseStream(other)
+    PoseLog.stopStream()
     super.tearDown()
+  }
+
+  private func buffer(_ messages: [String]) {
+    PoseLog.setLevel(.info)
+    for message in messages {
+      PoseLog.info(.engine, message)
+    }
+  }
+
+  private func messages(_ batch: [[String: Any]]?) -> [String]? {
+    return batch?.compactMap { $0["message"] as? String }
   }
 
   func testACameraMountedWithoutTheLogLevelPropLeavesTheGlobalLevelAlone() {
@@ -58,5 +73,49 @@ final class PoseLogTests: XCTestCase {
   func testAMapOfUnknownCategoriesRaisesNothingAndAnythingElseIsNoRaise() {
     XCTAssertEqual(PoseLog.levelMask(for: ["nonsense": "trace"]), 0)
     XCTAssertNil(PoseLog.levelMask(for: 42))
+  }
+
+  func testWithNoCameraAttachedTheModuleHandsTheEntriesOver() {
+    PoseLog.startStream()
+    buffer(["a", "b"])
+    XCTAssertEqual(messages(PoseLog.takeBatch(nil)), ["a", "b"])
+    XCTAssertNil(PoseLog.takeBatch(nil))
+  }
+
+  func testAnAttachedCameraFlushesAndTheModuleGetsNothing() {
+    PoseLog.startStream()
+    PoseLog.claimStream(camera)
+    buffer(["a"])
+    XCTAssertNil(PoseLog.takeBatch(nil))
+    XCTAssertEqual(messages(PoseLog.takeBatch(camera)), ["a"])
+  }
+
+  func testTheFirstCameraKeepsTheFlushAndTheModuleTakesItBackWhenItGoes() {
+    PoseLog.startStream()
+    PoseLog.claimStream(camera)
+    PoseLog.claimStream(other)
+    buffer(["a"])
+    XCTAssertNil(PoseLog.takeBatch(other))
+
+    PoseLog.releaseStream(camera)
+    XCTAssertEqual(messages(PoseLog.takeBatch(nil)), ["a"])
+  }
+
+  func testNothingIsBufferedOrHandedOverWhileNobodyListens() {
+    buffer(["a"])
+    XCTAssertNil(PoseLog.takeBatch(nil))
+    PoseLog.startStream()
+    XCTAssertNil(PoseLog.takeBatch(nil))
+  }
+
+  func testAFullBufferOpensTheNextBatchWithHowManyWereDropped() throws {
+    PoseLog.startStream()
+    buffer((0..<260).map { "entry \($0)" })
+    let batch = try XCTUnwrap(PoseLog.takeBatch(nil))
+    XCTAssertEqual(batch.count, 257)
+    XCTAssertEqual(batch.first?["level"] as? String, "warn")
+    XCTAssertEqual((batch.first?["data"] as? [String: Int])?["droppedCount"], 4)
+    XCTAssertEqual(batch[1]["message"] as? String, "entry 4")
+    XCTAssertEqual(batch.last?["message"] as? String, "entry 259")
   }
 }

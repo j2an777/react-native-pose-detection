@@ -101,10 +101,15 @@ enum PoseLog {
   private static var streaming = false
 
   /**
-   One view flushes, whoever attached first. Without this every camera on screen would drain the
-   same buffer and each would receive an arbitrary share of the entries.
+   Who hands batches to JavaScript: the camera that attached first, from the moment it attaches
+   until it detaches. Without one owner every camera on screen would drain the same buffer and each
+   would receive an arbitrary share of the entries. With no camera attached nobody owns it, and the
+   module flushes instead.
    */
   private static var owner: ObjectIdentifier?
+
+  /// How often a batch is handed over, by a camera or by the module.
+  static let flushSeconds = 0.25
 
   static func startStream() {
     lock.lock()
@@ -123,20 +128,13 @@ enum PoseLog {
     dropped = 0
   }
 
-  static var isStreaming: Bool {
+  /// A camera attaching takes the flush unless another one already has it.
+  static func claimStream(_ candidate: AnyObject) {
     lock.lock()
     defer { lock.unlock() }
-    return streaming
-  }
-
-  static func claimStream(_ candidate: AnyObject) -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-    let identifier = ObjectIdentifier(candidate)
     if owner == nil {
-      owner = identifier
+      owner = ObjectIdentifier(candidate)
     }
-    return owner == identifier
   }
 
   static func releaseStream(_ candidate: AnyObject) {
@@ -148,19 +146,49 @@ enum PoseLog {
   }
 
   /**
-   Everything buffered since the last call, oldest first, plus how many were dropped. The
-   dictionaries are built here rather than at the call site: a disabled channel must not build
-   anything.
+   Everything buffered since the last batch, oldest first, for `flusher` to hand to JavaScript; nil
+   when there is nothing to hand over or the flush is somebody else's. A camera passes itself, and
+   takes the flush if nobody has it. The module passes nil and gets a batch only while no camera is
+   attached, which is what lets `addLogListener()` hear a file detection or an export with no
+   camera on screen.
+
+   The dictionaries are built here rather than at the call site, because a disabled channel must
+   not build anything. A drop count opens the batch as a warn entry rather than riding beside it,
+   so a listener that only reads entries still sees that something was lost.
    */
-  static func drain(into sink: inout [[String: Any]]) -> Int {
+  static func takeBatch(_ flusher: AnyObject?) -> [[String: Any]]? {
     lock.lock()
     defer { lock.unlock() }
+    guard streaming else { return nil }
+    if let flusher = flusher {
+      let identifier = ObjectIdentifier(flusher)
+      if owner == nil {
+        owner = identifier
+      }
+      guard owner == identifier else { return nil }
+    } else if owner != nil {
+      return nil
+    }
 
-    let start = (head - count + capacity) % capacity
-    for index in 0..<count {
+    let waiting = count
+    guard waiting > 0 else { return nil }
+
+    var batch = [[String: Any]]()
+    batch.reserveCapacity(waiting + 1)
+    let start = (head - waiting + capacity) % capacity
+    if dropped > 0 {
+      batch.append([
+        "level": "warn",
+        "category": "engine",
+        "message": "\(dropped) log entries were dropped before this batch",
+        "timestamp": entries[start]?.timestampMs ?? Double(Monotonic.nowMs()),
+        "data": ["droppedCount": dropped]
+      ])
+    }
+    for index in 0..<waiting {
       let slot = (start + index) % capacity
       guard let entry = entries[slot] else { continue }
-      sink.append([
+      batch.append([
         "level": entry.level.name,
         "category": entry.category.name,
         "message": entry.message,
@@ -169,11 +197,10 @@ enum PoseLog {
       entries[slot] = nil
     }
 
-    let droppedCount = dropped
     head = 0
     count = 0
     dropped = 0
-    return droppedCount
+    return batch
   }
 
   static func setLevel(_ level: LogLevel) {

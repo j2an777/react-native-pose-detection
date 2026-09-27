@@ -81,6 +81,14 @@ native ring buffer (bounded, drop-oldest + count)
   → single event carrying an array
 ```
 
+One flusher hands each batch over, so no entry reaches JavaScript twice. A camera claims the
+flush as it attaches, whoever attached first, and sends batches as its own `onLog` view event,
+which `<PoseCamera>` passes to the prop and to the `addLogListener()` registry. Claiming at attach
+rather than on the first tick is what lets a camera's `onLog` see its own start. With no camera
+attached the module flushes instead, as a module event of the same name that `logging.ts`
+subscribes to while the stream runs; before it did, a file detection or an export with no camera
+on screen reached no listener at all.
+
 The buffer is bounded. If a JS consumer stalls, the oldest entries are dropped and a
 `droppedCount` is reported rather than letting memory grow.
 

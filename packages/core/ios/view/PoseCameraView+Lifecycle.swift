@@ -34,6 +34,9 @@ extension PoseCameraView {
     observe(ProcessInfo.thermalStateDidChangeNotification) { $0.sampleHeat() }
     observe(Notification.Name.NSProcessInfoPowerStateDidChange) { $0.sampleHeat() }
 
+    // Claimed now rather than on the first tick: until then the module would be the one flushing,
+    // and this camera's `onLog` would miss its own start.
+    PoseLog.claimStream(self)
     startLogTimer()
     startHeatTimer()
     // Reattaching after a temporary detach re-establishes whatever the props already say, rather
@@ -102,14 +105,15 @@ extension PoseCameraView {
   }
 
   /**
-   One view drains the shared buffer, whoever attached first, and hands it over as an event. The
-   timer runs while the view is attached and costs one lock per tick when nothing is streaming,
-   which is cheaper than a way for the module to reach every view.
+   One view drains the shared buffer, whoever attached first, and hands it over as an event, so a
+   camera's own `onLog` sees everything from its start. The timer runs while the view is attached
+   and costs one lock per tick when nothing is streaming, which is cheaper than a way for the
+   module to reach every view. With no camera attached the module flushes.
    */
   private func startLogTimer() {
     logTimer?.invalidate()
     logTimer = Timer.scheduledTimer(
-      withTimeInterval: PoseCameraView.logFlushSeconds,
+      withTimeInterval: PoseLog.flushSeconds,
       repeats: true
     ) { [weak self] _ in
       self?.flushLog()
@@ -128,23 +132,7 @@ extension PoseCameraView {
   }
 
   private func flushLog() {
-    guard PoseLog.isStreaming, PoseLog.claimStream(self) else { return }
-
-    var entries = [[String: Any]]()
-    let dropped = PoseLog.drain(into: &entries)
-    guard !entries.isEmpty || dropped > 0 else { return }
-
-    // The drop count opens the batch as a warn entry rather than riding beside it, so a listener
-    // that only reads entries still sees that something was lost.
-    if dropped > 0 {
-      entries.insert([
-        "level": "warn",
-        "category": "engine",
-        "message": "\(dropped) log entries were dropped before this batch",
-        "timestamp": Double(Monotonic.nowMs()),
-        "data": ["droppedCount": dropped]
-      ], at: 0)
-    }
+    guard let entries = PoseLog.takeBatch(self) else { return }
     onLog(["entries": entries])
   }
 }

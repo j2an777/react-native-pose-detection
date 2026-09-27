@@ -155,7 +155,8 @@ unknown level or category rather than doing nothing, because a silently ignored 
 exactly like a bug in whatever you were trying to diagnose.
 
 Entries reach Logcat, or `os.Logger` on iOS, whatever is attached, and are batched to JavaScript
-while a listener is: `onLog` on a mounted camera, or `addLogListener()`. `addLogListener()` is a multiset rather than a set, so the same function
+while a listener is: `onLog` on a mounted camera, or `addLogListener()`, which hears photo
+detections and exports with no camera on screen too. `addLogListener()` is a multiset rather than a set, so the same function
 registered twice needs two `remove()` calls. See [troubleshooting](../troubleshooting.md#watching-it-work-the-log-channel).
 
 ## Callbacks

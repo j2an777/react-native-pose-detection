@@ -1,5 +1,6 @@
 package com.posedetection
 
+import android.os.SystemClock
 import android.util.Log
 import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -75,10 +76,15 @@ internal object PoseLog {
     private var streaming = false
 
     /**
-     * One view flushes, whoever attached first. Without this every camera on screen would drain
-     * the same buffer and each would receive an arbitrary share of the entries.
+     * Who hands batches to JavaScript: the camera that attached first, from the moment it attaches
+     * until it detaches. Without one owner every camera on screen would drain the same buffer and
+     * each would receive an arbitrary share of the entries. With no camera attached nobody owns it,
+     * and the module flushes instead.
      */
     private var owner: Any? = null
+
+    /** How often a batch is handed over, by a camera or by the module. */
+    const val FLUSH_MS = 250L
 
     fun startStream() {
         synchronized(ring) {
@@ -97,29 +103,53 @@ internal object PoseLog {
         }
     }
 
-    val isStreaming: Boolean
-        get() = streaming
-
-    fun claimStream(candidate: Any): Boolean =
-        synchronized(ring) {
-            if (owner == null) owner = candidate
-            owner === candidate
-        }
+    /** A camera attaching takes the flush unless another one already has it. */
+    fun claimStream(candidate: Any) {
+        synchronized(ring) { if (owner == null) owner = candidate }
+    }
 
     fun releaseStream(candidate: Any) {
         synchronized(ring) { if (owner === candidate) owner = null }
     }
 
     /**
-     * Everything buffered since the last call, oldest first, plus how many were dropped. The maps
-     * are built here rather than at the call site: a disabled channel must not build anything.
+     * Everything buffered since the last batch, oldest first, for [flusher] to hand to JavaScript;
+     * null when there is nothing to hand over or the flush is somebody else's. A camera passes
+     * itself, and takes the flush if nobody has it. The module passes null and gets a batch only
+     * while no camera is attached, which is what lets `addLogListener()` hear a file detection or an
+     * export with no camera on screen.
+     *
+     * A stream nobody listens to costs one volatile read. The maps are built here rather than at the
+     * call site, because a disabled channel must not build anything. A drop count opens the batch as
+     * a warn entry rather than riding beside it, so a listener that only reads entries still sees
+     * that something was lost.
      */
-    fun drain(into: MutableList<Map<String, Any?>>): Int {
+    fun takeBatch(flusher: Any?): List<Map<String, Any?>>? {
+        if (!streaming) return null
         synchronized(ring) {
+            if (flusher == null && owner != null) return null
+            if (flusher != null) {
+                if (owner == null) owner = flusher
+                if (owner !== flusher) return null
+            }
+            if (count == 0) return null
+
+            val batch = ArrayList<Map<String, Any?>>(count + 1)
             val start = (head - count + CAPACITY) % CAPACITY
+            if (dropped > 0) {
+                batch.add(
+                    mapOf(
+                        "level" to "warn",
+                        "category" to "engine",
+                        "message" to "$dropped log entries were dropped before this batch",
+                        "timestamp" to entryTimestamps[start].toDouble(),
+                        "data" to mapOf("droppedCount" to dropped),
+                    ),
+                )
+            }
             for (index in 0 until count) {
                 val slot = (start + index) % CAPACITY
-                into.add(
+                batch.add(
                     mapOf(
                         "level" to (entryLevels[slot]?.name?.lowercase() ?: "info"),
                         "category" to (entryCategories[slot]?.name?.lowercase() ?: "engine"),
@@ -130,25 +160,26 @@ internal object PoseLog {
                 entryMessages[slot] = null
             }
 
-            val droppedCount = dropped
             head = 0
             count = 0
             dropped = 0
-            return droppedCount
+            return batch
         }
     }
 
-    private fun record(
+    /** Buffers one entry for the next batch. Apart from [emit] so a test can reach it without Logcat. */
+    fun record(
         level: LogLevel,
         category: LogCategory,
         message: String,
+        timestampMs: Long,
     ) {
         synchronized(ring) {
             if (!streaming) return
             entryLevels[head] = level
             entryCategories[head] = category
             entryMessages[head] = message
-            entryTimestamps[head] = android.os.SystemClock.elapsedRealtime()
+            entryTimestamps[head] = timestampMs
 
             head = (head + 1) % CAPACITY
             if (count == CAPACITY) dropped += 1 else count += 1
@@ -284,7 +315,7 @@ internal object PoseLog {
         category: LogCategory,
         message: String,
     ) {
-        record(level, category, message)
+        if (streaming) record(level, category, message, SystemClock.elapsedRealtime())
 
         val line = "[${category.name.lowercase()}] $message"
         when (level) {

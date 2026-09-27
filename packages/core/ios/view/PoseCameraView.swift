@@ -56,7 +56,6 @@ public class PoseCameraView: ExpoView {
   static let gpuFailureWindowMs: Int64 = 1_000
 
   static let preWarmSize: CGFloat = 256
-  static let logFlushSeconds = 0.25
   static let detectionErrorIntervalMs: Int64 = 1_000
   static let switchFrameTimeoutSeconds = 1.5
 

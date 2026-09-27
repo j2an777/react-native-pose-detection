@@ -189,7 +189,8 @@ Otherwise report it. Include `getState()` output, `data.mode`, `maxPoses`, and w
 The library ships a diagnostic channel that is **completely off by default** and costs nothing
 until you turn it on. Entries reach Logcat on Android and `os.Logger` on iOS whatever is
 attached, so `adb logcat` and Console.app work with no listener, and are batched to JavaScript
-roughly every 250 ms while one is.
+roughly every 250 ms while one is, with or without a camera on screen: `detectOnImage`,
+`detectOnVideo` and `exportPose` log through the same channel.
 
 ```ts
 import { setLogLevel, addLogListener } from 'react-native-pose-detection';

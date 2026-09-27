@@ -324,34 +324,16 @@ class PoseCameraView(
     private val lastEmitMs = AtomicLong(0)
 
     /**
-     * One view drains the shared buffer, whoever attached first, and hands it over as an event.
-     * The timer runs while the view is attached and costs one volatile read per tick when nothing
-     * is streaming, which is cheaper than a way for the module to reach every view.
+     * One view drains the shared buffer, whoever attached first, and hands it over as an event, so
+     * a camera's own `onLog` sees everything from its start. The timer runs while the view is
+     * attached and costs one volatile read per tick when nothing is streaming, which is cheaper
+     * than a way for the module to reach every view. With no camera attached the module flushes.
      */
     private val logFlush =
         object : Runnable {
             override fun run() {
-                mainHandler.postDelayed(this, LOG_FLUSH_MS)
-                if (!PoseLog.isStreaming || !PoseLog.claimStream(this@PoseCameraView)) return
-
-                val entries = ArrayList<Map<String, Any?>>()
-                val dropped = PoseLog.drain(entries)
-                if (entries.isEmpty() && dropped == 0) return
-
-                // The drop count opens the batch as a warn entry rather than riding beside it, so a
-                // listener that only reads entries still sees that something was lost.
-                if (dropped > 0) {
-                    entries.add(
-                        0,
-                        mapOf(
-                            "level" to "warn",
-                            "category" to "engine",
-                            "message" to "$dropped log entries were dropped before this batch",
-                            "timestamp" to SystemClock.elapsedRealtime().toDouble(),
-                            "data" to mapOf("droppedCount" to dropped),
-                        ),
-                    )
-                }
+                mainHandler.postDelayed(this, PoseLog.FLUSH_MS)
+                val entries = PoseLog.takeBatch(this@PoseCameraView) ?: return
                 onLog(mapOf("entries" to entries))
             }
         }
@@ -2017,8 +1999,11 @@ class PoseCameraView(
         context.applicationContext.registerComponentCallbacks(memoryCallbacks)
         observeLifecycle()
         displayManager?.registerDisplayListener(displayListener, null)
+        // Claimed now rather than on the first tick: until then the module would be the one
+        // flushing, and this camera's `onLog` would miss its own start.
+        PoseLog.claimStream(this)
         mainHandler.removeCallbacks(logFlush)
-        mainHandler.postDelayed(logFlush, LOG_FLUSH_MS)
+        mainHandler.postDelayed(logFlush, PoseLog.FLUSH_MS)
         mainHandler.removeCallbacks(heatSampler)
         heatSampler.run()
         // Reattaching after a temporary detach re-establishes whatever the props already say,
@@ -2125,7 +2110,6 @@ class PoseCameraView(
         /** Three GPU failures inside a second is a delegate that does not work on this device. */
         const val GPU_FAILURE_LIMIT = 3
         const val GPU_FAILURE_WINDOW_MS = 1_000L
-        const val LOG_FLUSH_MS = 250L
         val EMPTY_PAYLOAD = emptyMap<String, Any?>()
         val EMPTY_NAMES = emptyArray<String>()
         val EMPTY_INDICES = IntArray(0)
