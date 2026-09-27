@@ -12,6 +12,7 @@ import {
   type ErrorEvent,
   type LogEntry,
   type PoseCameraRef,
+  type PoseFrame,
   type ProfileState,
   type ReadyEvent,
 } from 'react-native-pose-detection';
@@ -125,6 +126,9 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
   const countFrame = React.useCallback(() => {
     framesSeen.current += 1;
   }, []);
+  const countBatch = React.useCallback((frames: readonly PoseFrame[]) => {
+    framesSeen.current += frames.length;
+  }, []);
 
   const onReady = React.useCallback((event: ReadyEvent) => {
     setReady(event);
@@ -220,7 +224,8 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
             : false
         }
         data={{ mode: dataMode }}
-        onPose={dataMode === 'off' ? undefined : countFrame}
+        onPose={dataMode === 'throttled' || dataMode === 'live' ? countFrame : undefined}
+        onPoseBatch={dataMode === 'batched' ? countBatch : undefined}
         resolution={resolution}
         analysisResolution={analysis}
         overlay={
@@ -357,9 +362,9 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
                   value={detecting}
                   onChange={(next) => {
                     setDetecting(next);
-                    void (next
-                      ? camera.current?.startDetection()
-                      : camera.current?.stopDetection());
+                    void call(() =>
+                      next ? camera.current?.startDetection() : camera.current?.stopDetection(),
+                    );
                   }}
                 />
                 <ToggleRow title="Skeleton" value={overlay} onChange={setOverlay} />
@@ -440,11 +445,13 @@ export function LiveScreen({ onClose }: { onClose: () => void }) {
                   title={snapshot ?? 'Take a snapshot'}
                   tone="quiet"
                   onPress={() => {
-                    void camera.current?.snapshot().then((frame) => {
-                      setSnapshot(
-                        frame ? `${frame.landmarks.length / 4} landmarks` : 'no pose in frame',
-                      );
-                    });
+                    void call(() =>
+                      camera.current?.snapshot().then((frame) => {
+                        setSnapshot(
+                          frame ? `${frame.landmarks.length / 4} landmarks` : 'no pose in frame',
+                        );
+                      }),
+                    );
                   }}
                 />
               </>
