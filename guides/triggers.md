@@ -152,7 +152,9 @@ enter: { all: [
 ```
 
 **Use `bodySpan` for distance independence.** Absolute normalized distances change as the
-subject moves toward or away from the camera; ratios against `bodySpan` don't.
+subject moves toward or away from the camera; ratios against `bodySpan` don't. That is for your
+own frame math; inside a trigger, compare one joint with another, `below: 'leftShoulder'`, which
+holds at any distance.
 
 **`count` resets on unmount**, not on camera switch. Switching cameras preserves trigger state.
 
