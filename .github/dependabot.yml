@@ -43,3 +43,7 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: 'ci'
+    groups:
+      # init and analyze must move together: a run whose two steps differ in version fails.
+      codeql:
+        patterns: ['github/codeql-action*']
