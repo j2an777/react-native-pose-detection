@@ -81,7 +81,9 @@ internal class VideoExporter(
                 val timestamp = maxOf(frame.timestampMs, lastTimestamp + 1)
                 lastTimestamp = timestamp
                 val bodies = PoseExport.poses(detector.detect(BitmapImageBuilder(frame.bitmap).build(), timestamp))
-                if (bodies.isNotEmpty()) poses.add(Pose(frame.timestampMs, bodies))
+                // Every sample, the empty ones too: an empty one is what stops the skeleton being
+                // painted once the person has left, as on iOS.
+                poses.add(Pose(frame.timestampMs, bodies))
                 // The detect pass is the slow half, so it owns most of the progress bar.
                 report(DETECT_SHARE * sampler.progress(frame))
                 if (!pacer.rest { cancelled.get() }) break
@@ -109,7 +111,7 @@ internal class VideoExporter(
         // Written under a staging name and renamed into place at the end, so a process that dies
         // mid-write can never leave behind something that looks like a finished export. Whatever
         // a dead process does leave is swept the next time the directory is prepared.
-        val staging = File(options.directory, "${options.fileName}.partial.mp4")
+        val staging = File(options.directory, "${options.fileName}${PoseExport.STAGING_SUFFIX}.mp4")
         output.delete()
         staging.delete()
         var complete = false
@@ -172,7 +174,7 @@ internal class VideoExporter(
                 height = canvas[1],
                 durationMs = (pump.lastTimeUs / MICROS_PER_MILLI).toInt(),
                 frameCount = frames,
-                posesFound = poses.size,
+                posesFound = poses.count { it.bodies.isNotEmpty() },
             )
         } finally {
             runCatching { decoder?.stop() }

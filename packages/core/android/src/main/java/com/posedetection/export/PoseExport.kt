@@ -52,6 +52,9 @@ internal object PoseExport {
     private val VIDEO_EXTENSIONS =
         setOf("mp4", "mov", "m4v", "3gp", "avi", "mkv", "webm")
 
+    /** Before the extension of a file still being written. See [ExportOptions] for the sweep. */
+    const val STAGING_SUFFIX = ".partial"
+
     /** Serial and below the camera. See the note above; this is rule 3 and rule 3 is why it is here. */
     val executor =
         Executors.newSingleThreadExecutor { runnable ->
@@ -67,8 +70,21 @@ internal object PoseExport {
         cancelled[taskId]?.set(true)
     }
 
-    fun isVideo(uri: String): Boolean {
-        val path = Uri.parse(uri).path ?: uri
+    /**
+     * By the type a content provider reports, then by extension. A `content://` URI from a document
+     * picker or MediaStore usually has no extension at all, `.../document/video%3A123`, and read by
+     * extension alone it went to the image decoder and failed as a picture that could not be read.
+     */
+    fun isVideo(
+        context: Context,
+        uri: String,
+    ): Boolean {
+        val parsed = Uri.parse(uri)
+        if (parsed.scheme == "content") {
+            val type = runCatching { context.contentResolver.getType(parsed) }.getOrNull()
+            if (type != null) return type.startsWith("video/")
+        }
+        val path = parsed.path ?: uri
         return VIDEO_EXTENSIONS.contains(path.substringAfterLast('.', "").lowercase())
     }
 
@@ -96,7 +112,7 @@ internal object PoseExport {
         val flag = AtomicBoolean(false)
         cancelled[taskId] = flag
         try {
-            return if (isVideo(uri)) {
+            return if (isVideo(context, uri)) {
                 VideoExporter(context, uri, options, flag, onProgress).run()
             } else {
                 exportImage(context, uri, options, onProgress)
@@ -153,19 +169,27 @@ internal object PoseExport {
 
         val canvas = ExportCanvas.size(source.width, source.height, options.maxSize)
         val painted = Bitmap.createBitmap(canvas[0], canvas[1], Bitmap.Config.ARGB_8888)
+        val output = File(options.directory, "${options.fileName}.jpg")
+        // Written under a staging name and renamed into place, as a video is, so a failure part-way
+        // through the encode never leaves a truncated picture that looks like a finished export.
+        val staging = File(options.directory, "${options.fileName}$STAGING_SUFFIX.jpg")
         try {
             paint(painted, source, result, options)
-            FileOutputStream(File(options.directory, "${options.fileName}.jpg")).use { stream ->
-                painted.compress(Bitmap.CompressFormat.JPEG, options.quality, stream)
+            FileOutputStream(staging).use { stream ->
+                if (!painted.compress(Bitmap.CompressFormat.JPEG, options.quality, stream)) {
+                    throw ExportError("could not encode the painted image")
+                }
             }
+            if (!staging.renameTo(output)) throw ExportError("the export could not be moved into place")
         } finally {
+            staging.delete()
             painted.recycle()
             source.recycle()
         }
         onProgress(1f)
 
         return ExportSummary(
-            file = File(options.directory, "${options.fileName}.jpg"),
+            file = output,
             width = canvas[0],
             height = canvas[1],
             durationMs = 0,

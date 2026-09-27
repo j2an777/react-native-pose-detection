@@ -105,7 +105,11 @@ internal class ExportOptions(
          * nothing swept here can belong to an export that is still running.
          */
         private fun sweepStaging(base: File) {
-            base.listFiles { file -> file.name.endsWith(".partial.mp4") }?.forEach { it.delete() }
+            base
+                .listFiles { file ->
+                    file.name.endsWith("${PoseExport.STAGING_SUFFIX}.mp4") ||
+                        file.name.endsWith("${PoseExport.STAGING_SUFFIX}.jpg")
+                }?.forEach { it.delete() }
         }
 
         /**

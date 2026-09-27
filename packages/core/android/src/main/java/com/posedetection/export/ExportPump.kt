@@ -14,11 +14,38 @@ import com.posedetection.view.OverlayProjection
 import com.posedetection.view.OverlayRenderer
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** One sampled frame, and everybody who was in it. */
+/** One sampled frame, and everybody who was in it, which may be nobody. */
 internal class Pose(
     val timeMs: Long,
     val bodies: List<FloatArray>,
 )
+
+/** Which sample a frame of the video is painted with. */
+internal object PoseTimeline {
+    /**
+     * The latest sample at or before [timeMs], or -1 for a frame before the first sample, which is
+     * painted with nothing. Frames between two samples take the earlier one, including an empty
+     * one: nobody was found, so nobody is drawn.
+     *
+     * It used to hold only the samples that found somebody, and fell back to the first of them. A
+     * person who left the clip stayed painted on it until the end, frozen where they were last
+     * seen, and frames before anyone was found carried a pose from later in the clip. A binary
+     * search rather than a walk forward, so a frame that arrives out of order still gets its own.
+     */
+    fun at(
+        poses: List<Pose>,
+        timeMs: Long,
+    ): Int {
+        if (poses.isEmpty() || poses[0].timeMs > timeMs) return -1
+        var low = 0
+        var high = poses.size - 1
+        while (low < high) {
+            val middle = (low + high + 1) / 2
+            if (poses[middle].timeMs <= timeMs) low = middle else high = middle - 1
+        }
+        return low
+    }
+}
 
 /**
  * Draws the skeleton into the overlay bitmap, and knows when it does not have to.
@@ -55,6 +82,7 @@ internal class OverlayPainter(
         }
 
     private var painted = Int.MIN_VALUE
+    private var paintedEmpty = false
 
     fun bitmap(): Bitmap = target
 
@@ -65,6 +93,10 @@ internal class OverlayPainter(
     ): Boolean {
         if (index == painted) return false
         painted = index
+        // A run of samples with nobody in them is one cleared bitmap, not one upload per sample.
+        val empty = index < 0 || !options.drawOverlay || poses[index].bodies.isEmpty()
+        if (empty && paintedEmpty) return false
+        paintedEmpty = empty
         canvas.drawColor(0, PorterDuff.Mode.CLEAR)
         if (index >= 0 && options.drawOverlay) {
             for (landmarks in poses[index].bodies) {
@@ -144,7 +176,7 @@ internal class ExportPump(
                     decoder.releaseOutputBuffer(index, render)
                     if (render && gl.awaitFrame()) {
                         gl.drawFrame(rotation)
-                        val pose = poseAt(poses, info.presentationTimeUs / MICROS_PER_MILLI)
+                        val pose = PoseTimeline.at(poses, info.presentationTimeUs / MICROS_PER_MILLI)
                         gl.drawOverlay(painter.bitmap(), painter.paint(poses, pose))
                         gl.present(info.presentationTimeUs * NANOS_PER_MICRO)
                         frames++
@@ -231,24 +263,6 @@ internal class ExportPump(
                 }
             }
         }
-    }
-
-    /**
-     * The latest pose at or before this moment, or the first one before any was detected. A binary
-     * search rather than a walk forward, so a frame that arrives out of order still gets its own.
-     */
-    private fun poseAt(
-        poses: List<Pose>,
-        timeMs: Long,
-    ): Int {
-        if (poses.isEmpty()) return -1
-        var low = 0
-        var high = poses.size - 1
-        while (low < high) {
-            val middle = (low + high + 1) / 2
-            if (poses[middle].timeMs <= timeMs) low = middle else high = middle - 1
-        }
-        return low
     }
 
     private fun MediaExtractor.trackDuration(): Long {
