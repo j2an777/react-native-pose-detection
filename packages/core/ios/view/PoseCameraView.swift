@@ -166,6 +166,15 @@ public class PoseCameraView: ExpoView {
   var streamId: Int?
   let triggers = TriggerEngine()
   let smoothing = OneEuroFilter()
+
+  /**
+   Callback-queue only, with the landmarker whose results it has seen: a different one has filters
+   of its own that start over, so this starts over with them.
+   */
+  let visibilityClock = VisibilityClock()
+  var clockedWith: ObjectIdentifier?
+  /// Whether this frame's visibility was re-timed, which the world landmarks then take too.
+  var visibilityClocked = false
   let calibrator = Calibrator()
   let thermalMonitor = ThermalMonitor()
 

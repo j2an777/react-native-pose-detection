@@ -78,6 +78,14 @@ final class FrameRingBuffer {
     hasLatest = false
   }
 
+  /// Whether a drain would carry anything: frames, or the news that some were dropped.
+  var hasBuffered: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let frames = count
+    return frames > 0 || dropped > 0
+  }
+
   /// A bare header. Decodes to no frames rather than to a malformed buffer.
   func empty() -> Data {
     return WireWriter.empty()

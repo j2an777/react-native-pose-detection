@@ -229,6 +229,9 @@ internal class FrameRingBuffer {
         synchronized(lock) { hasLatest = false }
     }
 
+    /** Whether a drain would carry anything: frames, or the news that some were dropped. */
+    fun hasBuffered(): Boolean = synchronized(lock) { count > 0 || dropped > 0 }
+
     /** A bare header. Decodes to no frames rather than to a malformed buffer. */
     fun empty(): ByteBuffer = WireWriter.empty()
 

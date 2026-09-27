@@ -68,6 +68,20 @@ final class FrameRingBufferTests: XCTestCase {
     )
   }
 
+  func testBufferedFramesAreOwedUntilTheyAreDrained() {
+    let shape = shape()
+    let frames = buffer(shape)
+    frames.submit(frame(shape, 1), timestampMs: 10, processingMs: 2, buffered: false)
+    XCTAssertFalse(frames.hasBuffered)
+
+    frames.submit(frame(shape, 1), timestampMs: 20, processingMs: 2, buffered: true)
+    frames.clearLatest()
+    XCTAssertTrue(frames.hasBuffered, "still owed after the pose left")
+
+    _ = frames.drain()
+    XCTAssertFalse(frames.hasBuffered)
+  }
+
   func testAnEmptyDrainIsABareHeader() {
     let raw = buffer(shape()).drain()
 

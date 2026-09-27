@@ -16,27 +16,58 @@ import com.posedetection.engine.Upright
 
 internal enum class DelegateRequest { AUTO, GPU, CPU }
 
+/**
+ * The delegates a camera builds, in order. The first one that builds answers frames at once, and a
+ * later one replaces it when it is ready.
+ *
+ * `auto` starts on the CPU and moves to the GPU. The GPU is the faster and cooler of the two once
+ * running, but the slower to build: on a Redmi Note 12 it runs the full model in 89 ms against the
+ * CPU's 122 ms at half the CPU time, and takes 1.9 s to build against 0.7 s. Starting on the GPU
+ * left the camera up and the skeleton missing for most of two seconds. A GPU known not to work
+ * here is not built at all.
+ */
+internal object StartPlan {
+    private val CPU_ONLY = listOf(Delegate.CPU)
+    private val GPU_ONLY = listOf(Delegate.GPU)
+    private val CPU_THEN_GPU = listOf(Delegate.CPU, Delegate.GPU)
+
+    fun delegates(
+        request: DelegateRequest,
+        gpuVerdict: Boolean?,
+    ): List<Delegate> =
+        when (request) {
+            DelegateRequest.CPU -> CPU_ONLY
+            DelegateRequest.GPU -> GPU_ONLY
+            DelegateRequest.AUTO -> if (gpuVerdict == false) CPU_ONLY else CPU_THEN_GPU
+        }
+}
+
 internal class PoseDetector private constructor(
     private val landmarker: PoseLandmarker,
     val delegate: Delegate,
     val modelFileName: String,
-    /**
-     * What the GPU probe found, when this build ran one: null when the request was explicit or a
-     * cached answer was used instead. The caller persists it, which is what makes the probe run
-     * once per device and model rather than once per build.
-     */
-    val probedGpu: Boolean? = null,
+    /** Baked in at construction, and what decides whether a parked landmarker fits a new camera. */
+    val maxPoses: Int,
+    val minConfidence: Float,
 ) {
     /**
      * VIDEO mode rejects a timestamp that does not strictly increase. Camera timestamps can repeat
      * within a millisecond, so the value is clamped.
      *
-     * Written on the analysis thread, read on main when a switch completes. A stale read there
-     * costs one dropped frame.
+     * Written on whichever thread runs the landmarker, read on main when a switch completes. A
+     * stale read there costs one dropped frame.
      */
     @Volatile
     var lastTimestampMs = 0L
         private set
+
+    /**
+     * Held for every inference and for the close. A landmarker is handed between threads, from the
+     * build thread to a camera's analysis thread and from one camera to the next through
+     * [DetectorCache], and a camera going away parks it at once rather than after the frame it may
+     * still be running: whoever runs it next waits here for that frame to finish instead.
+     */
+    private val lock = Any()
 
     /**
      * One camera frame, answered before this returns, on the analysis thread.
@@ -52,15 +83,58 @@ internal class PoseDetector private constructor(
         image: MPImage,
         rotationDegrees: Int,
         cameraTimestampMs: Long,
-    ): PoseLandmarkerResult {
-        val timestamp = maxOf(cameraTimestampMs, lastTimestampMs + 1)
-        lastTimestampMs = timestamp
-        return landmarker.detectForVideo(image, rotationOptions(rotationDegrees), timestamp)
+    ): PoseLandmarkerResult =
+        synchronized(lock) {
+            val timestamp = maxOf(cameraTimestampMs, lastTimestampMs + 1)
+            lastTimestampMs = timestamp
+            landmarker.detectForVideo(image, rotationOptions(rotationDegrees), timestamp)
+        }
+
+    /**
+     * One inference on a blank frame, before the camera's first. It does three jobs:
+     *
+     * - The first inference through a freshly built graph costs several times what the rest do,
+     *   and this is where it is paid rather than on the first frame somebody is watching.
+     * - On the GPU it is the check that the delegate works here. Construction succeeds on devices
+     *   whose GPU then fails on the first real frame, and VIDEO mode answers synchronously, so the
+     *   failure throws here instead of on the camera's thread.
+     * - A blank frame finds nobody, which ends any track: a landmarker taken back from
+     *   [DetectorCache] starts from nobody, not from somebody who stood there a minute ago.
+     *
+     * It has to run before the analyzer can reach the landmarker. Run after the first camera
+     * frame, it ended the track that frame had just started, and the model found the person twice.
+     */
+    fun warmUp() {
+        val blank = Bitmap.createBitmap(WARM_UP_SIZE, WARM_UP_SIZE, Bitmap.Config.ARGB_8888)
+        try {
+            detect(BitmapImageBuilder(blank).build(), 0, 0)
+        } finally {
+            // The answer is back before detect returns, so nothing is reading the pixels now.
+            blank.recycle()
+        }
+    }
+
+    /** Whether this landmarker is what a camera asking for these settings would have built. */
+    fun fits(
+        modelFileName: String,
+        request: DelegateRequest,
+        maxPoses: Int,
+        minConfidence: Float,
+    ): Boolean {
+        if (modelFileName != this.modelFileName) return false
+        if (maxPoses != this.maxPoses || minConfidence != this.minConfidence) return false
+        return when (request) {
+            DelegateRequest.AUTO -> true
+            DelegateRequest.GPU -> delegate == Delegate.GPU
+            DelegateRequest.CPU -> delegate == Delegate.CPU
+        }
     }
 
     fun close() {
-        runCatching { landmarker.close() }
-            .onFailure { PoseLog.warn(LogCategory.DETECTOR) { "closing the landmarker threw: ${it.message}" } }
+        synchronized(lock) {
+            runCatching { landmarker.close() }
+                .onFailure { PoseLog.warn(LogCategory.DETECTOR) { "closing the landmarker threw: ${it.message}" } }
+        }
     }
 
     /** IMAGE and VIDEO mode are synchronous, so there is no result listener to route. */
@@ -95,7 +169,7 @@ internal class PoseDetector private constructor(
                     minConfidence = minConfidence,
                     runningMode = if (video) RunningMode.VIDEO else RunningMode.IMAGE,
                 )
-            return PoseDetector(landmarker, delegate, modelFileName)
+            return PoseDetector(landmarker, delegate, modelFileName, maxPoses, minConfidence)
         }
 
         /** The plugin installs exactly one model, so listing beats being told which variant. */
@@ -105,37 +179,18 @@ internal class PoseDetector private constructor(
                 ?.firstOrNull { it.startsWith("pose_landmarker_") && it.endsWith(".task") }
 
         /**
-         * [knownGpu] is the GPU probe's answer from an earlier build on this device and model, or
-         * null when the probe has never run here. With it, `auto` skips the probe, which builds and
-         * throws away a whole second landmarker, and on Android compiles the GPU delegate's shaders
-         * twice: most of the time between a mount and the first skeleton.
+         * A camera's landmarker on exactly [delegate], built and warmed up, so the first frame the
+         * analyzer hands it is an ordinary one. Throws when the delegate cannot build here, or
+         * builds and then cannot run, which is how a GPU that does not work is found. Blocks for
+         * as long as the build takes, which on a low-end GPU is seconds, so never on main.
          */
-        @Suppress("LongParameterList")
-        fun create(
+        fun createForCamera(
             context: Context,
             modelFileName: String,
-            request: DelegateRequest,
+            delegate: Delegate,
             maxPoses: Int,
             minConfidence: Float,
-            knownGpu: Boolean? = null,
         ): PoseDetector {
-            var probed: Boolean? = null
-            val delegate =
-                when (request) {
-                    DelegateRequest.CPU -> {
-                        Delegate.CPU
-                    }
-
-                    DelegateRequest.GPU -> {
-                        Delegate.GPU
-                    }
-
-                    DelegateRequest.AUTO -> {
-                        val usable = knownGpu ?: gpuProducesAnInference(context, modelFileName).also { probed = it }
-                        if (usable) Delegate.GPU else Delegate.CPU
-                    }
-                }
-
             val landmarker =
                 build(
                     context = context,
@@ -145,56 +200,15 @@ internal class PoseDetector private constructor(
                     minConfidence = minConfidence,
                     runningMode = RunningMode.VIDEO,
                 )
-
-            val how =
-                if (probed !=
-                    null
-                ) {
-                    ", after a probe"
-                } else if (request == DelegateRequest.AUTO) {
-                    ", from the cached probe"
-                } else {
-                    ""
-                }
-            PoseLog.info(LogCategory.DETECTOR) { "landmarker ready on $delegate with $modelFileName$how" }
-            return PoseDetector(landmarker, delegate, modelFileName, probed)
-        }
-
-        /**
-         * Construction succeeds on devices whose GPU delegate then fails on the first real frame,
-         * so the probe runs a real inference in IMAGE mode, where failure is catchable, before
-         * committing to GPU. Costs one inference on a blank bitmap at setup.
-         */
-        private fun gpuProducesAnInference(
-            context: Context,
-            modelFileName: String,
-        ): Boolean {
-            var probe: PoseLandmarker? = null
-            var blank: Bitmap? = null
-            return try {
-                probe =
-                    build(
-                        context = context,
-                        modelFileName = modelFileName,
-                        delegate = Delegate.GPU,
-                        maxPoses = 1,
-                        minConfidence = 0.5f,
-                        runningMode = RunningMode.IMAGE,
-                    )
-                val bitmap = Bitmap.createBitmap(PROBE_SIZE, PROBE_SIZE, Bitmap.Config.ARGB_8888)
-                blank = bitmap
-                probe.detect(BitmapImageBuilder(bitmap).build())
-                true
+            val detector = PoseDetector(landmarker, delegate, modelFileName, maxPoses, minConfidence)
+            try {
+                detector.warmUp()
             } catch (error: Throwable) {
-                PoseLog.warn(LogCategory.DETECTOR) { "GPU delegate rejected on probe, using CPU: ${error.message}" }
-                false
-            } finally {
-                // The throwing path is the one this probe exists for, so the bitmap is recycled
-                // here rather than after the detect call. The probe goes first: nothing may still
-                // be holding the pixels when they are freed.
-                runCatching { probe?.close() }
-                blank?.recycle()
+                detector.close()
+                throw error
             }
+            PoseLog.info(LogCategory.DETECTOR) { "landmarker ready on $delegate with $modelFileName" }
+            return detector
         }
 
         private fun build(
@@ -257,6 +271,6 @@ internal class PoseDetector private constructor(
         private const val QUARTER_TURNS = 4
         private const val DEGREES_PER_QUARTER = 90
 
-        private const val PROBE_SIZE = 256
+        private const val WARM_UP_SIZE = 256
     }
 }

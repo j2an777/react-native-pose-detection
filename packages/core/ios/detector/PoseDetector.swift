@@ -57,6 +57,8 @@ final class PoseDetector {
   private let relay: LiveStreamRelay?
   let delegateKind: Delegate
   let modelFileName: String
+  /// MediaPipe smooths a stream's landmarks only for one pose, which is what `VisibilityClock` undoes.
+  let maxPoses: Int
 
   /**
    What the GPU probe found, when this build ran one: nil when the request was explicit or a cached
@@ -94,12 +96,14 @@ final class PoseDetector {
     relay: LiveStreamRelay?,
     delegateKind: Delegate,
     modelFileName: String,
+    maxPoses: Int,
     probedGpu: Bool? = nil
   ) {
     self.landmarker = landmarker
     self.relay = relay
     self.delegateKind = delegateKind
     self.modelFileName = modelFileName
+    self.maxPoses = maxPoses
     self.probedGpu = probedGpu
   }
 
@@ -205,7 +209,8 @@ extension PoseDetector {
       landmarker: landmarker,
       relay: nil,
       delegateKind: delegateKind,
-      modelFileName: fileName(from: modelPath)
+      modelFileName: fileName(from: modelPath),
+      maxPoses: maxPoses
     )
   }
 
@@ -243,6 +248,7 @@ extension PoseDetector {
       relay: relay,
       delegateKind: delegateKind,
       modelFileName: fileName(from: modelPath),
+      maxPoses: maxPoses,
       probedGpu: probed
     )
     relay.detector = detector

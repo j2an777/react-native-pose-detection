@@ -22,6 +22,8 @@ extension PoseCameraView {
         // drawn with the new mirroring.
         self.staleBefore.value = (self.detector.value?.lastTimestampMs ?? 0) + 1
         self.previousFrameMs.value = 0
+        // A hold is continuous on one camera; the new one starts it over.
+        self.triggers.onPoseLost()
         self.syncOverlayMirroring()
 
         // Anything still waiting from an earlier switch is settled first, so no promise is left

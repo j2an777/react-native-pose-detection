@@ -24,11 +24,18 @@ extension PoseCameraView: PoseDetectorObserver {
     // An empty result still counts: the model ran. Empty frames are what an honest rate is made
     // of while the camera points at a room, and skipping them would freeze the number instead.
     countResult(Monotonic.nowMs())
+    let identity = ObjectIdentifier(detector)
+    if identity != clockedWith {
+      clockedWith = identity
+      visibilityClock.reset()
+    }
     if timestampMs < staleBefore.value {
       PoseLog.trace(.camera, "dropped a frame from the previous camera")
+      // MediaPipe's filters took this frame in, and the next one is inverted against it.
+      visibilityClock.reset()
       return
     }
-    accept(result)
+    accept(result, timestampMs: timestampMs, visibilitySmoothed: detector.maxPoses == 1)
   }
 
   private func countResult(_ nowMs: Int64) {
@@ -64,8 +71,11 @@ extension PoseCameraView: PoseDetectorObserver {
    Everything a camera pose goes through once it exists: smoothing, geometry, the trigger
    evaluator, the ring buffer and the overlay, in that order. Photos and videos take their own path,
    `StaticDetection`, which applies the same rules to a file's frames without a view.
+
+   `visibilitySmoothed` is whether MediaPipe low-passed this result's visibility per frame, which it
+   does for one pose; see `VisibilityClock`.
    */
-  func accept(_ result: PoseLandmarkerResult) {
+  func accept(_ result: PoseLandmarkerResult, timestampMs: Int, visibilitySmoothed: Bool) {
     let poses = result.landmarks
     guard !poses.isEmpty else {
       onPoseLost()
@@ -80,15 +90,7 @@ extension PoseCameraView: PoseDetectorObserver {
     let nowMs = Monotonic.nowMs()
     lastPoseMs.value = nowMs
 
-    for index in 0..<Skeleton.landmarkCount {
-      let landmark = primary[index]
-      let base = index * Skeleton.landmarkStride
-      landmarkBuffer[base + Skeleton.offsetX] = landmark.x
-      landmarkBuffer[base + Skeleton.offsetY] = landmark.y
-      landmarkBuffer[base + Skeleton.offsetZ] = landmark.z
-      // The NSNumber already exists, so reading it costs a message send and no allocation.
-      landmarkBuffer[base + Skeleton.offsetVisibility] = landmark.visibility?.floatValue ?? 0
-    }
+    copyPrimary(primary, timestampMs: timestampMs, visibilitySmoothed: visibilitySmoothed)
 
     // With several people tracked, the primary is whoever is largest on this frame, so it can become
     // somebody else between two frames. Nothing carried across that boundary describes anyone.
@@ -134,39 +136,35 @@ extension PoseCameraView: PoseDetectorObserver {
     ))
   }
 
-  /// On MediaPipe's callback queue. Rate limited: a dead delegate fails every frame.
-  func poseDetector(_ detector: PoseDetector, didFail error: Error) {
-    PoseLog.warn(.detector, "inference failed: \(error.localizedDescription)")
-    let now = Monotonic.nowMs()
-    if detector.delegateKind == .GPU && noteGpuFailure(now) {
-      DispatchQueue.main.async { [weak self] in self?.fallBackToCpu() }
+  /// The primary pose into `landmarkBuffer`, its visibility re-timed where MediaPipe smoothed it.
+  private func copyPrimary(_ primary: [NormalizedLandmark], timestampMs: Int, visibilitySmoothed: Bool) {
+    for index in 0..<Skeleton.landmarkCount {
+      let landmark = primary[index]
+      let base = index * Skeleton.landmarkStride
+      landmarkBuffer[base + Skeleton.offsetX] = landmark.x
+      landmarkBuffer[base + Skeleton.offsetY] = landmark.y
+      landmarkBuffer[base + Skeleton.offsetZ] = landmark.z
+      // The NSNumber already exists, so reading it costs a message send and no allocation.
+      landmarkBuffer[base + Skeleton.offsetVisibility] = landmark.visibility?.floatValue ?? 0
     }
-    let shouldReport = lastDetectionErrorMs.mutate { last -> Bool in
-      guard now - last >= PoseCameraView.detectionErrorIntervalMs else { return false }
-      last = now
-      return true
+
+    visibilityClocked = visibilitySmoothed
+    if visibilitySmoothed {
+      visibilityClock.apply(to: &landmarkBuffer, timestampMs: Double(timestampMs))
+    } else {
+      visibilityClock.reset()
     }
-    guard shouldReport else { return }
-
-    let message = error.localizedDescription
-    DispatchQueue.main.async { [weak self] in self?.emitError(.detectionFailed, message) }
-  }
-
-  /// Three failures inside a second on the GPU is a delegate that does not work here. Callback queue.
-  private func noteGpuFailure(_ now: Int64) -> Bool {
-    gpuFailureTimes.removeAll { now - $0 > PoseCameraView.gpuFailureWindowMs }
-    gpuFailureTimes.append(now)
-    guard gpuFailureTimes.count >= PoseCameraView.gpuFailureLimit else { return false }
-    gpuFailureTimes.removeAll()
-    return true
   }
 
   private func onPoseLost() {
+    // MediaPipe starts its filters over on a frame with nobody in it.
+    visibilityClock.reset()
     previousBox = nil
     overlayView.clearPose()
     // A frame is only current while a pose is in it, and velocity across the gap where someone left
     // and came back is not a speed anybody moved at.
     frames.clearLatest()
+    flushOwedBatch()
     resetVelocity()
     triggers.onPoseLost()
     // Filtering across that gap would invent the motion between the two places they stood.
@@ -379,7 +377,11 @@ extension PoseCameraView: PoseDetectorObserver {
       worldBuffer[base + Skeleton.offsetX] = landmark.x
       worldBuffer[base + Skeleton.offsetY] = landmark.y
       worldBuffer[base + Skeleton.offsetZ] = landmark.z
-      worldBuffer[base + Skeleton.offsetVisibility] = landmark.visibility?.floatValue ?? 0
+      // MediaPipe copies the screen landmarks' visibility onto these and smooths it the same way,
+      // so the re-timed one is the one that belongs here too.
+      worldBuffer[base + Skeleton.offsetVisibility] = visibilityClocked
+        ? landmarkBuffer[base + Skeleton.offsetVisibility]
+        : landmark.visibility?.floatValue ?? 0
     }
   }
 }

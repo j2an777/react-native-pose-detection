@@ -2,6 +2,7 @@ package com.posedetection.engine
 
 import com.posedetection.Skeleton
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -69,6 +70,21 @@ class FrameRingBufferTest {
             Wire.byteLength(frameCount, floatsPerFrame),
             raw.capacity(),
         )
+    }
+
+    @Test
+    fun `buffered frames are owed until they are drained, and a current frame alone is not`() {
+        val shape = shape()
+        val frames = buffer(shape)
+        frames.submit(frame(shape, 1f), 10.0, 2.0, buffered = false)
+        assertFalse(frames.hasBuffered())
+
+        frames.submit(frame(shape, 1f), 20.0, 2.0, buffered = true)
+        frames.clearLatest()
+        assertTrue("still owed after the pose left", frames.hasBuffered())
+
+        frames.drain()
+        assertFalse(frames.hasBuffered())
     }
 
     @Test

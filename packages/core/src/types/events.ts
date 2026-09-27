@@ -59,11 +59,17 @@ export type CameraChangeEvent = {
 };
 
 export type PerformanceEvent = {
+  /**
+   * `delegate` is Android's `auto` moving from the CPU landmarker it starts on to the GPU one once
+   * that has built; `gpu_fallback` is the other way, a GPU that kept failing. `load` and `headroom`
+   * are reserved and not sent today.
+   */
   readonly reason:
     | 'calibration'
     | 'thermal'
     | 'lowPower'
     | 'idle'
+    | 'delegate'
     | 'load'
     | 'headroom'
     | 'gpu_fallback';

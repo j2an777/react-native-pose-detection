@@ -103,6 +103,9 @@ extension PoseCameraView {
   /// Stops frames reaching the landmarker now, and frees it after `seconds` if nothing wanted it back.
   func parkDetector(for seconds: TimeInterval) {
     feeding.value = false
+    // A hold has to be continuous, and frames stopping is the end of one: a pause, detection off
+    // or a trip to the background. Kept across it, a `minDurationMs` hold counted the paused time.
+    triggers.onPoseLost()
     releaseTimer?.invalidate()
     releaseTimer = nil
     guard detector.value != nil || detectorPending else { return }
@@ -153,6 +156,7 @@ extension PoseCameraView {
           minConfidence: minConfidence,
           knownGpu: knownGpu
         )
+        self.preWarm(created)
         DispatchQueue.main.async { self.adoptDetector(created, request: request, generation: generation) }
       } catch {
         PoseLog.error(.detector, "landmarker init failed: \(error.localizedDescription)")
@@ -177,7 +181,6 @@ extension PoseCameraView {
     }
     // Idle search counts from here: a camera opened on an empty room is idle too.
     lastPoseMs.value = Monotonic.nowMs()
-    preWarm(created)
     if fellBackToCpu {
       fellBackToCpu = false
       emitPerformanceChange(reason: "gpu_fallback")
@@ -201,20 +204,22 @@ extension PoseCameraView {
    One inference on a blank frame, on the analysis queue, before the user's first real one. The
    first inference through a freshly built graph is several times slower than the rest, and without
    this the frame that pays for that is the one somebody is watching.
+
+   Run as part of the build, before the landmarker is adopted, so it is queued ahead of every camera
+   frame. Queued after the adoption instead, a camera frame could reach the landmarker first, and
+   the blank frame then ended the track that frame had just started.
    */
   private func preWarm(_ created: PoseDetector) {
-    analysisQueue.async {
-      autoreleasepool {
-        do {
-          let size = CGSize(width: PoseCameraView.preWarmSize, height: PoseCameraView.preWarmSize)
-          let blank = UIGraphicsImageRenderer(size: size).image { context in
-            UIColor.black.setFill()
-            context.fill(CGRect(origin: .zero, size: size))
-          }
-          try created.detect(image: try MPImage(uiImage: blank), cameraTimestampMs: 0)
-        } catch {
-          PoseLog.debug(.detector, "pre-warm did not run: \(error.localizedDescription)")
+    autoreleasepool {
+      do {
+        let size = CGSize(width: PoseCameraView.preWarmSize, height: PoseCameraView.preWarmSize)
+        let blank = UIGraphicsImageRenderer(size: size).image { context in
+          UIColor.black.setFill()
+          context.fill(CGRect(origin: .zero, size: size))
         }
+        try created.detect(image: try MPImage(uiImage: blank), cameraTimestampMs: 0)
+      } catch {
+        PoseLog.debug(.detector, "pre-warm did not run: \(error.localizedDescription)")
       }
     }
   }
@@ -284,5 +289,36 @@ extension PoseCameraView {
 
     PoseLog.info(.engine, "heat is \(thermal.state.rawValue), low power \(lowPower ? "on" : "off")")
     applyPerformance(reason: heatMoved ? "thermal" : "lowPower")
+  }
+}
+
+// MARK: - Inference failures
+
+extension PoseCameraView {
+  /// On MediaPipe's callback queue. Rate limited: a dead delegate fails every frame.
+  func poseDetector(_ detector: PoseDetector, didFail error: Error) {
+    PoseLog.warn(.detector, "inference failed: \(error.localizedDescription)")
+    let now = Monotonic.nowMs()
+    if detector.delegateKind == .GPU && noteGpuFailure(now) {
+      DispatchQueue.main.async { [weak self] in self?.fallBackToCpu() }
+    }
+    let shouldReport = lastDetectionErrorMs.mutate { last -> Bool in
+      guard now - last >= PoseCameraView.detectionErrorIntervalMs else { return false }
+      last = now
+      return true
+    }
+    guard shouldReport else { return }
+
+    let message = error.localizedDescription
+    DispatchQueue.main.async { [weak self] in self?.emitError(.detectionFailed, message) }
+  }
+
+  /// Three failures inside a second on the GPU is a delegate that does not work here. Callback queue.
+  private func noteGpuFailure(_ now: Int64) -> Bool {
+    gpuFailureTimes.removeAll { now - $0 > PoseCameraView.gpuFailureWindowMs }
+    gpuFailureTimes.append(now)
+    guard gpuFailureTimes.count >= PoseCameraView.gpuFailureLimit else { return false }
+    gpuFailureTimes.removeAll()
+    return true
   }
 }

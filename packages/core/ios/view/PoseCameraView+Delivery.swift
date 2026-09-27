@@ -73,6 +73,19 @@ extension PoseCameraView {
     firings.removeAll(keepingCapacity: true)
   }
 
+  /**
+   `batched` flushes on its interval from `deliver`, which only frames with a pose reach. What was
+   buffered before somebody left is flushed on time from here, on the frames without them, instead
+   of being held until somebody comes back.
+   */
+  func flushOwedBatch() {
+    guard propMode == .batched else { return }
+    let now = Monotonic.nowMs()
+    guard now - lastEmitMs.value >= propFlushMs.value, frames.hasBuffered else { return }
+    lastEmitMs.value = now
+    tick()
+  }
+
   /// The delivery mode decides only two things: whether this frame is kept, and whether to tick.
   func deliver(_ scratch: [Float], timestampMs: Double, processingMs: Double) {
     let mode = propMode
@@ -95,7 +108,10 @@ extension PoseCameraView {
 
     guard due, mode != .off else { return }
     lastEmitMs.value = now
+    tick()
+  }
 
+  private func tick() {
     // A tick already queued has not been answered yet, so a second one would ask for the same drain
     // twice.
     let shouldTick = tickPending.mutate { pending -> Bool in
