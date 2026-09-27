@@ -39,6 +39,9 @@ internal class StaticDetectionError(
 internal object StaticDetection {
     private val cancelled = ConcurrentHashMap<Int, AtomicBoolean>()
 
+    /** The same step an export reports progress in. */
+    private const val PROGRESS_STEP = 0.02f
+
     /**
      * Where photo and video detection run: one thread, below the camera's, and this package's own.
      * Expo runs every module's async functions on one shared thread, so a video job there held up
@@ -128,6 +131,9 @@ internal object StaticDetection {
             val frames = ArrayList<FloatArray>()
             val timestamps = ArrayList<Double>()
             var lastTimestamp = -1L
+            // Throttled as an export's is: a progress event per sampled frame is a crossing per
+            // frame for a number nobody reads that fast.
+            var lastReported = 0f
             while (!flag.get()) {
                 val frame = sampler.next() ?: break
                 // VIDEO mode rejects a timestamp that does not move forward, and a variable frame
@@ -142,7 +148,11 @@ internal object StaticDetection {
                 } else {
                     PoseLog.debug(LogCategory.ENGINE) { "nobody found at ${frame.timestampMs} ms" }
                 }
-                onProgress(sampler.progress(frame))
+                val progress = sampler.progress(frame)
+                if (progress >= lastReported + PROGRESS_STEP) {
+                    lastReported = progress
+                    onProgress(progress)
+                }
                 if (!pacer.rest { flag.get() }) break
             }
 

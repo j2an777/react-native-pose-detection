@@ -27,6 +27,8 @@ struct StaticDetectionError: LocalizedError {
  */
 enum StaticDetection {
   private static let millisPerSecond: Double = 1_000
+  /// The same step an export reports progress in.
+  private static let progressStep: Float = 0.02
 
   /**
    Where photo and video detection run: serial, below the camera's own queue, and this package's
@@ -108,6 +110,7 @@ enum StaticDetection {
     var encoded = [[Float]]()
     var timestamps = [Double]()
     var lastTimestamp = -1
+    var lastReported: Float = 0
 
     while !isCancelled() {
       guard let frame = try sampler.next() else { break }
@@ -130,7 +133,13 @@ enum StaticDetection {
           PoseLog.debug(.engine, "nobody found at \(frame.timestampMs) ms")
         }
       }
-      onProgress(sampler.progress(of: frame))
+      // Throttled as an export's is: a progress event per sampled frame is a crossing per frame for
+      // a number nobody reads that fast.
+      let progress = sampler.progress(of: frame)
+      if progress >= lastReported + StaticDetection.progressStep {
+        lastReported = progress
+        onProgress(progress)
+      }
       if !pacer.rest(isCancelled: isCancelled) { break }
     }
 
