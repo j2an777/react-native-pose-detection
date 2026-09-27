@@ -161,6 +161,10 @@ the first list is what to check when upgrading.
   batches over itself.
 - `doctor` failed on a project with only `android/` or only `ios/`. The missing platform is now
   skipped, and only a directory with neither fails.
+- `fetch-model` always copied the model into `android/app`, so an app whose `react-native.config.js`
+  names another module or Android directory shipped without it and failed with `MODEL_NOT_FOUND`,
+  while `doctor` checked the same folder and passed. Both now follow that config as React Native's
+  CLI does.
 
 ## 0.1.0
 

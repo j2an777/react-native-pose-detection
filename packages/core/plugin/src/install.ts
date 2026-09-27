@@ -6,8 +6,20 @@ import type { ModelEntry } from './manifest';
 import { MODEL_FILE_PATTERN } from './manifest';
 import type * as Pbxproj from './pbxproj';
 
-export function androidAssetsDir(projectRoot: string): string {
-  return join(projectRoot, 'android', 'app', 'src', 'main', 'assets');
+/**
+ * Where an app's Android project and its application module are, relative to the project root.
+ * The React Native template and Expo's prebuild both use `android/app`; React Native's own CLI
+ * lets `react-native.config.js` name others, see `readAndroidProject` in the CLI.
+ */
+export type AndroidProject = { readonly sourceDir: string; readonly appName: string };
+
+export const DEFAULT_ANDROID_PROJECT: AndroidProject = { sourceDir: 'android', appName: 'app' };
+
+export function androidAssetsDir(
+  projectRoot: string,
+  project: AndroidProject = DEFAULT_ANDROID_PROJECT,
+): string {
+  return join(projectRoot, project.sourceDir, project.appName, 'src', 'main', 'assets');
 }
 
 export function iosResourcesDir(projectRoot: string, projectName: string): string {

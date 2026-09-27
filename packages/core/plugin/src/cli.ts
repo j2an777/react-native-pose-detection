@@ -1,8 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { DEFAULT_CACHE_DIR, clearCache, ensureModel, sha256OfFile } from './download';
 import {
+  DEFAULT_ANDROID_PROJECT,
   androidAssetsDir,
   directoryExists,
   findInstalledModels,
@@ -12,6 +14,7 @@ import {
   iosResourcesDir,
   removeInstalledModels,
 } from './install';
+import type { AndroidProject } from './install';
 import * as log from './log';
 import type { ModelEntry } from './manifest';
 import type * as Pbxproj from './pbxproj';
@@ -105,6 +108,57 @@ async function loadXcodeSupport(): Promise<typeof Pbxproj | null> {
   }
 }
 
+const RN_CONFIG_NAMES = [
+  'react-native.config.js',
+  'react-native.config.cjs',
+  'react-native.config.mjs',
+];
+
+/**
+ * The Android project and application module, found the way React Native's own CLI finds them:
+ * `project.android.sourceDir` and `project.android.appName` in `react-native.config.js`, with
+ * `android` and `app` when they are not set, and `app` again when the named module does not exist.
+ * An app that renamed its module builds that one, and a model copied into `android/app` there is
+ * never packaged: the app fails with `MODEL_NOT_FOUND` while `doctor`, reading the same wrong
+ * folder, reports it installed.
+ *
+ * Loading the config runs it, as React Native's CLI does, and one that cannot be loaded leaves the
+ * defaults with a warning rather than stopping the command.
+ */
+async function readAndroidProject(projectRoot: string): Promise<AndroidProject> {
+  let android: { sourceDir?: unknown; appName?: unknown } | undefined;
+
+  for (const name of RN_CONFIG_NAMES) {
+    const path = join(projectRoot, name);
+    try {
+      await stat(path);
+    } catch {
+      continue;
+    }
+    try {
+      const loaded = (await import(pathToFileURL(path).href)) as {
+        default?: { project?: { android?: typeof android } };
+      };
+      android = loaded.default?.project?.android;
+    } catch (error) {
+      log.warn(`could not load ${name}, assuming android/app: ${(error as Error).message}`);
+    }
+    break;
+  }
+
+  const sourceDir =
+    typeof android?.sourceDir === 'string' && android.sourceDir !== ''
+      ? android.sourceDir
+      : DEFAULT_ANDROID_PROJECT.sourceDir;
+  const appName =
+    typeof android?.appName === 'string' &&
+    android.appName !== '' &&
+    (await directoryExists(join(projectRoot, sourceDir, android.appName)))
+      ? android.appName
+      : DEFAULT_ANDROID_PROJECT.appName;
+  return { sourceDir, appName };
+}
+
 /** Returns whether anything was installed, which is what decides the exit code. */
 async function installIos(
   projectRoot: string,
@@ -162,15 +216,20 @@ async function fetchModelCommand(flags: Flags): Promise<number> {
   let installed = 0;
 
   if (flags.android) {
+    const android = await readAndroidProject(projectRoot);
     // The guard belongs here rather than in installModelFile: the config plugin installs during
     // prebuild, where android/ legitimately does not exist yet and mkdir -p is the right thing.
     // Run from anywhere else, that same mkdir fabricates a four-level tree nobody asked for.
-    if (await directoryExists(join(projectRoot, 'android'))) {
-      const target = await installModelFile(cachePath, androidAssetsDir(projectRoot), model);
+    if (await directoryExists(join(projectRoot, android.sourceDir))) {
+      const target = await installModelFile(
+        cachePath,
+        androidAssetsDir(projectRoot, android),
+        model,
+      );
       log.line(`copied → ${relative(projectRoot, target)}`);
       installed += 1;
     } else {
-      log.warn('no android/ directory here, skipping the Android install.');
+      log.warn(`no ${android.sourceDir}/ directory here, skipping the Android install.`);
     }
   }
 
@@ -240,15 +299,15 @@ async function checkInstalledModel(dir: string, shortDir: string): Promise<Check
  * Bare RN writes it to `android/build.gradle` and `expo-build-properties` to
  * `gradle.properties`. A plain prebuild writes neither, so the value is unknowable here.
  */
-async function checkMinSdk(projectRoot: string): Promise<Check> {
+async function checkMinSdk(projectRoot: string, android: AndroidProject): Promise<Check> {
   const label = 'minSdkVersion 24';
   const sources = await Promise.all([
-    readIfPresent(join(projectRoot, 'android', 'build.gradle')),
-    readIfPresent(join(projectRoot, 'android', 'gradle.properties')),
+    readIfPresent(join(projectRoot, android.sourceDir, 'build.gradle')),
+    readIfPresent(join(projectRoot, android.sourceDir, 'gradle.properties')),
   ]);
 
   if (sources.every((source) => source === null)) {
-    return skip(label, 'no build.gradle or gradle.properties in android/');
+    return skip(label, `no build.gradle or gradle.properties in ${android.sourceDir}/`);
   }
 
   const text = sources.join('\n');
@@ -403,14 +462,18 @@ async function checkXcodeRegistration(
 /** Best-effort reads that can say "could not determine" beat a parser that throws. */
 async function doctorCommand(): Promise<number> {
   const projectRoot = process.cwd();
-  const hasAndroid = await directoryExists(join(projectRoot, 'android'));
+  const android = await readAndroidProject(projectRoot);
+  const hasAndroid = await directoryExists(join(projectRoot, android.sourceDir));
   const hasIos = await directoryExists(join(projectRoot, 'ios'));
 
   // An app built for one platform has one native project, and the other one missing is nothing
   // to fix. Neither is a directory doctor can say nothing about, which is not a pass either.
   if (!hasAndroid && !hasIos) {
     return report([
-      fail('native project', 'no android/ or ios/ here, run this from the app root after prebuild'),
+      fail(
+        'native project',
+        `no ${android.sourceDir}/ or ios/ here, run this from the app root after prebuild`,
+      ),
     ]);
   }
 
@@ -418,8 +481,11 @@ async function doctorCommand(): Promise<number> {
 
   checks.push(
     ...(hasAndroid
-      ? await checkInstalledModel(androidAssetsDir(projectRoot), 'android/app/src/main/assets')
-      : [skip('android project', 'no android/ directory')]),
+      ? await checkInstalledModel(
+          androidAssetsDir(projectRoot, android),
+          `${android.sourceDir}/${android.appName}/src/main/assets`,
+        )
+      : [skip('android project', `no ${android.sourceDir}/ directory`)]),
   );
 
   const projectName = hasIos ? await findIosProjectName(projectRoot) : null;
@@ -443,7 +509,7 @@ async function doctorCommand(): Promise<number> {
     }
   }
 
-  if (hasAndroid) checks.push(await checkMinSdk(projectRoot));
+  if (hasAndroid) checks.push(await checkMinSdk(projectRoot, android));
 
   if (projectName !== null) {
     checks.push(checkDeploymentTarget(pbxproj));
@@ -451,7 +517,7 @@ async function doctorCommand(): Promise<number> {
 
   if (hasAndroid) {
     const manifest = await readIfPresent(
-      join(projectRoot, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'),
+      join(projectRoot, android.sourceDir, android.appName, 'src', 'main', 'AndroidManifest.xml'),
     );
     // Absent from the app manifest is not a failure: this package declares the permission in
     // its own manifest, and the merger adds it. Reporting that as broken is how doctor gets

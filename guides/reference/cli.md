@@ -33,6 +33,10 @@ including removing any previously installed model.
 › registered → ios/MyApp.xcodeproj/project.pbxproj
 ```
 
+On Android the file goes into the module React Native builds: `android/app`, or the one
+`react-native.config.js` names with `project.android.sourceDir` and `project.android.appName`,
+found the way React Native's own CLI finds it. `doctor` checks the same place.
+
 On iOS the file is also added to your app target, so it ends up in the bundle without a trip
 through Xcode. Switching variants unregisters the old one in the same pass.
 
