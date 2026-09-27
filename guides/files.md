@@ -198,7 +198,7 @@ screen, not on the way out the door.
 | `fps` | `10` | Detection samples a second, not output frame rate |
 | `maxSize` | `1920` | Long edge cap. `0` keeps the source's size |
 | `directory` | `'cache'` | See above |
-| `fileName` | source name + `-pose` | No extension; sanitized before it reaches the filesystem |
+| `fileName` | source name + `-pose` | No extension; sanitized before it reaches the filesystem. A finished export replaces one already under the name; a cancelled or failed one leaves it as it was |
 | `quality` | `0.9` | JPEG quality. Images only |
 | `onProgress` | none | 0 to 1, throttled to about every two percent |
 

@@ -110,9 +110,10 @@ internal class VideoExporter(
 
         // Written under a staging name and renamed into place at the end, so a process that dies
         // mid-write can never leave behind something that looks like a finished export. Whatever
-        // a dead process does leave is swept the next time the directory is prepared.
+        // a dead process does leave is swept the next time the directory is prepared. The last
+        // export under this name stays where it is until then: the rename replaces it in one
+        // step, so a cancel or a failure never costs the file this one would have replaced.
         val staging = File(options.directory, "${options.fileName}${PoseExport.STAGING_SUFFIX}.mp4")
-        output.delete()
         staging.delete()
         var complete = false
 

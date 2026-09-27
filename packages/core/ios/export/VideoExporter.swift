@@ -95,9 +95,10 @@ final class VideoExporter {
 
     // Written under a staging name and moved into place at the end, so a process that dies
     // mid-write can never leave behind something that looks like a finished export. Whatever a
-    // dead process does leave is swept the next time the directory is prepared.
+    // dead process does leave is swept the next time the directory is prepared. The last export
+    // under this name stays where it is until then, so a cancel or a failure never costs the file
+    // this one would have replaced.
     let staging = options.directory.appendingPathComponent("\(options.fileName).partial.mp4")
-    try? FileManager.default.removeItem(at: output)
     try? FileManager.default.removeItem(at: staging)
 
     let reader = try makeReader(asset: asset, track: track)
@@ -132,9 +133,13 @@ final class VideoExporter {
       ),
       output: output
     )
-    // The writer finalized the staging file; the move is what makes the export exist under the
-    // name the summary hands back.
-    try FileManager.default.moveItem(at: staging, to: output)
+    // The writer finalized the staging file; the rename is what makes the export exist under the
+    // name the summary hands back, and it replaces the last one under that name in one step.
+    // FileManager's move refuses to overwrite, and removing the old file first would open the
+    // window the staging name exists to close.
+    guard rename(staging.path, output.path) == 0 else {
+      throw ExportError("the export could not be moved into place")
+    }
     finished = true
     return summary
   }
