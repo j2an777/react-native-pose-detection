@@ -43,6 +43,11 @@ internal object StaticDetection {
             }
         }
 
+    /** Registers at enqueue, so a cancel that lands while the job waits in the queue is kept. */
+    fun enqueue(taskId: Int) {
+        cancelled.putIfAbsent(taskId, AtomicBoolean(false))
+    }
+
     fun cancel(taskId: Int) {
         cancelled[taskId]?.set(true)
     }
@@ -95,8 +100,7 @@ internal object StaticDetection {
         taskId: Int,
         onProgress: (Float) -> Unit,
     ): ByteBuffer {
-        val flag = AtomicBoolean(false)
-        cancelled[taskId] = flag
+        val flag = cancelled.getOrPut(taskId) { AtomicBoolean(false) }
 
         // Built inside the try, so a throw cannot leak the task's entry in the process-wide map.
         var sampler: VideoFrameSampler? = null

@@ -98,6 +98,7 @@ class PoseDetectionModule : Module() {
                     promise.reject(ErrorCode.DETECTION_FAILED.name, "The module has no context.", null)
                     return@AsyncFunction
                 }
+                StaticDetection.enqueue(taskId)
                 StaticDetection.executor.execute {
                     runCatching {
                         StaticDetection.detectVideo(
@@ -126,6 +127,7 @@ class PoseDetectionModule : Module() {
                     promise.reject(ErrorCode.EXPORT_FAILED.name, "The module has no context.", null)
                     return@AsyncFunction
                 }
+                PoseExport.enqueue(taskId)
                 PoseExport.executor.execute {
                     runCatching {
                         PoseExport.run(context, uri, options, taskId) { progress ->

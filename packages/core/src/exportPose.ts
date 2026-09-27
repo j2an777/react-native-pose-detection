@@ -44,8 +44,8 @@ export type ExportResult = {
 
 export type ExportTask = {
   /**
-   * Rejects with `EXPORT_CANCELLED` after `cancel()`, and with `EXPORT_FAILED` if the file could
-   * not be read, painted or written. Either way the partial file is deleted.
+   * `EXPORT_CANCELLED` after `cancel()` (a photo already being painted finishes), `EXPORT_FAILED`
+   * if the file cannot be read, painted or written. Either way the partial file is deleted.
    */
   readonly result: Promise<ExportResult>;
   cancel(): void;

@@ -11,6 +11,10 @@ enum PoseExport {
 
   private static let running = CancelRegistry()
 
+  static func enqueue(taskId: Int) {
+    running.begin(taskId)
+  }
+
   static func cancel(taskId: Int) {
     running.cancel(taskId)
   }
@@ -26,11 +30,6 @@ enum PoseExport {
     taskId: Int,
     onProgress: @escaping (Float) -> Void
   ) throws -> ExportSummary {
-    let source = JS.url(uri)
-    let options = try ExportOptions.parse(raw, sourceName: source.deletingPathExtension().lastPathComponent)
-    // The resolved `minConfidence` is not visible from JavaScript otherwise.
-    PoseLog.info(.engine, "export maxPoses=\(options.maxPoses) minConfidence=\(options.minConfidence)")
-
     running.begin(taskId)
     // A suspended app can be killed mid-write with nothing unwound; the background task buys time,
     // and its expiry cancels so the export leaves through the usual cleanup.
@@ -43,6 +42,13 @@ enum PoseExport {
         UIApplication.shared.endBackgroundTask(background)
       }
     }
+    // Cancelled while it waited in the queue.
+    if running.isCancelled(taskId) { throw ExportCancelled() }
+
+    let source = JS.url(uri)
+    let options = try ExportOptions.parse(raw, sourceName: source.deletingPathExtension().lastPathComponent)
+    // The resolved `minConfidence` is not visible from JavaScript otherwise.
+    PoseLog.info(.engine, "export maxPoses=\(options.maxPoses) minConfidence=\(options.minConfidence)")
 
     if isVideo(uri: uri) {
       let exporter = VideoExporter(

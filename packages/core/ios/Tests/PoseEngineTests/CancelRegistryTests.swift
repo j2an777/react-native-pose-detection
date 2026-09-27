@@ -22,6 +22,16 @@ final class CancelRegistryTests: XCTestCase {
     XCTAssertFalse(registry.isCancelled(99))
   }
 
+  func testACancelWhileQueuedIsKeptWhenTheJobStarts() {
+    let registry = CancelRegistry()
+    registry.begin(5)
+    registry.cancel(5)
+    registry.begin(5)
+    XCTAssertTrue(registry.isCancelled(5))
+    registry.end(5)
+    XCTAssertFalse(registry.isCancelled(5))
+  }
+
   func testEndingATaskClearsItsCancellation() {
     let registry = CancelRegistry()
     registry.begin(7)

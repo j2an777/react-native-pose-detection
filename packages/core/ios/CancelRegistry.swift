@@ -5,10 +5,13 @@ final class CancelRegistry {
   private let lock = NSLock()
   private var cancelled = [Int: Bool]()
 
+  /// Called when the job is queued and again when it starts, so a cancel in between is kept.
   func begin(_ taskId: Int) {
     lock.lock()
     defer { lock.unlock() }
-    cancelled[taskId] = false
+    if cancelled[taskId] == nil {
+      cancelled[taskId] = false
+    }
   }
 
   func end(_ taskId: Int) {

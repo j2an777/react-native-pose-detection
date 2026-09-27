@@ -46,6 +46,7 @@ public class PoseDetectionModule: Module {
     }
 
     AsyncFunction("detectOnVideo") { (uri: String, options: [String: Any]?, taskId: Int, promise: Promise) in
+      StaticDetection.enqueue(taskId: taskId)
       StaticDetection.queue.async { [weak self] in
         do {
           let buffer = try StaticDetection.detectVideo(
@@ -70,6 +71,7 @@ public class PoseDetectionModule: Module {
     }
 
     AsyncFunction("exportPose") { (uri: String, options: [String: Any]?, taskId: Int, promise: Promise) in
+      PoseExport.enqueue(taskId: taskId)
       PoseExport.queue.async { [weak self] in
         do {
           let summary = try PoseExport.run(uri: uri, raw: options, taskId: taskId) { progress in

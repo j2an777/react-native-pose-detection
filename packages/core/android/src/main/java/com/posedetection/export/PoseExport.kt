@@ -41,6 +41,11 @@ internal object PoseExport {
 
     private val cancelled = ConcurrentHashMap<Int, AtomicBoolean>()
 
+    /** Registers at enqueue, so a cancel that lands while the job waits in the queue is kept. */
+    fun enqueue(taskId: Int) {
+        cancelled.putIfAbsent(taskId, AtomicBoolean(false))
+    }
+
     fun cancel(taskId: Int) {
         cancelled[taskId]?.set(true)
     }
@@ -66,19 +71,21 @@ internal object PoseExport {
         taskId: Int,
         onProgress: (Float) -> Unit,
     ): ExportSummary {
-        val sourceName =
-            (Uri.parse(uri).lastPathSegment ?: "pose")
-                .substringAfterLast('/')
-                .substringBeforeLast('.')
-        val options = ExportOptions.parse(context, raw, sourceName)
-        // The resolved minConfidence is not visible from JavaScript otherwise.
-        PoseLog.info(LogCategory.ENGINE) {
-            "export maxPoses=${options.maxPoses} minConfidence=${options.minConfidence}"
-        }
-
-        val flag = AtomicBoolean(false)
-        cancelled[taskId] = flag
+        val flag = cancelled.getOrPut(taskId) { AtomicBoolean(false) }
         try {
+            // Cancelled while it waited in the queue.
+            if (flag.get()) throw ExportCancelled()
+
+            val sourceName =
+                (Uri.parse(uri).lastPathSegment ?: "pose")
+                    .substringAfterLast('/')
+                    .substringBeforeLast('.')
+            val options = ExportOptions.parse(context, raw, sourceName)
+            // The resolved minConfidence is not visible from JavaScript otherwise.
+            PoseLog.info(LogCategory.ENGINE) {
+                "export maxPoses=${options.maxPoses} minConfidence=${options.minConfidence}"
+            }
+
             return if (isVideo(context, uri)) {
                 VideoExporter(context, uri, options, flag, onProgress).run()
             } else {

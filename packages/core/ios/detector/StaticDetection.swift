@@ -26,6 +26,10 @@ enum StaticDetection {
 
   private static let running = CancelRegistry()
 
+  static func enqueue(taskId: Int) {
+    running.begin(taskId)
+  }
+
   static func cancel(taskId: Int) {
     running.cancel(taskId)
   }
