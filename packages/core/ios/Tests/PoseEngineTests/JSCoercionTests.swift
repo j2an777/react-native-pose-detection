@@ -2,6 +2,24 @@ import XCTest
 @testable import PoseEngine
 
 final class JSCoercionTests: XCTestCase {
+  func testABarePathIsAFileURL() {
+    let url = JS.url("/var/mobile/Media/clip.mov")
+    XCTAssertTrue(url.isFileURL)
+    XCTAssertEqual(url.path, "/var/mobile/Media/clip.mov")
+    XCTAssertEqual(url.pathExtension, "mov")
+  }
+
+  func testAURIWithASchemeIsTakenAsItIs() {
+    XCTAssertTrue(JS.url("file:///var/mobile/clip.mov").isFileURL)
+    XCTAssertEqual(JS.url("file:///var/mobile/clip.mov").path, "/var/mobile/clip.mov")
+    XCTAssertEqual(JS.url("https://example.com/clip.mp4").scheme, "https")
+  }
+
+  func testSpacesStayInOneFileName() {
+    XCTAssertEqual(JS.url("/var/mobile/my clip.mov").path, "/var/mobile/my clip.mov")
+    XCTAssertEqual(JS.url("file:///var/mobile/my%20clip.mov").path, "/var/mobile/my clip.mov")
+  }
+
   func testAFiniteNumberComesThroughWhateverTypeItCrossedAs() {
     XCTAssertEqual(JS.finite(3), 3)
     XCTAssertEqual(JS.finite(2.5), 2.5)

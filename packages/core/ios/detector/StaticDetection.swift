@@ -73,10 +73,12 @@ enum StaticDetection {
     defer { running.end(taskId) }
     let isCancelled = { running.isCancelled(taskId) }
 
-    guard let url = URL(string: uri) ?? URL(string: "file://\(uri)") else {
-      throw StaticDetectionError(.videoDecodeFailed, "could not read a video from \(uri)")
-    }
-    let sampler = try VideoFrameSampler(url: url, fps: options.fps, startMs: options.startMs, endMs: options.endMs)
+    let sampler = try VideoFrameSampler(
+      url: JS.url(uri),
+      fps: options.fps,
+      startMs: options.startMs,
+      endMs: options.endMs
+    )
     let shape = shapeFor(options, angleJoints: angleJoints, selection: selection)
     let detector = try FileDetector(
       modelPath: try requireModel(),

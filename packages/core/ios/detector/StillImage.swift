@@ -8,9 +8,7 @@ enum StillImage {
   static let detectionMaxPixels = 1920
 
   static func source(uri: String) -> CGImageSource? {
-    guard let url = URL(string: uri), url.scheme != nil else {
-      return CGImageSourceCreateWithURL(URL(fileURLWithPath: uri) as CFURL, nil)
-    }
+    let url = JS.url(uri)
     if url.isFileURL {
       return CGImageSourceCreateWithURL(url as CFURL, nil)
     }

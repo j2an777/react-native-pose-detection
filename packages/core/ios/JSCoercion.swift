@@ -63,6 +63,17 @@ enum JS {
     return value[index]
   }
 
+  /// A URI with a scheme as given, a bare path as a file URL, as Android reads them.
+  static func url(_ uri: String) -> URL {
+    if let url = URL(string: uri), url.scheme != nil { return url }
+    // Before iOS 17, URL(string:) refuses a file URI with raw spaces.
+    if uri.hasPrefix("file://") {
+      let path = String(uri.dropFirst("file://".count))
+      return URL(fileURLWithPath: path.removingPercentEncoding ?? path)
+    }
+    return URL(fileURLWithPath: uri)
+  }
+
   static func strings(_ value: Any?) -> [String]? {
     guard let raw = array(value) else { return nil }
     return raw.compactMap { $0 as? String }

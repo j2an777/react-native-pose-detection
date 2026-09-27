@@ -16,15 +16,8 @@ enum PoseExport {
   }
 
   static func isVideo(uri: String) -> Bool {
-    let ext = (URL(string: uri) ?? URL(fileURLWithPath: uri)).pathExtension.lowercased()
+    let ext = JS.url(uri).pathExtension.lowercased()
     return videoExtensions.contains(ext)
-  }
-
-  static func resolve(uri: String) throws -> URL {
-    guard let url = URL(string: uri) ?? URL(string: "file://\(uri)") else {
-      throw ExportError("could not read a file from \(uri)")
-    }
-    return url
   }
 
   static func run(
@@ -33,7 +26,7 @@ enum PoseExport {
     taskId: Int,
     onProgress: @escaping (Float) -> Void
   ) throws -> ExportSummary {
-    let source = try resolve(uri: uri)
+    let source = JS.url(uri)
     let options = try ExportOptions.parse(raw, sourceName: source.deletingPathExtension().lastPathComponent)
     // The resolved `minConfidence` is not visible from JavaScript otherwise.
     PoseLog.info(.engine, "export maxPoses=\(options.maxPoses) minConfidence=\(options.minConfidence)")
