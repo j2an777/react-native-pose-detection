@@ -14,7 +14,7 @@ import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from
 import type { LogEntry } from './types/logging';
 import type { Condition, TriggerEvent } from './types/triggers';
 import { emitLogEntries, holdLogStream } from './logging';
-import { assertValidCameraNumbers, assertValidTriggers } from './validation';
+import { assertValidCameraNumbers, assertValidDataConfig, assertValidTriggers } from './validation';
 import { resolveAngleJoints } from './frames/wire';
 
 type NativeEvent<T> = { nativeEvent: T };
@@ -67,6 +67,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
   // what keeps the walk below finite on a cyclic config.
   if (triggers && triggers.length > 0) assertValidTriggers(triggers);
   assertValidCameraNumbers(props);
+  assertValidDataConfig(props.data);
 
   const requestedAngles = data?.angles;
   const angleJoints = useStableList<AngleJointName>(
