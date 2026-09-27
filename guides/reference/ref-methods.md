@@ -25,19 +25,20 @@ type PoseCameraRef = {
 ```
 
 Everything except `getState` and `setProfile` returns a promise, because it reaches native over
-the same asynchronous path every other call takes. Ignoring the promise is fine and common.
-Awaiting it is how you see a failure instead of losing it.
+the same asynchronous path every other call takes (`snapshot` excepted, see below). Ignoring the
+promise is fine and common. Awaiting it is how you see a failure instead of losing it.
 
 `getState()` stays synchronous: it merges a local mirror of the events that carry camera state
-with the two values that move between events, `fps` and `limitedBy`, which it reads from native
-directly on the JavaScript thread. None of it is a trip across the bridge.
+with `fps` and `limitedBy`, which move between events and which it reads from native directly on
+the JavaScript thread. None of it is a trip across the bridge. Its `deviceTier` is the one
+`onReady` reported; `getProfile()` has the tier calibration has refined since.
 
 ## Camera
 
 | Method | Notes |
 | --- | --- |
-| `switchCamera()` | Toggles front/back. **Resolves only when the session is stable again**, meaning the new camera has delivered a frame, not when the rebind returns. Detection state and trigger counters are preserved. `onCameraChange` is raised at the same moment, but as an event it can reach JavaScript just after the promise resolves, so sequence on the promise. |
-| `setFacing(f)` | Same guarantees, explicit target. No-op if already there. |
+| `switchCamera()` | Toggles front/back. **Resolves only when the session is stable again**, meaning the new camera has delivered a frame (or 1.5 seconds passed without one), not when the rebind returns. Detection state and trigger counters are preserved. `onCameraChange` is raised at the same moment, but as an event it can reach JavaScript just after the promise resolves, so sequence on the promise. |
+| `setFacing(f)` | Same guarantees, explicit target. Already on that lens, nothing is rebound, but it still settles on the next frame and raises `onCameraChange`. |
 | `pause()` / `resume()` | Stops the capture session entirely and parks the landmarker, so a resume within a minute detects at once. Lowest power state short of unmounting. |
 
 A switch to a lens the device does not have fails with `CAMERA_SWITCH_FAILED` and rolls back to

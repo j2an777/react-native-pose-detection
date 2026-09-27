@@ -80,9 +80,9 @@ A cache hit needs no network. A cache miss with no network fails with the URL an
 so you can place the file manually.
 
 `skipDownload: true` never touches the network at all. On a cache hit it installs as usual; on
-a cache miss it prints a warning and leaves both native projects exactly as they were, so a
-vendored model already committed to your repo is not deleted by a build that cannot reach the
-CDN.
+a cache miss it prints a warning and leaves the model files in both native projects as they were,
+so a vendored model already committed to your repo is not deleted by a build that cannot reach
+the CDN.
 
 ## CI
 

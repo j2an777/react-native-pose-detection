@@ -106,16 +106,17 @@ type ExportResult = {
   readonly height: number;
   readonly durationMs: number;   // 0 for a photo
   readonly frameCount: number;   // 1 for a photo
-  readonly posesFound: number;   // frames a pose was painted on
+  readonly posesFound: number;   // a photo: poses painted; a video: frames with one
 };
 ```
 
 Paints the skeleton into a copy of a photo or a video with the renderer the live camera uses. The
 options are `overlay`, `maxPoses`, `minConfidence`, `fps`, `maxSize`, `directory`, `fileName`,
 `quality` and `onProgress`; their defaults are in [export options](../files.md#export-options).
-Rejects with `EXPORT_CANCELLED` after `cancel()` and `EXPORT_FAILED` when the file cannot be read,
-painted or written. A cancelled or failed export deletes its own partial file and leaves any
-earlier export under the same name as it was. See [painting a copy](../files.md#painting-a-copy).
+Rejects with `EXPORT_CANCELLED` after `cancel()`, which stops a video export, or any export still
+queued behind another, but not a photo export already running, and `EXPORT_FAILED` when the file cannot be read, painted or written. A cancelled or failed export
+deletes its own partial file and leaves any earlier export under the same name as it was. See
+[painting a copy](../files.md#painting-a-copy).
 
 ## Camera permission
 
@@ -127,7 +128,7 @@ states and why `blocked` is not `denied`.
 type CameraPermission = {
   readonly status: 'granted' | 'denied' | 'blocked' | 'undetermined';
   readonly granted: boolean;
-  readonly canAskAgain: boolean;   // false: send the user to Linking.openSettings()
+  readonly canAskAgain: boolean;   // false and not granted: send the user to Linking.openSettings()
 };
 ```
 
@@ -242,8 +243,8 @@ type LogEntry = {
 
 Entries arrive in batches about every 250 ms, with or without a camera on screen, so a photo
 detection or an export can be watched too. The native stream runs only while a listener is
-attached. Call `remove()` on the returned subscription to stop; the same function added twice
-needs two.
+attached, or a camera with an `onLog` prop is mounted. Call `remove()` on the returned
+subscription to stop; the same function added twice needs two.
 
 ## Errors
 
@@ -253,10 +254,11 @@ class PoseConfigError extends Error {
 }
 ```
 
-Thrown for a configuration mistake: a bad trigger, a prop or file option out of range, an unknown
-log level, or a joint read that `data.select` excluded. It carries every problem it found on `issues`. Runtime
-failures are not thrown: they arrive as `onError` codes on the camera and as rejections with a
-`code` from the file functions, all listed in [error codes](./events.md#onerror).
+Thrown for a configuration mistake: a bad trigger, a numeric prop or file option that is not a
+finite number, an unknown log level, or a joint read that `data.select` excluded. Out-of-range
+numbers are clamped natively rather than thrown. It carries every problem it found on `issues`.
+Runtime failures are not thrown: they arrive as `onError` codes on the camera and as rejections
+with a `code` from the file functions, all listed in [error codes](./events.md#onerror).
 
 ## Constants
 

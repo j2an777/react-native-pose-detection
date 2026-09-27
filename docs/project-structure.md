@@ -182,4 +182,4 @@ constant tables plus the TypeScript one and fails when any of the three drifts. 
 | Domain logic (reps, jumps, form) | Primitives, not policy |
 | A web implementation | Declared platforms are `apple` and `android` only: no stubs |
 | Bundled model files | [ADR 0002](./adr/0002-models-fetched-not-bundled.md) |
-| VisionCamera dependency | [ADR 0001](./adr/0001-own-camera-not-visioncamera.md): adapter arrives in 0.2.0 |
+| VisionCamera dependency | [ADR 0001](./adr/0001-own-camera-not-visioncamera.md): an adapter is planned for a later release |

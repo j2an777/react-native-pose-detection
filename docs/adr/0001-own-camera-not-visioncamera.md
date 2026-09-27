@@ -14,8 +14,8 @@ orientation, lifecycle, and permissions on both platforms.
 
 ## Decision
 
-Ship our own camera as the primary entry point. Add a VisionCamera frame-processor adapter in
-0.2.0 as an *additional* entry point, not a replacement.
+Ship our own camera as the primary entry point. Add a VisionCamera frame-processor adapter in a
+later release as an *additional* entry point, not a replacement.
 
 ## Consequences
 
@@ -23,9 +23,9 @@ Ship our own camera as the primary entry point. Add a VisionCamera frame-process
   competitor requires installing and configuring VisionCamera *and* supplying a model file.
 - We own CameraX. Frame orientation across device rotation and camera switching is the largest
   source of Android bugs in this package.
-- Apps that already use VisionCamera cannot adopt us until 0.2.0, two capture sessions on one
-  device is not viable.
-- Worklets are deferred to 0.2.0, since the mechanism for invoking JS on a frame thread comes
+- Apps that already use VisionCamera cannot adopt us until that adapter exists, two capture
+  sessions on one device is not viable.
+- Worklets are deferred with it, since the mechanism for invoking JS on a frame thread comes
   with the VisionCamera adapter.
 - **`PoseEngine` must never import camera code.** The frame source is an input. This is what
-  keeps the 0.2.0 adapter a ~200-line addition rather than a fork.
+  keeps the adapter a ~200-line addition rather than a fork.

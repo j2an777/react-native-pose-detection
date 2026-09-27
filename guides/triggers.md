@@ -52,16 +52,16 @@ function SquatCounter() {
 Thirty reps means **thirty bridge crossings**, not nine hundred. Sixty in this example, because
 `snapshot: true` pays a second crossing to fetch the frame.
 
-`snapshot: true` delivers the landmark set from the moment the trigger fired, the bottom of the
-squat. Usually the only frame you cared about, and you got it without streaming any others.
+`snapshot: true` delivers the frame the trigger fired on, without streaming any others. A `cycle`
+fires when `exit` holds, so here that is the frame the rep finished on, standing. For the bottom
+of the squat, add a second trigger with the same `enter`, `emit: 'enter'` and `snapshot: true`.
 
 The frame does not ride the event. It cannot: an Expo Modules event has no way to carry an
 ArrayBuffer, so native holds the frame, puts a claim ticket on the event, and `<PoseCamera>`
-redeems it before calling you. See
+redeems it with a synchronous call before calling you. See
 [ADR 0009](../docs/adr/0009-trigger-snapshots-are-claimed.md). Three things follow:
 
-- a `snapshot: true` trigger reaches `onTrigger` one microtask later than a plain one, so two
-  triggers firing on the same frame can arrive in the other order when only one has a snapshot
+- triggers still reach `onTrigger` in the order they fired, snapshot or not
 - if the redemption fails for any reason the event still arrives, with `snapshot` absent. Never
   branch on the snapshot to decide whether the trigger happened
 - `data.select` narrows the snapshot like any other frame, so reading a joint you did not select
@@ -87,7 +87,7 @@ type Trigger = {
 | `enter` | when `enter` becomes true |
 | `exit` | when `exit` becomes true |
 | `cycle` | once per full `enter` → `exit`, with `durationMs` |
-| `while` | repeatedly, throttled, as long as `enter` holds |
+| `while` | repeatedly, throttled, as long as `enter` holds, each with `phase: 'enter'` |
 
 ## Conditions
 
@@ -97,7 +97,7 @@ type Trigger = {
 { angle: 'leftKnee', between: [90, 130] }         // angle only, and 0 to 180
 
 { landmarkY: 'leftWrist', above: 0.4 }            // normalized, 0 = top
-{ landmarkY: 'leftWrist', above: 'leftShoulder' } // relative to another joint
+{ landmarkY: 'leftWrist', below: 'leftShoulder' } // wrist raised past the shoulder
 { landmarkX: 'leftWrist', below: 'nose' }
 
 { velocityY: 'centerOfMass', above: 0.5 }         // normalized units/sec
@@ -107,6 +107,9 @@ type Trigger = {
 { all: [ {...}, {...} ] }    // AND
 { any: [ {...}, {...} ] }    // OR
 ```
+
+`below` and `above` compare numbers, and `y` grows downward: a hand raised above the head is
+`landmarkY` **below** the nose.
 
 Conditions describe **a body**, never an activity, that's what keeps them reusable.
 
@@ -163,7 +166,6 @@ jump between two people.
 Triggers express threshold state machines. They can't express arbitrary math, pose similarity
 scoring, DTW, custom filters.
 
-For that, `data.mode: 'batched'` gives you every frame at 4 crossings/sec, and worklets (0.2.0)
-will run arbitrary JS at frame rate with no crossings at all.
+For that, `data.mode: 'batched'` gives you every frame at 4 crossings/sec.
 
 See [what you can build](./recipes.md) for the feasibility map and tuning advice.

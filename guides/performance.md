@@ -28,9 +28,9 @@ so auto-exposure cannot halve the rate in a dim room, and nothing above 30 is of
 for 60 ran warm within minutes for a skeleton that looked identical at half that.
 
 One axis stops lower than a spec sheet would suggest, and it is deliberate. **Analysis tops out at
-480p.** MediaPipe resizes whatever it is handed to 256 by 256 before the detector sees it, so a
-720p analysis buffer is close to a megapixel captured, converted and copied every frame in order
-to be discarded inside the graph. A distant subject is the one case a larger buffer helps, and
+480p.** MediaPipe resizes whatever it is handed to 256 by 256 before the landmark model sees it,
+so a 720p analysis buffer is close to a megapixel captured, converted and copied every frame in
+order to be discarded inside the graph. A distant subject is the one case a larger buffer helps, and
 `analysisResolution` is there to ask for it.
 
 ## The rate
@@ -47,10 +47,10 @@ serious   min(camera ÷ 2, capacity(50%))
 critical  detection paused, preview kept
 ```
 
-Why not 100%? MediaPipe's live mode keeps one frame in flight and one waiting. At 100% every frame
-waits for the one before it, which adds a frame of latency and runs the GPU without a breath; the
-spare 15% keeps that queue empty and the device cool, for at most a few frames a second less on a
-slow phone. What that gives under `auto`:
+Why not 100%? One frame is in flight and one waits: in MediaPipe's live mode on iOS, in the
+camera's latest-frame slot on Android. At 100% every frame waits for the one before it, which adds
+a frame of latency and runs the GPU without a breath; the spare 15% keeps that queue empty and the
+device cool, for at most a few frames a second less on a slow phone. What that gives under `auto`:
 
 | p50 | Nominal | Fair | Serious |
 | --- | --- | --- | --- |
@@ -96,9 +96,10 @@ It is on `getState()`, `getProfile()`, `onReady` and every `onPerformanceChange`
 half a second at the camera's rate costs less than a start that looks slow.
 
 **The first estimate lands after 15 frames with a pose**, about half a second. After that the median
-is refreshed every 15 frames over the last 60, moves smaller than 2 fps are ignored, and a
+is refreshed every 15 frames over the last 60, moves of 2 fps or less are ignored, and a
 three-second cooldown after each change stops a device sitting between two answers from
-oscillating. Each move fires `onPerformanceChange({ reason: 'calibration' })`.
+oscillating. A move that changes the rate fires `onPerformanceChange({ reason: 'calibration' })`,
+and so does a `setProfile()` call that changes it.
 
 **The measurement is cached**, keyed by device model, model file, OS version and MediaPipe version,
 so the second launch starts from it. It is kept across camera restarts in the same session: a
@@ -107,7 +108,7 @@ model rather than on every mount.
 
 The tier (`high`, `medium`, `low`) is a label read off the same median, `≤ 22 ms` high and `≤ 45 ms`
 medium. It is reported so an app can reason about the device; it drives nothing. Before a
-measurement it comes from installed memory.
+measurement it comes from installed memory, and on Android from the number of cores too.
 
 ### Inspecting it
 
@@ -128,7 +129,7 @@ live from native on the JavaScript thread, with no hop to native's main thread.
 
 ## Heat
 
-Read from the OS once a second and whenever it notifies, never on the frame path:
+Read from the OS once a second, and on iOS also whenever it notifies, never on the frame path:
 
 | State | Response under `auto` |
 | --- | --- |
@@ -143,15 +144,18 @@ warmest level seen meanwhile, so a device hovering on a boundary does not flap t
 Android names more states than iOS: NONE and LIGHT count as nominal, MODERATE as fair, SEVERE as
 serious, and CRITICAL and above as critical. On Android 11 and later the OS's forecast of where heat
 is heading counts too, 85% as fair and 95% as serious, so the rate backs off before the device
-starts throttling.
+starts throttling. Android 9 and older report no heat at all, so it never acts there.
 
 `thermalPolicy="critical-only"` acts only at critical, and `"off"` never. Neither stops the
-reporting: `onPerformanceChange` still fires, so your app can decide for itself.
+reporting: `onPerformanceChange` still fires on every change of heat, with `thermalState`, so your
+app can decide for itself.
 
 ## Camera geometry
 
-Preview and analysis sizes are fixed for a session. `auto` preview is 1080p on a device with at
-least 5.5 GiB of memory and 720p otherwise, never 480p unless you ask. Nothing the governor learns
+Preview and analysis sizes are fixed for a session. Under the `auto` profile an `auto` preview is
+1080p on a device with at least 5.5 GiB of memory and 720p otherwise, never 480p unless you ask.
+The other profiles fix it: 1080p for `quality` and `unrestricted`, 720p for `balanced` and
+`efficient`, and `efficient` analyzes at 360p rather than 480p. Nothing the governor learns
 changes geometry mid-session, so no measurement or heat reading ever restarts the camera. Only a
 `resolution`, `analysisResolution` or `profile` change does.
 
@@ -169,7 +173,7 @@ So this does exactly what it reads like:
 ```tsx
 <PoseCamera
   profile="quality"          // high ceiling, 95% duty
-  targetFps={24}             // pinned: the measured rate won't move it
+  targetFps={24}             // pinned: only what the device can finish caps it
   analysisResolution="auto"  // stays 480p
 />
 ```
@@ -178,10 +182,10 @@ So this does exactly what it reads like:
 
 | | What it does |
 | --- | --- |
-| **Built while the camera opens** | The landmarker starts building on mount, beside the camera, not after it |
+| **Built while the camera opens (Android)** | The landmarker starts building on mount, beside the camera, not after it. iOS starts it once the camera is running |
 | **Pre-warm** | One inference on a blank frame before the camera's first reaches the landmarker, so the first real frame is never the slow one |
 | **CPU first, then the GPU (Android)** | `auto` answers frames on the CPU landmarker, which builds in a fraction of the time, while the GPU one builds beside it; the GPU takes over mid-track once it has built. See [budget Android phones](#budget-android-phones) |
-| **GPU check, once** | The warm-up of the GPU landmarker is the check that the GPU works, run once per device and model and remembered. A GPU that fails at runtime is swapped for the CPU and the answer flips |
+| **GPU check, once** | On Android the warm-up of the GPU landmarker is the check that the GPU works, on iOS a probe inference on a throwaway one; either runs once per device and model and is remembered. A GPU that fails at runtime is swapped for the CPU and the answer flips |
 | **Parked landmarker** | Turning detection or the camera off, a trip to the background, or a screen pushed on top keeps the landmarker built for 30–60 s, so coming back is instant. On Android a camera screen closed and opened again within a minute takes back the landmarker it left |
 | **Visibility on a clock** | MediaPipe smooths each joint's visibility once per frame; it is re-timed to elapsed time, so a joint appears as fast at 10 fps as at 30 |
 | **Idle search** | No person for 2 s drops to the profile's first idle rate, 20 s to its deep one; the frame that finds a pose ends it |
@@ -255,7 +259,7 @@ what replaced rasterizing a full-screen bitmap on the CPU.
 
 Two configurations do allocate beyond that floor, both by choice: `data.mode: 'live'` allocates one
 direct buffer per drain, which is what carrying frames to JavaScript costs, and an angle overlay
-with `decimals` above zero formats a string per label per draw.
+with `decimals` above zero formats a string per label per draw, as every angle label does on iOS.
 
 ## App size
 
@@ -270,7 +274,7 @@ The native libraries are already compressed and do not shrink again inside the A
 disk is what is downloaded. The model compresses by about a tenth, 8.96 MB down to 8.03 MB for
 `full`, because float16 weights are close to incompressible.
 
-The JavaScript is the part that rounds to nothing: **62.5 KB** of built output, and no runtime
+The JavaScript is the part that rounds to nothing: **66.4 KB** of built output, and no runtime
 dependencies to pull in behind it.
 
 Everything else is an estimate:
@@ -284,8 +288,8 @@ Everything else is an estimate:
 No release archive has been built and weighed yet. Phase 6 replaces this table with numbers from
 one, per model and per platform.
 
-**Android requires an AAB.** A universal APK carries all four ABI slices, 45.9 MB of native
-library where a phone loads 10.5 MB of it. Set `abiFilters` on your release build if you must
+**Android requires an AAB.** A universal APK carries all four ABI slices, 43.96 MB of native
+library where a phone loads 10.08 MB of it. Set `abiFilters` on your release build if you must
 ship an APK, and only there: dropping `x86_64` from a debug build is what breaks the standard
 emulator on an Intel host.
 

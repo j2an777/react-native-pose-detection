@@ -16,7 +16,7 @@ type PoseFrame = {
   velocity: { x: number; y: number };   // normalized units/sec
   bodySpan: number;                     // for scale-independent thresholds
   timestamp: number;
-  processingMs: number;
+  processingMs: number;                 // dispatch to result; 0 from photos and videos
 };
 ```
 
@@ -34,11 +34,12 @@ in `overlay.angles`, and `data.angles`. Nothing else does. Naming a joint as a c
 
 `timestamp` is milliseconds on a monotonic clock, not wall clock. It is the same clock
 `LogEntry.timestamp` uses, so a log line can be matched to the frame that produced it. It marks
-when the pose became known, not when the sensor exposed the frame.
+when the pose became known, not when the sensor exposed the frame. A frame from `detectOnVideo`
+carries its position in the video instead, and one from `detectOnImage` carries 0.
 
-**`NaN` means unknown, and it is never a substitute for a real value.** An angle whose three
-points are collinear, a `centerOfMass` with nothing visible enough to weigh, and `velocity` on the
-first frame of a pose are all `NaN`, because `0` would read as a measurement: a folded joint, a
+**`NaN` means unknown, and it is never a substitute for a real value.** An angle with a
+zero-length side (two of its points on top of each other), a `centerOfMass` with nothing visible
+enough to weigh, and `velocity` on the first frame of a pose are all `NaN`, because `0` would read as a measurement: a folded joint, a
 body at the origin, a body standing still. Comparisons against `NaN` are false, so a trigger built
 on one simply does not fire, which is the behavior you want from a value nobody measured. Guard
 with `Number.isNaN` if you display it.
@@ -130,12 +131,13 @@ function handle(frame: PoseFrame) {
 }
 ```
 
-`landmark()`, `landmarkInto()` and `worldLandmark()` throw `PoseConfigError` when the joint is not
-in the frame, either because `data.landmarks` is off or because `data.select` excluded it. That is
-a config mistake, not a runtime condition, so it fails loudly with the joint name in the message.
-`worldLandmark()` returns `null` for the different case of `data.worldLandmarks` being off, which
-is a whole missing block rather than a joint you forgot to select. Use `hasLandmark()` or
-`visibilityOf()` when you would rather branch than catch.
+`landmark()` and `landmarkInto()` throw `PoseConfigError` when the joint is not in the frame,
+either because `data.landmarks` is off or because `data.select` excluded it, and `worldLandmark()`
+throws for the second. That is a config mistake, not a runtime condition, so it fails loudly with
+the joint name in the message. `worldLandmark()` returns `null` for the different case of a whole
+missing block rather than a joint you forgot to select: `data.worldLandmarks` off, or
+`data.landmarks` off, which empties the world block too. Use `hasLandmark()` or `visibilityOf()`
+when you would rather branch than catch.
 
 ## `JointName` / landmark indices
 
@@ -150,11 +152,11 @@ BlazePose, 33 points:
                  16 rightWrist     28 rightAnkle
 ```
 
-String constants are exported for all 33. `JointName` is a union of those literals, `JOINT_NAMES`
-is the ordered list, and `JOINT_INDEX` maps a name to its position in the buffer.
-`isJointName(value)` is a type guard for when a joint name arrives from outside your code. It
-matches against a `Set`, not the `in` operator, so `'toString'` and `'constructor'` are rejected
-like any other unknown string.
+All 33 names are exported as values, not only as a type. `JointName` is a union of those literals,
+`JOINT_NAMES` is the ordered list, and `JOINT_INDEX` maps a name to its position in the full,
+unselected buffer. `isJointName(value)` is a type guard for when a joint name arrives from outside
+your code. It matches against a `Set`, not the `in` operator, so `'toString'` and `'constructor'`
+are rejected like any other unknown string.
 
 ## `AngleJointName`
 
@@ -181,13 +183,17 @@ bound above it can never be met.
 ## Skeleton connections
 
 `POSE_CONNECTIONS` is the 35-pair skeleton, as joint-name pairs. `POSE_CONNECTION_INDICES` is the
-same list as buffer indices, which is what the native renderers iterate, and `CONNECTION_COUNT`
-is `35`. Both platforms draw from this one table, so the two overlays cannot drift apart.
+same list as buffer indices, the form the native renderers iterate, and `CONNECTION_COUNT` is
+`35`. Both platforms draw this same table, restated pair for pair in Kotlin and Swift.
 
 ## `Profile` / `ProfileState`
 
 ```ts
 type Profile = 'auto' | 'efficient' | 'balanced' | 'quality' | 'unrestricted';
+
+type LimitedBy =
+  | 'camera' | 'device' | 'target' | 'profile'
+  | 'thermal' | 'lowPower' | 'idle' | 'paused';
 
 type ProfileState = {
   profile: Profile;
@@ -199,11 +205,15 @@ type ProfileState = {
               analysis: '360p' | '480p' | '720p' };
   p50InferenceMs: number;
   measuredFps: number;
+  limitedBy: LimitedBy;        // why resolved.targetFps is what it is
+  cameraFps: number;           // what the camera delivers, normally 30
+  thermalState: 'nominal' | 'fair' | 'serious' | 'critical';
+  lowPower: boolean;           // Low Power Mode or Battery Saver
 };
 ```
 
 `measuredFps` is completed inferences over the last second, zero once results stop. How the rest
-is produced is [the performance guide](../performance.md#auto-calibration)'s subject.
+is produced is [the performance guide](../performance.md#measuring-the-device)'s subject.
 
 ## `CameraState`
 
@@ -212,9 +222,10 @@ type CameraState = {
   facing: 'front' | 'back';
   active: boolean;
   detecting: boolean;
-  fps: number;   // as of the last onPerformanceChange; getProfile().measuredFps is live
+  fps: number;          // read live on each call, 0 once results stop
   delegate: 'GPU' | 'CPU';
-  deviceTier: 'high' | 'medium' | 'low';
+  deviceTier: 'high' | 'medium' | 'low';   // as onReady reported it
+  limitedBy: LimitedBy; // read live, like fps
 };
 ```
 

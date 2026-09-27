@@ -24,11 +24,12 @@ type Trigger = {
 | `enter` | when `enter` becomes true |
 | `exit` | when `exit` becomes true |
 | `cycle` | once per full `enter` → `exit`, with `durationMs` |
-| `while` | repeatedly, throttled, as long as `enter` holds |
+| `while` | repeatedly, throttled, as long as `enter` holds, each with `phase: 'enter'` |
 
-`snapshot: true` costs you a microtask: the frame cannot ride the event, so native holds it and
-sends a ticket that `<PoseCamera>` redeems before calling `onTrigger`. The frame you get back is
-narrowed by `data.select` like any other. See
+`snapshot: true` costs one more native call: the frame cannot ride the event, so native holds it
+and sends a ticket that `<PoseCamera>` redeems synchronously before calling `onTrigger`, so events
+keep their firing order. The frame is the one the trigger fired on, narrowed by `data.select` like
+any other. See
 [events → how `snapshot` actually arrives](./events.md#how-snapshot-actually-arrives).
 
 ## `Condition`
@@ -51,7 +52,7 @@ is a validation error rather than one of them being silently ignored.
 | Field | Unit |
 | --- | --- |
 | `angle` | degrees, 0 to 180. Vertex must be an [`AngleJointName`](./types.md#anglejointname) |
-| `landmarkX` / `landmarkY` | normalized 0 to 1, origin top-left. A `JointName` compares against that joint |
+| `landmarkX` / `landmarkY` | normalized 0 to 1, origin top-left, so a raised hand has the smaller `y`. A `JointName` compares against that joint |
 | `velocityX` / `velocityY` | normalized units per second |
 | `visibility` | 0 to 1 |
 
@@ -86,8 +87,8 @@ ACTIVE + still matches → emit if 'while' (throttled)
   only an `enter` would go active once and have nothing that could ever fire it again
 - A frame with no pose in it breaks a hold without ending an active trigger. Somebody who steps out
   of shot mid-rep has not finished the rep, and has not abandoned it either
-- A value nobody could measure never matches. A collinear angle, a velocity with no previous frame:
-  those are `NaN`, and every comparison against `NaN` is false. See
+- A value nobody could measure never matches. An angle with a zero-length side, a velocity with no
+  previous frame: those are `NaN`, and every comparison against `NaN` is false. See
   [types](./types.md#poseframe)
 - With `maxPoses > 1`, evaluation runs against the primary pose, largest bounding box, ties
   broken by distance from frame center

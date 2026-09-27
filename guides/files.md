@@ -60,7 +60,8 @@ Runs `VIDEO` mode with monotonic timestamps, so temporal tracking and smoothing 
 as they do live. Each frame's `timestamp` is its real position in the video in milliseconds, not
 the monotonic clock the camera stamps frames with, and smoothing and `velocity` are measured
 against those real positions. Both start over when the subject is lost, when a different person
-becomes the largest body, and across a gap of more than two and a half samples.
+becomes the largest body, and across a gap of more than two and a half samples, or 200 ms when
+that is longer.
 
 The video is decoded once, in order, and scaled down to 960 pixels on its long side as it
 decodes. Frames between samples are decoded and dropped without being converted, so sampling a
@@ -93,7 +94,7 @@ camera's, so a long one never holds up other modules' calls or the preview.
 ## Painting a copy
 
 `exportPose()` paints the skeleton into a copy of an image or a video and writes it into your
-app's sandbox. It comes back as an ordinary file path, so everything you already do with files
+app's sandbox. It comes back as an ordinary `file://` URI, so everything you already do with files
 works on it unchanged: upload it, move it, hand it to a share sheet, delete it.
 
 ```tsx
@@ -119,9 +120,9 @@ that, and all four are structural rather than best effort:
 | | What | Why |
 | --- | --- | --- |
 | 1 | Its own detector | An export never touches the camera's landmarker. It builds one, uses it, releases it |
-| 2 | **Never the GPU while a camera detects** | Two MediaPipe graphs contending for the GPU is exactly how a preview starts stuttering, so an export started while a `<PoseCamera>` is detecting runs inference on the CPU. With no camera running it takes the GPU, as a video job does |
+| 2 | **Never the GPU while a camera detects** | Two MediaPipe graphs contending for the GPU is exactly how a preview starts stuttering, so an export started while a `<PoseCamera>` is detecting runs inference on the CPU. With no camera running a video export takes the GPU, as a video job does |
 | 3 | A `utility` background queue | Below the camera's analysis queue, so under load the scheduler starves the export rather than sharing evenly. Serial, so two exports queue rather than gang up. Heat slows it further, as above |
-| 4 | Bounded memory | One frame decoded at a time, one pooled buffer encoded at a time, nothing accumulated. A ten minute video costs what a ten second one costs |
+| 4 | Bounded memory | One frame decoded at a time, one pooled buffer encoded at a time. The only thing that grows is the list of landmarks Android keeps between its detection and painting passes, about 300 KB a minute at the default `fps` |
 
 On Android the **pixels** of a video export go through the GPU either way, because decoder to GL
 to encoder is the only path the platform offers, and the alternative, converting every frame in
@@ -155,7 +156,7 @@ for into their iCloud backup.
 | --- | --- |
 | `'cache'` (default) | Caches. The system may reclaim it under pressure |
 | `'documents'` | Documents. Kept until you delete it |
-| any path or `file://` URI | Exactly there, created if missing |
+| an absolute path or `file://` URI | Exactly there, created if missing |
 
 Nothing is written to the photo library, and no permission is asked for. Saving to the camera
 roll is one call in `expo-media-library` on a path you already have, and it is your app's
@@ -171,7 +172,9 @@ task.cancel();
 
 `result` then rejects with `EXPORT_CANCELLED`, and the partial file is deleted rather than left
 behind as something that looks like a finished export. A failure rejects with `EXPORT_FAILED`
-and cleans up the same way.
+and cleans up the same way. A photo export already running is one short step that `cancel()`
+does not stop: it finishes and resolves as usual. Any job still waiting behind another, photo or
+video, is cancelled before it starts.
 
 ## Backgrounding mid-export
 
@@ -193,7 +196,7 @@ screen, not on the way out the door.
 | Option | Default | Notes |
 | --- | --- | --- |
 | `overlay` | `true` | The same shape `<PoseCamera overlay>` takes. `false` writes an unpainted, size-capped copy |
-| `maxPoses` | `1` | Up to 5. Every pose found is painted, and `posesFound` counts them |
+| `maxPoses` | `1` | Up to 5. Every pose found is painted |
 | `minConfidence` | follows `maxPoses` | `0.5` at `maxPoses: 1`, `0.3` above it. See below |
 | `fps` | `10` | Detection samples a second, not output frame rate |
 | `maxSize` | `1920` | Long edge cap. `0` keeps the source's size |
@@ -232,8 +235,8 @@ its own it changes nothing: the threshold has to come down with it. Measured aga
 | 5 | 0.1 | 4, two of them duplicates |
 
 So 0.3 is where the default stops. Below it the model returns the same body twice rather than
-finding anybody new, and `posesFound` counts those duplicates because they are what the model
-returned. The exact crossing point moves with the device: treat 0.3 as a starting point, and if
+finding anybody new, and a photo's `posesFound` counts those duplicates because they are what the
+model returned. The exact crossing point moves with the device: treat 0.3 as a starting point, and if
 a body you can see is not being found, lower it and watch for the same skeleton appearing twice,
 which is the sign you have gone too far.
 
@@ -252,7 +255,7 @@ type ExportResult = {
   height: number;
   durationMs: number;  // 0 for a still
   frameCount: number;  // 1 for a still
-  posesFound: number;  // frames a pose was found in; 0 means nothing was painted
+  posesFound: number;  // a photo: poses found; a video: frames with one. 0: nothing painted
 };
 ```
 
@@ -263,5 +266,5 @@ Images are written as JPEG and videos as H.264 in an MP4, with the original audi
 rather than re-encoded. Rotation is baked into the output rather than carried as a track
 transform, so a clip shot in portrait plays upright everywhere, including in the players and
 server side transcoders that ignore the transform. An audio codec an MP4 cannot hold is dropped
-with a warning on the `detector` log channel rather than failing the export: a painted video
+rather than failing the export, with a warning on the `detector` log channel: a painted video
 with no sound beats no video at all.

@@ -28,8 +28,8 @@ Three ways out were considered. Boxing the array on the event was rejected outri
 wire format, the accessors, and ADR 0005 decoration. Writing a custom JSI host object would keep
 the documented crossing counts exactly, but it means our own C++ and JNI layer working across old
 and new architecture on two platforms, and it is the part of the package least testable without a
-device. That is a reasonable thing to want eventually, and it is the same machinery 0.2.0 needs
-for worklets, but it is not a reasonable thing to depend on now.
+device. That is a reasonable thing to want eventually, and it is the same machinery worklets
+would need, but it is not a reasonable thing to depend on now.
 
 ## Decision
 
@@ -67,6 +67,6 @@ the frame it attaches.
 - The extra crossing is a JSI call, not a bridge round trip, and in `batched` mode it returns
   every buffered frame at once regardless of how many there are.
 - A custom JSI binding stays available later and would remove the tick entirely. Worth doing
-  when 0.2.0 brings worklets and the same native plumbing is needed anyway, not before.
+  when worklets arrive and the same native plumbing is needed anyway, not before.
 - Nothing about the format changed. `LANDMARK_STRIDE`, the 33 by 4 layout, the accessors, and
   ADR 0005 are all untouched. Only the delivery moved.

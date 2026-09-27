@@ -7,9 +7,9 @@ verified on physical hardware, and the Android device pass is in progress.
 
 | | |
 | --- | --- |
-| React Native | 0.74+ |
-| Expo SDK | 51+ (dev client or EAS Build) |
-| iOS | 15.1+, and 16.4+ on Expo SDK 57, which is what `ExpoModulesCore` requires |
+| React Native | 0.85+ |
+| Expo SDK | 56+ (dev client or EAS Build) |
+| iOS | 16.4+, which Expo's `ExpoModulesCore` requires from SDK 56 |
 | Android | API 24+ |
 | Architecture | new. React Native 0.82 removed the legacy one, so there is nothing to choose |
 
@@ -48,8 +48,8 @@ both native projects. Nothing is committed to your repo.
 › model "full" not in cache
 › downloading pose_landmarker_full.task (9.0 MB)…
 › sha256 ✓
-› copied → android/app/src/main/assets/
-› copied → ios/YourApp/Resources/
+› copied → android/app/src/main/assets/pose_landmarker_full.task
+› copied → ios/YourApp/Resources/pose_landmarker_full.task
 ```
 
 ### Bare React Native
@@ -58,6 +58,9 @@ both native projects. Nothing is committed to your repo.
 npx react-native-pose-detection fetch-model full
 cd ios && pod install
 ```
+
+A bare app also needs the `expo` package and Expo's autolinking wired in by hand, which
+[installation](./installation.md#bare-react-native) walks through.
 
 Then add `NSCameraUsageDescription` to `Info.plist`. Android needs nothing: this package
 declares `android.permission.CAMERA` in its own manifest and the merger adds it to your app.
@@ -117,10 +120,10 @@ Nothing crosses the bridge until you ask. Three ways, cheapest first:
 Two crossings per emission rather than one, because native signals and JavaScript pulls. See
 [data delivery](./data-delivery.md#modes) for why.
 
-Prefer triggers. See [triggers.md](./triggers.md) and [what you can build](./recipes.md).
+Prefer triggers. See [triggers](./triggers.md) and [what you can build](./recipes.md).
 
 ## Next
 
-- [api-reference.md](./reference/pose-camera.md), every prop and event
-- [performance.md](./performance.md), profiles, calibration, app size
-- [troubleshooting.md](./troubleshooting.md), when something doesn't work
+- [`<PoseCamera>` reference](./reference/pose-camera.md): every prop, and the [events](./reference/events.md)
+- [Performance](./performance.md): profiles, calibration, app size
+- [Troubleshooting](./troubleshooting.md): when something doesn't work

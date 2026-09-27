@@ -97,7 +97,8 @@ in **`ios/<YourApp>/Info.plist`**:
 <string>We use the camera to analyze your movement.</string>
 ```
 
-and in **`android/app/src/main/AndroidManifest.xml`**:
+Android needs nothing, since this package's own manifest declares the permission, but repeating it
+in **`android/app/src/main/AndroidManifest.xml`** is harmless:
 
 ```xml
 <uses-permission android:name="android.permission.CAMERA" />
@@ -278,10 +279,10 @@ Exact types, clamping rules and edge behavior: [`<PoseCamera>` reference](./guid
 
 | Callback | Fires | Carries |
 | --- | --- | --- |
-| [`onReady`](./guides/reference/events.md#onready) | the camera is up and the model running, once per session | `delegate`, `model`, `targetFps`, sizes |
-| [`onError`](./guides/reference/events.md#onerror) | something failed; `fatal` says whether the camera stopped | `code`, `message`, `fatal` |
+| [`onReady`](./guides/reference/events.md#onready) | the camera is up and the model running or failed to start, once per session | `delegate`, `model`, `targetFps`, sizes |
+| [`onError`](./guides/reference/events.md#onerror) | something failed; `fatal` says whether the camera or detection stopped | `code`, `message`, `fatal` |
 | [`onCameraChange`](./guides/reference/events.md#oncamerachange) | a lens switch finished | `facing` |
-| [`onPerformanceChange`](./guides/reference/events.md#onperformancechange) | the rate or the delegate moved | `reason`, `targetFps`, `delegate`, `limitedBy` |
+| [`onPerformanceChange`](./guides/reference/events.md#onperformancechange) | the rate or the delegate moved, or heat or Low Power Mode changed | `reason`, `targetFps`, `delegate`, `limitedBy` |
 | [`onTrigger`](./guides/reference/events.md#ontrigger) | a trigger entered, exited or completed a cycle | `id`, `phase`, `count`, `durationMs` |
 | [`onPose`](./guides/reference/events.md#onpose-and-onposebatch) | a frame, with `data.mode` `'throttled'` or `'live'` | a `PoseFrame` |
 | [`onPoseBatch`](./guides/reference/events.md#onpose-and-onposebatch) | frames, with `data.mode: 'batched'` | `PoseFrame[]` |
@@ -348,8 +349,8 @@ type Trigger = {
 ```
 
 A `Condition` is one of `angle`, `landmarkX`, `landmarkY`, `velocityX`, `velocityY` or
-`visibility`, with `below` and `above` bounds, or `between` for an angle. `all` and `any`
-combine them. Writing them: [triggers guide](./guides/triggers.md). Every field and validation
+`visibility`, with `below` and `above` bounds (`visibility` takes `above` only), or `between` for
+an angle. `all` and `any` combine them. Writing them: [triggers guide](./guides/triggers.md). Every field and validation
 rule: [trigger schema](./guides/reference/trigger-schema.md). Worked ones for squats, holds and
 jumps: [what you can build](./guides/recipes.md).
 
@@ -385,9 +386,9 @@ declare your own exercises as triggers, and does photos and videos, painted copi
 
 | | Minimum |
 | --- | --- |
-| React Native | 0.74 |
-| Expo SDK | 51 |
-| iOS | 15.1 |
+| React Native | 0.85 |
+| Expo SDK | 56 |
+| iOS | 16.4 |
 | Android | API 24 |
 
 Expo Go cannot run native code, so use a development build. The JavaScript itself is about

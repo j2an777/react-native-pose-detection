@@ -360,9 +360,9 @@ skeleton appears. No manual steps.
 
 ## Deferred
 
-`0.2.0` worklets · VisionCamera adapter
-`0.3.0` formula DSL · `delegate="benchmark"` · segmentation masks
-`later` remote model delivery · web · native analyzer protocol
+`next` worklets · VisionCamera adapter · above 30 fps on fast phones, opt-in first
+`later` formula DSL · `delegate="benchmark"` · segmentation masks · remote model delivery · web ·
+native analyzer protocol
 
 ## Scope escape hatch
 

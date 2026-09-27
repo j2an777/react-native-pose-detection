@@ -22,19 +22,18 @@ and each can be toggled at runtime without tearing anything down.
 const cam = useRef<PoseCameraRef>(null);
 
 await cam.current.pause();                    // camera off: lowest power short of unmounting
-await cam.current.stopDetection();            // preview stays, inference stops, GPU released
+await cam.current.stopDetection();            // preview stays, inference stops, GPU freed after a minute
 await cam.current.setOverlayEnabled(false);   // drawing stops, inference continues
 ```
 
 `pause`, `resume`, `startDetection`, `stopDetection` and `setOverlayEnabled` all return
 `Promise<void>`, because they reach native over the same asynchronous path as everything else.
-Ignoring the promise is fine and common. Awaiting it is the only way to see a failure, and the
-only way to know the camera is really down before you do something that assumes it.
-`getState()` is the exception: it reads state JavaScript already mirrors from the events, so it
-stays synchronous.
+Ignoring the promise is fine and common. Awaiting it is the only way to see a failure.
+`getState()` is the exception: it reads state JavaScript already mirrors from the events, plus the
+live rate read straight from native, so it stays synchronous.
 
-`stopDetection()` genuinely releases GPU resources. It isn't a boolean gate on a still-running
-pipeline.
+`stopDetection()` stops inference at once and releases the landmarker's GPU resources after a
+minute unused, so a `startDetection()` inside that minute is instant rather than a rebuild.
 
 ## Drawing angles
 
@@ -49,8 +48,8 @@ joint to the set of angles computed per frame, exactly as an `angle` condition i
 name in `data.angles` does. Nothing else turns an angle on. See
 [overlay config](./reference/pose-camera.md#angle-overlay).
 
-`decimals` on a label is capped at 3. The label is built into a fixed buffer on the draw path,
-so a larger value would only build a longer string to truncate it again.
+`decimals` on a label is capped at 3. The label is rebuilt on the draw path every frame, so a
+larger value would only make that string longer.
 
 ## Switching cameras
 
@@ -60,15 +59,15 @@ await cam.current.setFacing('back');
 ```
 
 **Await it.** The promise resolves only after the capture session has been reconfigured and the
-first frame from the new camera has been processed. `onCameraChange` is raised at the same point,
-but it is an event rather than a return value, so it can reach JavaScript a moment after the
-promise resolves: sequence on the promise, and use the event to keep state in step. A failed
-switch rejects the promise as well as raising `onError`.
+first frame from the new camera has arrived, or 1.5 seconds have passed without one.
+`onCameraChange` is raised at the same point, but it is an event rather than a return value, so it
+can reach JavaScript a moment after the promise resolves: sequence on the promise, and use the
+event to keep state in step. A failed switch rejects the promise as well as raising `onError`.
 
 A ref method called in the frame or two after `<PoseCamera>` mounts, before the native view
 exists, waits for it rather than failing, for up to a second.
 
-Preserved across a switch, because only the camera input is swapped and the detector is never
+Preserved across a switch, because only the camera is rebound and the detector is never
 recreated:
 
 - detection on/off state

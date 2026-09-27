@@ -9,7 +9,7 @@ import { PoseCamera, type PoseCameraRef } from 'react-native-pose-detection';
 ## What runs today
 
 **Every prop on this page is implemented on both platforms**, and the reference-parity test
-fails the build if one of them goes missing from this page.
+fails the build if one of them goes missing from the reference pages.
 
 ## Layout
 
@@ -18,8 +18,8 @@ fails the build if one of them goes missing from this page.
 | `style` | `StyleProp<ViewStyle>` | An ordinary React Native view style. The preview fills the view and the overlay is drawn inside it, so `{ flex: 1 }` is the usual answer and a fixed height is the other one. |
 
 The preview's aspect ratio comes from the camera rather than from this style, so a view whose
-shape does not match it is filled edge to edge and the camera frame is cropped evenly on the long
-side, never stretched. The skeleton is projected the same way, so it stays on the body whatever the
+shape does not match it is filled edge to edge and the camera frame is cropped evenly on whichever
+side overflows, never stretched. The skeleton is projected the same way, so it stays on the body whatever the
 view's shape. Landmarks are normalized against the analysis frame either way, so nothing about the
 layout moves them.
 
@@ -34,7 +34,7 @@ layout moves them.
 | `resolution` | `'auto' \| '480p' \| '720p' \| '1080p'` | `'auto'` | preview |
 | `analysisResolution` | `'auto' \| '360p' \| '480p' \| '720p'` | `'auto'` | what the model sees |
 | `thermalPolicy` | `'adaptive' \| 'critical-only' \| 'off'` | `'adaptive'` | `off` stops the response, not the reporting |
-| `maxPoses` | `number` (1 to 5) | `1` | above 1, triggers and frames use the primary pose: largest box, ties by distance from center. A ceiling, not a promise: pair it with `minConfidence` |
+| `maxPoses` | `number` (1 to 5) | `1` | above 1, triggers, frames and the overlay use the primary pose: largest box, ties by distance from center. A ceiling, not a promise: pair it with `minConfidence` |
 | `minConfidence` | `number` (0.1 to 1) | from `maxPoses` | how sure the model has to be before it calls something a body. Rebuilds the landmarker when it changes |
 | `smoothing` | `'auto' \| boolean \| { minCutoff, beta }` | `'auto'` | One Euro filter over x, y and z. `'auto'` is off for one pose, which MediaPipe already smooths, and on for several. See [below](#smoothing) |
 
@@ -73,8 +73,8 @@ type AngleOverlay = {
 Native clamps every number here rather than trusting it, because an overlay config is the kind of
 thing that gets built from app state and skips the type checker. `lineWidth` and `pointRadius`
 cannot go below 0, `radius` cannot go below 1, `minVisibility` is clamped to 0 to 1, and
-`decimals` is capped at 3: the degree label is formatted into a fixed 16-character buffer on the
-draw path, so a larger value would build a longer string every frame only to have it truncated.
+`decimals` is capped at 3: the degree label is rebuilt on the draw path every frame, so a larger
+value would only make that string longer.
 
 ### Angle overlay
 
@@ -102,8 +102,9 @@ See [camera control](../camera-control.md) for how the three switches combine.
 
 ## Data
 
-The whole `data` surface is validated and shaped in JavaScript; frames are encoded natively
-into a ring buffer and drained in one zero-copy read per emission.
+`angles` and `select` are resolved in JavaScript; frames are encoded natively into a ring buffer
+and drained in one zero-copy read per emission. An unknown `mode`, or a joint name `select` or
+`angles` does not know, throws `PoseConfigError` during render with its path.
 
 ```ts
 data?: {

@@ -12,6 +12,9 @@ the first list is what to check when upgrading.
 
 ### Behavior changes
 
+- **The minimums are Expo SDK 56, React Native 0.85 and iOS 16.4**, and `peerDependencies` now
+  says so. The native modules hand frames to JavaScript through Expo's native `ArrayBuffer`, which
+  reached iOS in SDK 56, so the SDK 51 and React Native 0.74 stated since 0.1.0 could not build.
 - **The live rate follows the device.** It is the rate at which inference is busy 85% of the time,
   capped at the camera's 30 fps, instead of a fixed share of a tier's guess. A recent phone runs at
   30; a slow one at what it can finish with room to spare. Profiles are rows of the same model. See
@@ -56,6 +59,9 @@ the first list is what to check when upgrading.
   than the preset it asked for: a Redmi Note 12 asked for 854x480 analysis delivers 864x480.
 - **`detectOnVideo` reports progress in steps of 2%**, as documented and as exports do, instead of
   once per sampled frame.
+- **`onPose` and `onPoseBatch` follow `data.mode`**, as documented and as the development warnings
+  said: `'batched'` delivers to `onPoseBatch`, `'throttled'` and `'live'` to `onPose`. Whichever
+  callback was set used to receive the frames, so with both set, `onPose` never fired.
 
 ### Added
 
@@ -71,7 +77,9 @@ the first list is what to check when upgrading.
 - Low Power Mode and Battery Saver cap the rate at 24 fps.
 - Non-finite numbers in props and file options are refused at the call site with a path, instead
   of crashing an iOS app when converted.
-- The `'delegate'` reason on `onPerformanceChange`.
+- An unknown `data.mode`, or a joint `data.select` or `data.angles` does not know, throws
+  `PoseConfigError` during render. Untyped JavaScript used to get no frames at all, silently.
+- The `'delegate'` reason on `onPerformanceChange`, and `thermalState` and `lowPower` on it.
 - The README lists every event, ref method, function, trigger field and CLI command, each linked to
   its reference, and a new functions reference covers every export on one page.
 
@@ -165,6 +173,24 @@ the first list is what to check when upgrading.
   names another module or Android directory shipped without it and failed with `MODEL_NOT_FOUND`,
   while `doctor` checked the same folder and passed. Both now follow that config as React Native's
   CLI does.
+- `onPerformanceChange` fired only when the rate moved, so under `thermalPolicy` `'off'` or
+  `'critical-only'` an app never heard that the device was heating, though the docs said it would.
+  It now fires on every change of heat or Low Power Mode. Both platforms.
+- After a stall, such as a resume or a camera switch, the first two frames both ran inference one
+  sensor interval apart. The schedule now restarts one interval out. Both platforms.
+- iOS: `detectOnVideo` and a video `exportPose` failed on a bare file path, which Android and
+  `detectOnImage` accept.
+- `cancel()` on a video job or an export still queued behind another was lost, and the job ran in
+  full. A queued job is now cancelled before it starts. Both platforms.
+- `snapshot()` returned the last frame after detection stopped, paused or went to the background,
+  instead of `null`. Both platforms.
+- `getState().active` turned false when only the landmarker failed to build
+  (`DETECTOR_INIT_FAILED`), although the preview keeps running.
+- iOS: an export that drops an audio track the MP4 writer cannot hold now says so on the
+  `detector` channel, as Android does.
+- The docs said a `snapshot: true` trigger arrives a microtask late and can be reordered: it
+  arrives in firing order. They also called a `cycle` trigger's snapshot the bottom of the rep: it
+  is the frame the rep finished on.
 
 ## 0.1.0
 

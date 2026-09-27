@@ -31,10 +31,10 @@ the same tick it arrives. Nothing about the common case changes.
 
 ## Consequences
 
-- A `snapshot: true` trigger is delivered one microtask later than a plain one. Triggers are
-  already an event on a background pipeline, so ordering against the app's own state was never
-  synchronous, but two triggers firing in the same frame where only one has a snapshot can now be
-  delivered out of order. Firing order is preserved within each kind, not across them.
+- ~~A `snapshot: true` trigger is delivered one microtask later than a plain one.~~ Superseded:
+  `takeTriggerSnapshot` became a synchronous module function
+  ([ADR 0010](./0010-frames-are-read-on-the-javascript-thread.md)), so triggers keep their firing
+  order whether or not they carry a snapshot.
 - Redeeming an unknown or already-redeemed ticket returns an empty buffer rather than failing.
   A snapshot is diagnostic, so losing one must never take the trigger with it: if the fetch fails
   for any reason the event is still delivered, with `snapshot` absent.
@@ -43,6 +43,6 @@ the same tick it arrives. Nothing about the common case changes.
 - The snapshot is shaped by `data.select` like every other frame, so a narrowed buffer narrows the
   snapshot too. Reading a joint that `select` left out throws from the accessor, which is the
   documented behavior of a narrowed frame rather than a special case for triggers.
-- This is the second consequence of the same root cause. The custom JSI binding 0008 defers to
-  0.2.0 would remove both the drain tick and this ticket, since a host object can hand JavaScript
-  an ArrayBuffer from anywhere.
+- This is the second consequence of the same root cause. The custom JSI binding 0008 defers to a
+  later release would remove both the drain tick and this ticket, since a host object can hand
+  JavaScript an ArrayBuffer from anywhere.

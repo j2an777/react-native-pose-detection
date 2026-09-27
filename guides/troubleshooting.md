@@ -7,10 +7,9 @@ that conversion fails inside an `absl` check, which calls `abort()`. The process
 anything can catch it, and because it happens on the first camera frame rather than at setup, every
 step before it looks like it worked.
 
-**This package forces the CPU delegate in a simulator**, so it should not reach you. If you see it
-anyway, check that `delegate` is not pinned to `'gpu'` by something in your own build, and look for
-`the simulator has no usable GPU for MediaPipe` on the `detector` log channel, which is printed
-whenever the request is overridden.
+**This package forces the CPU delegate in a simulator**, even under `delegate="gpu"`, so it should
+not reach you. If you see it anyway, look for `the simulator has no usable GPU for MediaPipe` on
+the `detector` log channel, which is printed whenever the request is overridden.
 
 Nothing is lost by it: a simulator has no real GPU to measure, so a GPU reading there could never
 have told you anything true about a phone.
@@ -46,8 +45,13 @@ ios/<YourApp>/Resources/pose_landmarker_*.task
 
 ## `PERMISSION_DENIED`
 
-Expo: set `cameraPermissionText` in the plugin config and re-run prebuild.
-Bare: add `NSCameraUsageDescription` (iOS) and `android.permission.CAMERA` (Android) yourself.
+`<PoseCamera>` never prompts. It reports this, and does not start, when it mounts before the camera
+permission is granted. Ask first, with `useCameraPermission()`, and render the camera once
+`granted` is true, see [camera permission](./reference/permissions.md).
+
+Declaring the permission is a separate step. Expo: the config plugin writes it into both native
+projects on prebuild. Bare: add `NSCameraUsageDescription` to `Info.plist` yourself; Android's
+comes from this package's own manifest.
 
 ## `GPU_UNAVAILABLE` (non-fatal)
 
@@ -72,7 +76,7 @@ On Apple Silicon, use an arm64 emulator image, which is what Android Studio give
 ## iOS build fails
 
 **`Unable to find a specification for ExpoModulesCore`** almost always means the deployment
-target, not the dependency. Expo SDK 57 requires iOS 16.4, and autolinking silently skips every
+target, not the dependency. Expo SDK 56 and later require iOS 16.4, and autolinking silently skips every
 Expo pod in an app that targets lower, so the first thing to fail is the one that resolves this
 package. Raise `platform :ios` in the Podfile and `IPHONEOS_DEPLOYMENT_TARGET` in the project to
 `16.4`. The podspec itself declares 15.1, which is this package's own floor; Expo raises it during
@@ -125,7 +129,7 @@ ndk { abiFilters "arm64-v8a" }
 Check `await getProfile()` first: `phase` tells you whether calibration has settled, and
 `p50InferenceMs` is the cost the rate was derived from. Under `profile="auto"` a low number **is**
 the calibrated answer: the governor already runs the highest rate that cost sustains, so a low
-rate means expensive inference, not a stuck setting. What you can change:
+rate with `limitedBy: 'device'` means expensive inference, not a stuck setting. What you can change:
 
 - the model variant, which is a **build-time** choice and not a prop. Set `"model": "lite"` in
   the plugin config and re-run `npx expo prebuild`, or run
@@ -215,10 +219,10 @@ to diagnose.
 | --- | --- |
 | `off` *(default)* | nothing |
 | `error` | failures |
-| `warn` | degraded but running: GPU fallback, dropped frames |
-| `info` | lifecycle: camera opened, model loaded, calibration settled |
-| `debug` | state transitions: camera switch phases, trigger phases, thermal steps |
-| `trace` | per-frame timings. Very noisy. |
+| `warn` | degraded but running: GPU fallback, dropped frames, a config native could not read |
+| `info` | lifecycle: camera opened, model loaded, calibration settled, heat and Low Power changes |
+| `debug` | state transitions: camera switches, rotation, idle search |
+| `trace` | per-frame detail, such as frames discarded after a camera switch |
 
 Turn up only what you are investigating, per category:
 
@@ -231,16 +235,16 @@ Categories: `camera` · `detector` · `engine` · `triggers` · `calibration` ·
 
 | Problem | Category | Level |
 | --- | --- | --- |
-| Trigger fires twice, or never | `triggers` | `trace` |
+| A trigger condition native could not read | `triggers` | `warn` |
 | Frame rate lower than expected | `calibration` | `debug` |
 | Crash or freeze on camera switch | `camera` | `debug` |
 | Model won't load | `detector` | `info` |
-| Overlay misaligned | `overlay` | `debug` |
-| Phone gets hot | `calibration` | `debug` |
+| Overlay misaligned | `camera` | `debug` |
+| Phone gets hot | `engine` | `info` |
 
-Entries arrive **batched**, an array every ~250 ms rather than one call per line. If your
-listener cannot keep up, the oldest entries are dropped rather than growing memory, and the next
-batch opens with a `warn` entry carrying the count. `LogEntry.timestamp` uses the same monotonic
+Entries arrive **batched**, an array every ~250 ms rather than one call per line. If more than 256
+pile up between two batches, the oldest are dropped rather than growing memory, and the next batch
+opens with a `warn` entry carrying the count. `LogEntry.timestamp` uses the same monotonic
 clock as `PoseFrame.timestamp`, so a log line can be matched to the exact frame that produced
 it.
 
@@ -257,4 +261,4 @@ console.log(await cam.current.getProfile());
 
 Include both outputs, the log entries around the failure, your device model and OS version.
 `getProfile()` carries the useful half: the resolved delegate, the rate, the resolutions, and
-the measured inference cost the governor derived them from.
+the measured inference cost the governor derived the rate from.

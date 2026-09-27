@@ -5,7 +5,7 @@
 | [`onReady`](#onready) | camera up, and the landmarker running or failed to start | once per session start |
 | [`onError`](#onerror) | a failure occurred; every code is in [error codes](#error-codes) | rare |
 | [`onCameraChange`](#oncamerachange) | switch complete and stable | per switch |
-| [`onPerformanceChange`](#onperformancechange) | the rate, the delegate or the reason for either changed | rare |
+| [`onPerformanceChange`](#onperformancechange) | the rate, the delegate or the reason for either changed, or heat or Low Power Mode did | rare |
 | [`onTrigger`](#ontrigger) | a trigger transitioned | ~1 per event |
 | [`onPose`](#onpose-and-onposebatch) | frame delivered | 10/s or 30/s |
 | [`onPoseBatch`](#onpose-and-onposebatch) | buffer flushed | 2/s |
@@ -17,7 +17,8 @@ Every one is implemented on both platforms. Three of them are not native events 
 native ring buffer, because an event cannot carry an ArrayBuffer and a function return can. See
 [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md).
 
-With the defaults (`data.mode` unset, no triggers) only `onReady` fires.
+With the defaults (`data.mode` unset, no triggers) nothing fires per frame: `onReady` once, and
+`onPerformanceChange` or `onError` only when something changes.
 
 ## `onReady`
 
@@ -38,16 +39,20 @@ type ReadyEvent = {
 A session starts on mount, and again when `active` goes back to `true` or when a `resolution`,
 `analysisResolution` or `profile` change moves the camera's sizes and restarts it, so each of those
 fires one more `onReady`. When the landmarker cannot be built, `onError` reports `DETECTOR_INIT_FAILED` first and
-`onReady` still follows, because the camera did come up.
+`onReady` still follows, because the camera did come up. With `detection={false}` it fires as soon
+as the camera is up.
 
 `targetFps` and `deviceTier` are what the session opened with: the cached calibration when this
 device has run before, the static probe's guess when it has not. The governor refines both within
-a couple of seconds and reports each move through `onPerformanceChange`. `limitedBy` takes the
-values listed in [performance](../performance.md#why-the-rate-is-what-it-is).
+a couple of seconds. Each move of the rate is reported through `onPerformanceChange`; the refined
+tier is on `getProfile()`. `limitedBy` takes the values listed in
+[performance](../performance.md#why-the-rate-is-what-it-is).
 
-On Android, `delegate="auto"` reports `'CPU'` here on a device whose GPU works: the session starts
-on the CPU landmarker, which builds in a fraction of the time, and the GPU one takes over once it
-has built, reported by `onPerformanceChange` with `reason: 'delegate'`.
+On Android, a cold start under `delegate="auto"` reports `'CPU'` here on a device whose GPU works:
+the session starts on the CPU landmarker, which builds in a fraction of the time, and the GPU one
+takes over once it has built, reported by `onPerformanceChange` with `reason: 'delegate'`. A
+landmarker kept from an earlier session is reused instead, so a restart, or a screen reopened
+within a minute, reports the delegate it was already on.
 
 ## `onError`
 
@@ -67,13 +72,13 @@ exhaustive and a new failure mode has to be added here rather than appearing as 
 
 | Code | Fatal | Meaning |
 | --- | --- | --- |
-| `PERMISSION_DENIED` | ✅ | Camera permission refused |
+| `PERMISSION_DENIED` | ✅ | Camera permission not granted when the session started; `<PoseCamera>` never prompts |
 | `MODEL_NOT_FOUND` | ✅ | Plugin didn't run, or prebuild was skipped |
 | `MODEL_LOAD_FAILED` | ✅ | Reserved, not sent today: a model that is present but will not load reports `DETECTOR_INIT_FAILED` |
 | `CAMERA_UNAVAILABLE` | ✅ | No camera for the requested facing, including a pinned `facing` the device does not have |
 | `CAMERA_START_FAILED` | ✅ | The capture session could not be started |
-| `DETECTOR_INIT_FAILED` | ✅ | Landmarker could not be created on either delegate |
-| `INVALID_CONFIG` | ✅ | Native rejected a prop or trigger config |
+| `DETECTOR_INIT_FAILED` | ✅ | Landmarker could not be created; the preview keeps running without detection |
+| `INVALID_CONFIG` | ✅ | Reserved, not sent today: native reads configs leniently rather than rejecting them |
 | `IMAGE_DECODE_FAILED` | ✅ | `detectOnImage` could not read the source |
 | `VIDEO_DECODE_FAILED` | ✅ | `detectOnVideo` could not read the source |
 | `CAMERA_SWITCH_FAILED` | ❌ | Rolled back to the previous camera |
@@ -85,7 +90,8 @@ exhaustive and a new failure mode has to be added here rather than appearing as 
 The last two never arrive on `onError`. They are the codes `exportPose` rejects with, and they
 are in the same set so that one exhaustive switch covers every failure this package reports.
 
-`fatal: false` is normal operation, not a bug. Only `fatal: true` means the camera stopped.
+`fatal: false` is normal operation, not a bug. Only `fatal: true` means the camera stopped, or with
+`DETECTOR_INIT_FAILED`, that it runs without detection.
 
 `IMAGE_DECODE_FAILED` and `VIDEO_DECODE_FAILED` never arrive on `onError` either: `detectOnImage`
 and `detectOnVideo` reject with them when the file cannot be read, with `MODEL_NOT_FOUND` when no
@@ -93,16 +99,16 @@ model is bundled, and with `DETECTION_FAILED` when the file was read but inferen
 is closed on purpose, so a new failure mode is a deliberate addition rather than a surprise for
 anyone switching exhaustively.
 
-`DETECTION_FAILED` also covers a frame buffer that could not be decoded. `decodeFrames` never
-throws, because it runs inside the drain loop and a throw there would stall the loop permanently.
-It returns the problem instead and `<PoseCamera>` reports it here, non-fatally. A batch whose
+`DETECTION_FAILED` also covers a frame buffer that could not be decoded: `<PoseCamera>` reports it
+here, non-fatally, and keeps draining. A batch whose
 joint count or angle count disagrees with the current props is dropped rather than relabelled:
 attaching the wrong joint names would silently hand you another joint's numbers, and dropping one
 drain is self-healing.
 
-`INVALID_CONFIG` should be unreachable from a typed call site. Trigger configs are
-[validated in JavaScript](./trigger-schema.md#validation) during render, so reaching native with a
-bad one means the config was built dynamically and skipped that check.
+`INVALID_CONFIG` is never sent. Trigger configs are
+[validated in JavaScript](./trigger-schema.md#validation) during render, and native reads what
+reaches it leniently: a condition it cannot read is logged on the `triggers` channel and never
+matches.
 
 ## `onCameraChange`
 
@@ -124,16 +130,18 @@ type PerformanceEvent = {
   limitedBy: LimitedBy;   // why targetFps is what it is
   analysisResolution: { width: number; height: number };
   actualFps: number;
+  thermalState: 'nominal' | 'fair' | 'serious' | 'critical';
+  lowPower: boolean;      // Battery Saver or Low Power Mode
 };
 ```
 
-Fires on every automatic adjustment. Still fires under `thermalPolicy="off"`, the library
-stops acting, never stops reporting.
+Fires on every automatic adjustment, and whenever heat or Low Power Mode changes even if the rate
+stays put. Under `thermalPolicy="off"` the library stops acting on heat, never stops reporting it.
 
 | `reason` | When |
 | --- | --- |
-| `calibration` | The measured cost of inference moved the rate |
-| `thermal` | Heat moved the rate, or paused detection |
+| `calibration` | The measured cost of inference moved the rate, or `setProfile()` did |
+| `thermal` | Heat changed: it moved the rate, paused detection, or, under a policy that ignores it, only `thermalState` |
 | `lowPower` | Battery Saver or Low Power Mode came on or went off |
 | `idle` | Nobody in frame for a while, or somebody back |
 | `delegate` | Android, `delegate="auto"`: the GPU took over from the CPU the session started on |
@@ -145,7 +153,7 @@ stops acting, never stops reporting.
 ```ts
 type TriggerEvent = {
   id: string;
-  phase: 'enter' | 'exit' | 'cycle';
+  phase: 'enter' | 'exit' | 'cycle';   // emit: 'while' repeats 'enter'
   count: number;          // completed cycles since mount
   timestamp: number;      // ms, monotonic
   durationMs?: number;    // enter → exit, on 'cycle'
@@ -160,11 +168,9 @@ Modules. So native holds the captured frame and puts a claim ticket on the event
 `<PoseCamera>` redeems it over the function-return path before it calls you. See
 [ADR 0009](../../docs/adr/0009-trigger-snapshots-are-claimed.md).
 
-The consequence you can observe: a trigger with `snapshot: true` is delivered at least one
-microtask later than a plain one, because the redemption is an awaited call. Snapshot triggers are
-therefore not ordered against plain ones, and `timestamp` is what you should sort or compare on,
-not arrival order. If the redemption fails, or the ticket was already spent, `onTrigger` still
-fires with `snapshot` absent rather than not firing at all.
+The redemption is a synchronous call, so snapshot triggers keep their firing order with plain
+ones. If it fails, or the ticket was already spent, `onTrigger` still fires with `snapshot` absent
+rather than not firing at all.
 
 ## `onPose` and `onPoseBatch`
 
@@ -173,7 +179,7 @@ onPose?: (frame: PoseFrame) => void;
 onPoseBatch?: (frames: readonly PoseFrame[]) => void;
 ```
 
-Mutually exclusive, `data.mode` decides which fires. Passing the wrong one is a no-op and
+Mutually exclusive, `data.mode` decides which fires. Passing only the wrong one is a no-op and
 warns in development.
 
 A frame's `landmarks` is a `subarray` view into the ArrayBuffer that drain returned, not a copy.

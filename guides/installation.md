@@ -7,9 +7,9 @@ Both platforms are complete.
 
 | | |
 | --- | --- |
-| React Native | 0.74+ |
-| Expo SDK | 51+ (dev client or EAS Build) |
-| iOS | 15.1+, and 16.4+ on Expo SDK 57, which is what `ExpoModulesCore` requires |
+| React Native | 0.85+ |
+| Expo SDK | 56+ (dev client or EAS Build) |
+| iOS | 16.4+, which Expo's `ExpoModulesCore` requires from SDK 56 |
 | Android | API 24+ |
 | Architecture | new. React Native 0.82 removed the legacy one, so there is nothing to choose |
 
@@ -60,7 +60,8 @@ it will not run: version 0.16.0 knows Expo SDK 53 and React Native 0.78 at the n
 with `Unable to find compatible Expo SDK version`. Until it catches up, the edits are below.
 A working copy of all of them is [`example/bare`](../example/bare), which CI builds on every push.
 
-`android/settings.gradle`, above `include ':app'`:
+`android/settings.gradle`, above `include ':app'`, merged into the `pluginManagement`, `plugins`
+and `extensions.configure` blocks the template already has rather than added beside them:
 
 ```groovy
 pluginManagement {
@@ -121,9 +122,9 @@ override fun createReactActivityDelegate(): ReactActivityDelegate =
 <string>We use the camera to analyse your movement.</string>
 ```
 
-`ios/Podfile`, deployment target 15.1 or higher. On Expo SDK 57 it has to be 16.4, because that
-is what `ExpoModulesCore` requires and Expo's autolinking silently skips every one of its pods on
-an app that targets lower, which surfaces as CocoaPods failing to find `ExpoModulesCore`:
+`ios/Podfile`, deployment target 16.4 or higher, because that is what `ExpoModulesCore` requires
+from Expo SDK 56 and Expo's autolinking silently skips every one of its pods on an app that
+targets lower, which surfaces as CocoaPods failing to find `ExpoModulesCore`:
 
 ```ruby
 platform :ios, '16.4'

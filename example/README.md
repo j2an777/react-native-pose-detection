@@ -30,7 +30,7 @@ path end to end.
 | Screen | What it shows |
 | --- | --- |
 | **Overview** | What the package is, entry points to the other screens, device summary |
-| **Capture** | The live camera: skeleton overlay, lens switching, and panels exposing every prop, with a stat readout of measured fps, target, delegate and analysis size |
+| **Capture** | The live camera: skeleton overlay, lens switching, and panels exposing most props, with a stat readout of measured fps, target, delegate and analysis size |
 | **Studio** | Pick a photo or clip, paint it, keep the file. Shows size, frames and poses found, and a history of previous exports to reopen or delete |
 | **Diagnostics** | Stress scenarios: repeated camera switches, remounts, detection toggles, pause and resume cycles, each awaited on a real signal and reporting pass or fail |
 | **About** | The feature list and package information |
@@ -55,11 +55,11 @@ plugin never sees.
 
 | Tool | Version | Needed for |
 | --- | --- | --- |
-| Node.js | 22 or newer | everything |
+| Node.js | 22.22.1 or newer | everything |
 | JDK | 17 | Android builds |
 | Android Studio + SDK | API 24 or newer | Android builds, any OS |
-| Xcode | 16 or newer | iOS builds, **macOS only** |
-| CocoaPods | current | the bare app's iOS build |
+| Xcode | 26.6 or newer | iOS builds, **macOS only** |
+| CocoaPods | current | both apps' iOS builds |
 
 Android builds work the same on Windows, macOS and Linux. iOS builds require macOS, because
 only Xcode can produce them; on Windows or Linux, run the Android side and everything still

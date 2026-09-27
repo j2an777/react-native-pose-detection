@@ -21,7 +21,7 @@ the current checkboxes.
 ```
 
 **`PoseEngine` never imports camera code.** The frame source is an input. This is what makes
-the VisionCamera adapter (0.2.0) a ~200-line addition instead of a fork.
+a VisionCamera adapter, planned for a later release, a ~200-line addition instead of a fork.
 
 ## Frame pipeline
 
@@ -102,9 +102,9 @@ full 33 landmarks before the narrowing, so asking for an angle never widens the 
 ([ADR 0005](./adr/0005-select-narrows-the-buffer.md)).
 
 A `snapshot: true` trigger hits the same wall: the frame cannot ride the `onTrigger` event either.
-Native holds it and sends a claim ticket, `<PoseCamera>` redeems it with `takeTriggerSnapshot(id)`
-before calling the app's handler, and the event therefore arrives one microtask later than a
-plain trigger's ([ADR 0009](./adr/0009-trigger-snapshots-are-claimed.md)).
+Native holds it and sends a claim ticket, and `<PoseCamera>` redeems it with a synchronous
+`takeTriggerSnapshot(id)` before calling the app's handler, so triggers keep their firing order
+([ADR 0009](./adr/0009-trigger-snapshots-are-claimed.md)).
 
 ## Threading
 

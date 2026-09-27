@@ -41,10 +41,10 @@ silently turns a free feature into a per-frame cost.
 | --- | --- |
 | `off` *(default)* | production |
 | `error` | something failed and the user should know |
-| `warn` | degraded but running: GPU fallback, dropped frames |
-| `info` | lifecycle: camera opened, model loaded, calibration settled |
-| `debug` | state transitions: switch phases, trigger phases, thermal steps |
-| `trace` | per-frame: timings, landmark counts. **Expect volume.** |
+| `warn` | degraded but running: GPU fallback, dropped frames, a config native could not read |
+| `info` | lifecycle: camera opened, model loaded, calibration settled, heat and Low Power changes |
+| `debug` | state transitions: camera switches, rotation, idle search |
+| `trace` | per-frame detail, such as frames discarded after a camera switch. **Expect volume.** |
 
 | Category | Emitted by |
 | --- | --- |

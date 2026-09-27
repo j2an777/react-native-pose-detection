@@ -16,8 +16,8 @@ it, and a choice of when to hear about it.
   enter: Condition,      // when this becomes true, the trigger is in
   exit?: Condition,      // when this becomes true afterwards, it is out again
   emit: 'enter' | 'exit' | 'while' | 'cycle',
-  minDurationMs?: number, // enter must hold this long before it counts
-  debounceMs?: number,    // ignore re-entries this soon after the last
+  minDurationMs?: number, // enter or exit must hold this long before it counts
+  debounceMs?: number,    // ignore re-entries this soon after the last fire
   throttleMs?: number,    // for 'while': at most one event per interval
   snapshot?: boolean,     // claim the exact frame the trigger fired on
 }
@@ -59,7 +59,7 @@ JavaScript.
   how much of the frame the body fills, `bodySpan` rides on every frame through
   [data delivery](./data-delivery.md) rather than in a condition.
 - **Capture on the moment.** `snapshot: true` claims the exact frame a trigger fired on, so "the
-  photo at the top of the jump" is the trigger plus one fetch, not a stream you filter yourself.
+  pose at the top of the jump" is the trigger plus one fetch, not a stream you filter yourself.
 - **Form deviation.** A second trigger watching the failure shape of the first: the hip angle
   leaving its window mid-plank, a knee collapsing inward past a bound. Feasible as long as the
   deviation reads on one of the signals above.

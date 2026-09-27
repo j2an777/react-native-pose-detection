@@ -41,8 +41,8 @@ Three things in it are easy to get wrong:
   [ADR 0008](./adr/0008-frames-are-drained-not-pushed.md).
 - **`onTrigger` carries a `snapshotId`, not a snapshot.** A `PoseFrame` is the same ArrayBuffer
   problem, so native holds the captured frame and puts a claim ticket on the event.
-  `<PoseCamera>` redeems it with `takeTriggerSnapshot(id)` and only then calls the user's
-  `onTrigger`, which makes a snapshot trigger arrive one microtask later than a plain one.
+  `<PoseCamera>` redeems it with a synchronous `takeTriggerSnapshot(id)` and only then calls the
+  user's `onTrigger`, so a snapshot trigger keeps its place among plain ones.
   Redeeming an unknown or already-redeemed ticket must return an empty buffer rather than
   failing, and native must bound how many unclaimed frames it holds. See
   [ADR 0009](./adr/0009-trigger-snapshots-are-claimed.md).
@@ -211,8 +211,8 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
   `layerClass`, so UIKit resizes the preview layer during layout and there is no frame assignment
   to mistime on rotation.
 - **Six AVFoundation reads are deprecated in iOS 16** and every replacement is async and 16-only.
-  This package supports 15.1, the floor React Native 0.74 sets, so the old calls are still the ones
-  that run and each one warns. They live in `AssetCompat` and nowhere else, so one comment explains
+  The podspec still declares 15.1, React Native's floor, so the old calls are still the ones that
+  run and each one warns, though every supported Expo SDK now needs 16.4. They live in `AssetCompat` and nowhere else, so one comment explains
   all of them rather than a warning appearing wherever a track or a frame is read. Raising the floor
   to 16 is the fix, and it is a compatibility decision rather than a cleanup.
 - **Three view functions warn under Swift 6 strict concurrency.** `drainFrames`, `snapshotFrame`
