@@ -188,7 +188,7 @@ So this does exactly what it reads like:
 | **Smoothing `'auto'`** | Off for one pose, which MediaPipe already smooths; on for several, with MediaPipe's own constants |
 | **Lazy angles** | Computes only the angles an `angle` condition, `overlay.angles` or `data.angles` asked for |
 | **Analysis ≠ preview** | Model sees a small frame; preview stays sharp |
-| **GPU-composited overlay** | Shape layers on iOS and a hardware canvas on Android: no full-screen redraw per result |
+| **One overlay draw per result** | Shape layers the GPU composites on iOS; a hardware-accelerated view redrawn once per result on Android, which on a budget phone costs about 9 ms of each detection because the redraw shares the GPU with the model |
 | **Frames read on the JavaScript thread** | A drain reads the ring buffer directly, never queued behind native's main thread |
 
 ## Budget Android phones
