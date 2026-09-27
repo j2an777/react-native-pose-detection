@@ -24,6 +24,11 @@ import java.util.concurrent.Executor
 
 internal enum class Facing { FRONT, BACK }
 
+/** The lens asked for does not exist here, which is `CAMERA_UNAVAILABLE` rather than a start that failed. */
+internal class CameraMissing(
+    facing: Facing,
+) : IllegalStateException("this device has no $facing camera")
+
 /**
  * Owns the capture session. Knows about frames, not poses.
  *
@@ -56,6 +61,16 @@ internal class CameraSource(
 
     var previewSize: Size = Size(1280, 720)
     var analysisSize: Size = Size(640, 480)
+
+    /**
+     * What the bound session actually delivers. CameraX takes [previewSize] and [analysisSize] as
+     * targets and settles on the nearest size the camera has, so these are what gets reported:
+     * a Redmi Note 12 asked for 854x480 analysis delivers 864x480. Null until a session is bound.
+     */
+    var boundPreviewSize: Size? = null
+        private set
+    var boundAnalysisSize: Size? = null
+        private set
 
     /** `auto` prefers front and falls back to back. A pinned lens fails instead of falling back. */
     var facingFallbackAllowed: Boolean = false
@@ -107,7 +122,7 @@ internal class CameraSource(
                 onBound()
             } catch (error: Throwable) {
                 PoseLog.error(LogCategory.CAMERA) { "camera provider failed: ${error.message}" }
-                onFailed(ErrorCode.CAMERA_START_FAILED, error)
+                onFailed(startFailure(error), error)
             }
         }, mainExecutor)
     }
@@ -192,7 +207,7 @@ internal class CameraSource(
             bind(facing)
             onBound?.invoke()
         } catch (error: Throwable) {
-            onFailed(ErrorCode.CAMERA_START_FAILED, error)
+            onFailed(startFailure(error), error)
         }
     }
 
@@ -221,6 +236,8 @@ internal class CameraSource(
         val owner = this.lifecycleOwner ?: throw IllegalStateException("no lifecycle owner")
 
         val lens = resolveAvailable(provider, target)
+        // Binding a lens that is not there throws something generic from deep inside CameraX.
+        if (!hasCamera(provider, lens)) throw CameraMissing(lens)
         val rotation = currentRotation()
 
         val preview =
@@ -268,6 +285,8 @@ internal class CameraSource(
         boundConfig = null
         provider.bindToLifecycle(owner, selector, config)
         boundConfig = config
+        boundPreviewSize = preview.resolutionInfo?.resolution
+        boundAnalysisSize = analysis.resolutionInfo?.resolution
         val delivered = range?.upper ?: PINNED_FPS
         onFrameRate?.invoke(delivered)
 
@@ -276,8 +295,8 @@ internal class CameraSource(
         this.isBound = true
 
         PoseLog.info(LogCategory.CAMERA) {
-            "bound $lens preview=${previewSize.width}x${previewSize.height} " +
-                "analysis=${analysisSize.width}x${analysisSize.height} rotation=$rotation " +
+            "bound $lens preview=${sizeText(boundPreviewSize, previewSize)} " +
+                "analysis=${sizeText(boundAnalysisSize, analysisSize)} rotation=$rotation " +
                 "frames=${range?.let { "${it.lower}-${it.upper}" } ?: "default"} fps"
         }
     }
@@ -307,6 +326,10 @@ internal class CameraSource(
         return range.takeIf { supportedAsSession }
     }
 
+    /** A pinned lens the device does not have is documented as its own code. */
+    private fun startFailure(error: Throwable): ErrorCode =
+        if (error is CameraMissing) ErrorCode.CAMERA_UNAVAILABLE else ErrorCode.CAMERA_START_FAILED
+
     /** Binding a lens the device lacks throws and leaves a dead preview, so resolve first. */
     private fun resolveAvailable(
         provider: ProcessCameraProvider,
@@ -318,6 +341,16 @@ internal class CameraSource(
         PoseLog.info(LogCategory.CAMERA) { "no $target camera on this device, using $fallback" }
         return fallback
     }
+
+    private fun sizeText(
+        bound: Size?,
+        asked: Size,
+    ): String =
+        if (bound == null || bound == asked) {
+            "${asked.width}x${asked.height}"
+        } else {
+            "${bound.width}x${bound.height} (asked ${asked.width}x${asked.height})"
+        }
 
     // hasCamera throws CameraInfoUnavailableException, which is the same answer as false here.
     private fun hasCamera(

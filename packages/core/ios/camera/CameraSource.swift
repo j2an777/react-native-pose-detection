@@ -124,9 +124,11 @@ final class CameraSource {
         resolved = try self.configure(request)
       } catch {
         PoseLog.error(.camera, "camera start failed: \(error.localizedDescription)")
+        // A pinned lens the device does not have is documented as its own code.
+        let code: ErrorCode = error is CameraMissing ? .cameraUnavailable : .cameraStartFailed
         DispatchQueue.main.async {
           guard self.isCurrent(current) else { return }
-          onFailed(.cameraStartFailed, error)
+          onFailed(code, error)
         }
         return
       }

@@ -184,7 +184,7 @@ extension CameraSource {
       return (device, target)
     }
     guard fallbackAllowed, let fallback = device(for: target.opposite) else {
-      throw CameraError("this device has no \(target.nameForJs) camera")
+      throw CameraMissing(facing: target)
     }
     PoseLog.info(.camera, "no \(target.nameForJs) camera on this device, using \(target.opposite.nameForJs)")
     return (fallback, target.opposite)

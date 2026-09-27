@@ -55,6 +55,15 @@ extension CameraSource {
   }
 }
 
+/// The lens asked for does not exist here, which is `CAMERA_UNAVAILABLE` rather than a start that failed.
+struct CameraMissing: LocalizedError {
+  let facing: Facing
+
+  var errorDescription: String? {
+    return "this device has no \(facing.nameForJs) camera"
+  }
+}
+
 struct CameraError: LocalizedError {
   let message: String
 
