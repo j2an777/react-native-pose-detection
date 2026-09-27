@@ -92,8 +92,10 @@ extension PoseCameraView {
 
   func parkDetector(for seconds: TimeInterval) {
     feeding.value = false
-    // Frames stopping ends a hold, or a `minDurationMs` hold would count the paused time.
+    // Frames stopping ends a hold, or a `minDurationMs` hold would count the paused time, and
+    // leaves `snapshot()` no current frame.
     triggers.onPoseLost()
+    frames.clearLatest()
     releaseTimer?.invalidate()
     releaseTimer = nil
     guard detector.value != nil || detectorPending else { return }

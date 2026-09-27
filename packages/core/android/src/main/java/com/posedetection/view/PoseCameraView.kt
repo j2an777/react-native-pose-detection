@@ -595,8 +595,10 @@ class PoseCameraView(
 
     private fun parkDetector(delayMs: Long) {
         feeding = false
-        // Frames stopping ends a hold, or a minDurationMs hold would count the paused time.
+        // Frames stopping ends a hold, or a minDurationMs hold would count the paused time, and
+        // leaves snapshot() no current frame.
         triggers.onPoseLost()
+        frames.clearLatest()
         mainHandler.removeCallbacks(releaseParked)
         if (detector == null && !detectorPending) return
         mainHandler.postDelayed(releaseParked, delayMs)
