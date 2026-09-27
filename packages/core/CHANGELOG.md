@@ -188,6 +188,8 @@ the first list is what to check when upgrading.
   (`DETECTOR_INIT_FAILED`), although the preview keeps running.
 - iOS: an export that drops an audio track the MP4 writer cannot hold now says so on the
   `detector` channel, as Android does.
+- `doctor` checked for iOS 15.1, so it passed an app below the 16.4 that Expo SDK 56 and later
+  need, where autolinking silently leaves every Expo pod out. It checks for 16.4 now.
 - The docs said a `snapshot: true` trigger arrives a microtask late and can be reordered: it
   arrives in firing order. They also called a `cycle` trigger's snapshot the bottom of the rep: it
   is the frame the rep finished on.

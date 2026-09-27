@@ -59,7 +59,7 @@ Checks the things that actually break:
 ✓ SHA-256 matches manifest    pose_landmarker_full.task
 ✓ model in the app target     pose_landmarker_full.task is a build resource
 – minSdkVersion 24            resolved by the Expo Gradle plugin, not readable from the project
-✓ iOS deployment target 15.1  found 16.4
+✓ iOS deployment target 16.4  found 16.4
 ✓ android.permission.CAMERA   AndroidManifest.xml
 ✗ NSCameraUsageDescription    missing from Info.plist
 1 of 9 checks failed

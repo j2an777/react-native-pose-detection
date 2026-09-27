@@ -379,7 +379,7 @@ function deploymentTargetsOf(pbxproj: string, listUuid: string | undefined): num
 
 /** Only the app target counts: an extension pinned lower is no reason to fail a correct app. */
 function checkDeploymentTarget(pbxproj: string | null): Check {
-  const label = 'iOS deployment target 15.1';
+  const label = 'iOS deployment target 16.4';
   if (pbxproj === null) return skip(label, 'no Xcode project, run prebuild first');
 
   const appUuid = applicationTarget(pbxproj);
@@ -398,9 +398,9 @@ function checkDeploymentTarget(pbxproj: string | null): Check {
   }
 
   const lowest = Math.min(...found);
-  return lowest >= 15.1
+  return lowest >= 16.4
     ? pass(label, `found ${lowest}`)
-    : fail(label, `found ${lowest}, this package needs 15.1`);
+    : fail(label, `found ${lowest}, Expo SDK 56 and later need 16.4`);
 }
 
 /**

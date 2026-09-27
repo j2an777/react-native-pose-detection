@@ -12,7 +12,7 @@ Pod::Spec.new do |s|
   s.homepage       = package['homepage']
   s.source         = { git: package['repository']['url'] }
 
-  # React Native 0.74, the floor in `peerDependencies`, already requires 15.1.
+  # React Native's own floor. Apps need 16.4, which Expo SDK 56 and later require.
   s.platforms      = { ios: '15.1' }
   s.swift_version  = '5.9'
 
