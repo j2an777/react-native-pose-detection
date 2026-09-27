@@ -86,6 +86,10 @@ runtime with `MODEL_NOT_FOUND` even though the file is plainly there. `fetch-mod
 exactly that state on purpose when `expo/config-plugins` cannot be resolved, so it has to be
 checked rather than assumed.
 
+A project with only `android/` or only `ios/` is checked for that platform, and the other is a
+`–`: an app built for one platform has nothing to fix on the other. With neither directory there
+is nothing to check, and that is a `✗`.
+
 `doctor` takes no flags and no arguments, and says so rather than ignoring one. `doctor
 --cache-dir /tmp/x` reads as a request the tool honors, and it never was one.
 

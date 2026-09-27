@@ -248,7 +248,7 @@ async function checkMinSdk(projectRoot: string): Promise<Check> {
   ]);
 
   if (sources.every((source) => source === null)) {
-    return skip(label, 'no android/ directory, run prebuild first');
+    return skip(label, 'no build.gradle or gradle.properties in android/');
   }
 
   const text = sources.join('\n');
@@ -403,16 +403,31 @@ async function checkXcodeRegistration(
 /** Best-effort reads that can say "could not determine" beat a parser that throws. */
 async function doctorCommand(): Promise<number> {
   const projectRoot = process.cwd();
+  const hasAndroid = await directoryExists(join(projectRoot, 'android'));
+  const hasIos = await directoryExists(join(projectRoot, 'ios'));
+
+  // An app built for one platform has one native project, and the other one missing is nothing
+  // to fix. Neither is a directory doctor can say nothing about, which is not a pass either.
+  if (!hasAndroid && !hasIos) {
+    return report([
+      fail('native project', 'no android/ or ios/ here, run this from the app root after prebuild'),
+    ]);
+  }
+
   const checks: Check[] = [];
 
   checks.push(
-    ...(await checkInstalledModel(androidAssetsDir(projectRoot), 'android/app/src/main/assets')),
+    ...(hasAndroid
+      ? await checkInstalledModel(androidAssetsDir(projectRoot), 'android/app/src/main/assets')
+      : [skip('android project', 'no android/ directory')]),
   );
 
-  const projectName = await findIosProjectName(projectRoot);
+  const projectName = hasIos ? await findIosProjectName(projectRoot) : null;
   let pbxproj: string | null = null;
 
-  if (projectName === null) {
+  if (!hasIos) {
+    checks.push(skip('ios project', 'no ios/ directory'));
+  } else if (projectName === null) {
     checks.push(fail('ios project', 'no ios/*.xcodeproj found'));
   } else {
     const xcodeproj = await findXcodeProjectPath(projectRoot);
@@ -428,24 +443,27 @@ async function doctorCommand(): Promise<number> {
     }
   }
 
-  checks.push(await checkMinSdk(projectRoot));
+  if (hasAndroid) checks.push(await checkMinSdk(projectRoot));
 
   if (projectName !== null) {
     checks.push(checkDeploymentTarget(pbxproj));
   }
 
-  const manifest = await readIfPresent(
-    join(projectRoot, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'),
-  );
-  // Absent from the app manifest is not a failure: this package declares the permission in its
-  // own manifest, and the merger adds it. Reporting that as broken is how doctor gets ignored.
-  checks.push(
-    manifest === null
-      ? skip('android.permission.CAMERA', 'no AndroidManifest.xml, run prebuild first')
-      : manifest.includes('android.permission.CAMERA')
-      ? pass('android.permission.CAMERA', 'AndroidManifest.xml')
-      : pass('android.permission.CAMERA', 'merged in from this package, not in the app manifest'),
-  );
+  if (hasAndroid) {
+    const manifest = await readIfPresent(
+      join(projectRoot, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'),
+    );
+    // Absent from the app manifest is not a failure: this package declares the permission in
+    // its own manifest, and the merger adds it. Reporting that as broken is how doctor gets
+    // ignored.
+    checks.push(
+      manifest === null
+        ? skip('android.permission.CAMERA', 'no AndroidManifest.xml, run prebuild first')
+        : manifest.includes('android.permission.CAMERA')
+        ? pass('android.permission.CAMERA', 'AndroidManifest.xml')
+        : pass('android.permission.CAMERA', 'merged in from this package, not in the app manifest'),
+    );
+  }
 
   if (projectName !== null) {
     const plist = await readIfPresent(join(projectRoot, 'ios', projectName, 'Info.plist'));
@@ -458,6 +476,11 @@ async function doctorCommand(): Promise<number> {
     );
   }
 
+  return report(checks);
+}
+
+/** Prints every check, and exits 1 when any of them failed. */
+function report(checks: readonly Check[]): number {
   for (const check of checks) {
     log.line(`${SYMBOL[check.status]} ${check.label.padEnd(27)} ${check.detail}`);
   }
