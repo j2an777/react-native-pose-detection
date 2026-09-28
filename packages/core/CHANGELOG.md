@@ -32,6 +32,8 @@ gets everything under [0.2.0](#020); start with [Upgrading from 0.1.0](#upgradin
 - `detectOnImage` and `detectOnVideo` check `select` and `angles` as `data` does. An unknown joint
   is a `PoseConfigError` instead of an error with no `code`, and a joint with no angle is refused
   instead of skipped.
+- Android: with `delegate="auto"`, the GPU taking over from the CPU ended the idle search with
+  nobody in frame. `onPerformanceChange` reported idle ending, and the 5 fps step came late.
 
 ## 0.2.0
 

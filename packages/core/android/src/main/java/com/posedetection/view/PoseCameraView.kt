@@ -759,8 +759,8 @@ class PoseCameraView(
         resolvedDelegate = created.delegate.name
         // Built and warmed up proves the GPU works here; persisted so file jobs know too.
         if (created.delegate == Delegate.GPU && calibrator.gpuVerdict == null) calibrator.recordGpuVerdict(true)
-        // Idle search counts from here: a camera opened on an empty room is idle too.
-        lastPoseMs = SystemClock.elapsedRealtime()
+        // Idle search counts from the first landmarker, so an empty room idles; a takeover keeps it.
+        if (replaced == null) lastPoseMs = SystemClock.elapsedRealtime()
 
         if (replaced != null && replaced !== created) {
             closeDetector(replaced)
