@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["swiftlint", "ktlint", "lychee", "swift"],
+  "ignoreBinaries": ["swiftlint", "ktlint", "lychee", "swift", "cmp"],
   "workspaces": {
     ".": {
       "entry": ["guides/.vitepress/config.mjs"]
