@@ -364,6 +364,8 @@ skeleton appears. No manual steps.
 `later` formula DSL · `delegate="benchmark"` · segmentation masks · remote model delivery · web ·
 native analyzer protocol
 
+Each is tracked, with what it needs, in the [backlog](./backlog/features.md).
+
 ## Scope escape hatch
 
 If Phase 3 or 5 runs long, cut in this order:

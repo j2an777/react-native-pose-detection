@@ -281,6 +281,9 @@ CI, and it leaves a gap in the history the release notes are written from.
 
 ## Pull requests
 
+Looking for something to work on? The [backlog](./backlog/README.md) lists every planned item,
+what it changes and how it is checked, and which items make good first pull requests.
+
 - One concern per PR
 - Tested on a physical device, both platforms (say so if you couldn't)
 - Include device model + OS version for anything performance-related

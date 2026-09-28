@@ -15,6 +15,7 @@ New contributor, in order:
 | **3.** [Contributing](./contributing.md) | Setup, **branch / commit / PR rules**, branch protection, code style |
 | **4.** [Testing](./testing.md) | What must pass before merge |
 | **5.** [Quality gates](./quality-gates.md) | Every automated check and why it exists |
+| **6.** [Backlog](./backlog/README.md) | What to work on: every planned item, with what to change and how it is checked |
 
 ## Reference
 
@@ -64,7 +65,7 @@ physical hardware, an iPhone 15 and a Redmi Note 12, through the device sweep in
 phones and which are still targets or estimates.
 
 The [development plan](./development-plan.md) is the record of how it got to 0.1.0, and npm and
-the changelog are the record since.
+the changelog are the record since. What comes next is in the [backlog](./backlog/README.md).
 
 Documentation follows [Diátaxis](https://diataxis.fr/): `guides/` holds tutorials, how-to guides,
 and user-facing reference; `docs/` holds explanation and contributor reference.

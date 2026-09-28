@@ -182,6 +182,7 @@ video files, cheap to add rather than requiring a fork. See [ADR 0001](./adr/000
 | Sport-specific logic | **Nowhere.** It belongs in apps: `guides/recipes.md` explains why |
 | A build-time behavior change | `plugin/`, and `guides/reference/config-plugin.md` |
 | A decision worth remembering | [`docs/adr/`](./adr/README.md) |
+| Work planned and not started | [`docs/backlog/`](./backlog/README.md) |
 
 ## Two implementations, one behavior
 

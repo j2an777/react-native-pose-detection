@@ -1,3 +1,4 @@
+AHWB
 BGRA
 CERT
 CISA
@@ -29,6 +30,7 @@ backgrounded
 backgrounding
 backticked
 blazepose
+camerax
 changesets
 cocoapods
 codeql
