@@ -13,7 +13,7 @@ until you ask.
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/khalid999devs/react-native-pose-detection/blob/main/LICENSE)
 ![platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-black)
 
-[Installation](#installation) · [Quick start](#quick-start) · [Do more](#do-more) · [Full surface](#the-whole-surface-at-a-glance) · [Example](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example) · [Docs](https://khalid999devs.github.io/react-native-pose-detection/)
+[Installation](#installation) · [Quick start](#quick-start) · [Do more](#do-more) · [API](#the-whole-surface-at-a-glance) · [Example](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example) · [Docs](https://khalid999devs.github.io/react-native-pose-detection/)
 
 ![React Native pose detection: a video frame with the skeleton painted in](https://raw.githubusercontent.com/khalid999devs/react-native-pose-detection/main/ss/export-frame.png)
 
@@ -25,22 +25,22 @@ until you ask.
 
 ## Why this one
 
-- **One component.** `<PoseCamera />` opens the camera, finds the body, draws the skeleton.
-  Every default overridable, none required.
-- **Both install paths, first class.** The Expo config plugin and a CLI for bare React Native
-  do the same job; both are built and tested in CI on every commit.
-- **Zero bridge traffic by default.** Detection, smoothing, drawing and trigger logic run
-  natively. Landmarks cross to JavaScript only when you opt in, as one zero-copy buffer.
-- **Tunes itself to the phone.** Measures inference cost, runs at the camera's 30 fps whenever
-  the phone keeps up, backs off with heat, and remembers the answer for the next launch.
-- **Native triggers.** Declare "knee bent past 90 degrees for 300 ms", get one event when it
-  happens. Thirty reps is thirty bridge crossings, not nine hundred.
-- **Files too.** Landmarks from any photo or video on disk, or a full-quality painted copy,
-  without slowing the live camera.
-- **Zero runtime dependencies.** Peers are `expo`, `react`, `react-native`. No VisionCamera,
-  no Reanimated, no worklets.
-- **Models handled for you.** Downloaded, checksum-verified and installed at build time. A
-  mismatch fails the build, never warns.
+- **One component.** `<PoseCamera />` opens the camera, finds the body and draws the skeleton.
+- **Native triggers.** Rep counting runs on the camera thread; you get one event per rep.
+- **No bridge traffic by default.** Landmarks reach JavaScript only when you ask for them.
+- **Tunes itself.** 30 fps when the phone keeps up, backing off for heat, battery and an empty frame.
+- **Photos and videos too.** Landmarks from files, or a copy with the skeleton painted in.
+- **Expo or bare, zero runtime dependencies.** Models are downloaded and verified at build time.
+
+## Supported versions
+
+| react-native-pose-detection | Expo SDK | React Native | iOS | Android |
+| --- | --- | --- | --- | --- |
+| 0.2.x | 56 and later | 0.85 and later | 16.4 | 7.0 (API 24) |
+
+Expo Go cannot load native code, so use a
+[development build](https://docs.expo.dev/develop/development-builds/introduction/). The
+JavaScript is about 70 KB.
 
 ## Installation
 
@@ -87,10 +87,9 @@ npm i react-native-pose-detection expo@56   # expo@57 on React Native 0.86
 npx react-native-pose-detection fetch-model full
 ```
 
-The package is an Expo module, so a bare app needs the `expo` package and its autolinking wired
-in, which does not make it an Expo app. The CLI installs the model into both native projects. On
-iOS, raise the deployment target to 16.4 in both the `Podfile` and the Xcode target, and declare
-the camera permission in **`ios/<YourApp>/Info.plist`**:
+`expo` provides the autolinking that links this Expo module; it does not make your app an Expo
+app. On iOS, set the deployment target to 16.4 in the `Podfile` and the Xcode target, and add the
+camera permission to **`ios/<YourApp>/Info.plist`**:
 
 ```xml
 <key>NSCameraUsageDescription</key>
@@ -176,10 +175,9 @@ const { uri } = await exportPose(videoUri, { directory: 'documents' }).result;
 
 ## It tunes itself
 
-No frame-rate table to maintain. The package measures what inference costs on each phone and
-runs as fast as the camera delivers whenever the phone can keep that up with 15% to spare, which
-is 30 fps on any recent phone. Heat halves it and then pauses it, Low Power Mode caps it, and
-nobody in frame drops it to an idle search. Every rate says why it is what it is:
+The package measures inference on each phone and runs at the camera's 30 fps when the phone keeps
+up with room to spare. Heat halves the rate and then pauses it, Low Power Mode caps it, and an
+empty frame drops it to an idle search. `getProfile()` says why:
 
 ```ts
 await cam.current?.getProfile();
@@ -188,54 +186,12 @@ await cam.current?.getProfile();
 //   p50InferenceMs: 16.2, measuredFps: 30, limitedBy: 'camera', thermalState: 'nominal' }
 ```
 
-Every axis is still yours: `profile`, `targetFps`, `resolution`, `analysisResolution`,
-`delegate`, `thermalPolicy`.
+Override any axis with `profile`, `targetFps`, `resolution`, `analysisResolution`, `delegate` or
+`thermalPolicy`.
 
 ## The whole surface at a glance
 
-Every prop on one component. All of them optional; an explicit value pins that axis and the
-rest stay automatic.
-
-```tsx
-<PoseCamera
-  ref={cam}
-  style={{ flex: 1 }}
-  // camera
-  facing="front"                    // 'auto' | 'front' | 'back'
-  active={isFocused}                // the whole session on/off
-  detection={true}                  // inference on/off; off parks the model
-  resolution="auto"                 // preview: '480p' | '720p' | '1080p'
-  // detection
-  maxPoses={1}                      // 1 to 5
-  minConfidence={0.6}               // what counts as a body
-  smoothing="auto"                  // off for one pose, which MediaPipe smooths already
-  // performance
-  profile="auto"                    // 'efficient' | 'balanced' | 'quality' | 'unrestricted'
-  targetFps="auto"                  // a number replaces the governed rate
-  analysisResolution="auto"         // what the model sees: '360p' | '480p' | '720p'
-  delegate="auto"                   // 'gpu' | 'cpu'
-  thermalPolicy="adaptive"          // 'critical-only' | 'off'
-  // drawing, all native
-  overlay={{
-    color: '#00E5FF',
-    lineWidth: 3,
-    pointRadius: 4,
-    angles: [{ joint: 'leftKnee' }, { joint: 'rightKnee' }],
-  }}
-  // data out, off unless asked
-  data={{ mode: 'throttled', throttleMs: 100, select: ['leftKnee', 'rightKnee'] }}
-  triggers={[squatTrigger]}
-  logLevel="off"
-  // events
-  onReady={(e) => console.log(e.delegate, e.targetFps)}
-  onError={(e) => console.warn(e.code, e.message)}
-  onCameraChange={(e) => setFacing(e.facing)}
-  onPerformanceChange={(e) => console.log(e.reason, e.targetFps)}
-  onTrigger={(e) => setReps(e.count)}
-  onPose={(frame) => setFrame(frame)}
-  onLog={(entries) => entries.forEach((e) => console.log(e.message))}
-/>
-```
+Every prop is optional. Set one to pin that axis; the rest stay automatic.
 
 | Prop | Default | What it does |
 | --- | --- | --- |
@@ -299,6 +255,14 @@ await cam.current?.switchCamera();
 Guarantees and edge cases:
 [ref methods reference](https://khalid999devs.github.io/react-native-pose-detection/reference/ref-methods).
 
+### Triggers
+
+A trigger is a condition checked natively on every frame, sending one `onTrigger` event when it
+starts or stops holding. Conditions read `angle`, `landmarkX`, `landmarkY`, `velocityX`,
+`velocityY` or `visibility`, and combine with `all` and `any`; `emit` is `'enter'`, `'exit'`,
+`'cycle'` or `'while'`. Guide: [triggers](https://khalid999devs.github.io/react-native-pose-detection/triggers) · every field:
+[trigger schema](https://khalid999devs.github.io/react-native-pose-detection/reference/trigger-schema).
+
 ### Functions
 
 ```ts
@@ -319,39 +283,41 @@ import { detectOnImage, exportPose, useCameraPermission } from 'react-native-pos
 Every export on one page, constants included:
 [functions reference](https://khalid999devs.github.io/react-native-pose-detection/reference/functions).
 
-## Requirements
-
-| | Minimum |
-| --- | --- |
-| React Native | 0.85 |
-| Expo SDK | 56 |
-| iOS | 16.4 |
-| Android | API 24 |
-
-Expo Go cannot run native code, so use a development build. The JavaScript itself is about
-70 KB with zero runtime dependencies.
-
 ## Documentation
 
-Every guide is also on the **[documentation site](https://khalid999devs.github.io/react-native-pose-detection/)**,
-searchable, with a page per topic.
+Everything is on the searchable **[documentation site](https://khalid999devs.github.io/react-native-pose-detection/)**, in this order:
 
-| Guide | Covers |
-| --- | --- |
-| [Getting started](https://khalid999devs.github.io/react-native-pose-detection/getting-started) | Install, first camera, first data |
-| [Installation](https://khalid999devs.github.io/react-native-pose-detection/installation) | Expo, bare RN, EAS, release builds |
-| [Camera control](https://khalid999devs.github.io/react-native-pose-detection/camera-control) | Lenses, switching, pausing, lifecycle |
-| [Data delivery](https://khalid999devs.github.io/react-native-pose-detection/data-delivery) | Modes, the wire format, retention |
-| [Triggers](https://khalid999devs.github.io/react-native-pose-detection/triggers) | Conditions, phases, snapshots |
-| [Photos and video files](https://khalid999devs.github.io/react-native-pose-detection/files) | Landmarks from files, painted copies |
-| [Performance](https://khalid999devs.github.io/react-native-pose-detection/performance) | Profiles, the governor, thermal, app size |
-| [What you can build](https://khalid999devs.github.io/react-native-pose-detection/recipes) | Trigger syntax, feasibility, limits |
-| [API reference](https://khalid999devs.github.io/react-native-pose-detection/reference/pose-camera) | Every prop, method, event, type, error code |
-| [Troubleshooting](https://khalid999devs.github.io/react-native-pose-detection/troubleshooting) | Real problems, and the log channel |
+### Start here
 
-The [example app](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example) shows all of it running: a live camera with every prop on a
-panel, a studio that paints picked files, and a diagnostics screen with stress scenarios. It
-exists twice, once per install path, so both stay proven end to end.
+- [Getting started](https://khalid999devs.github.io/react-native-pose-detection/getting-started): install, first camera, first data
+- [Installation](https://khalid999devs.github.io/react-native-pose-detection/installation): Expo, bare React Native, EAS and release builds
+
+### Build with it
+
+- [Camera control](https://khalid999devs.github.io/react-native-pose-detection/camera-control): lenses, switching, pausing, lifecycle
+- [Triggers](https://khalid999devs.github.io/react-native-pose-detection/triggers): count reps and detect positions natively
+- [Data delivery](https://khalid999devs.github.io/react-native-pose-detection/data-delivery): read landmarks in JavaScript, and what each mode costs
+- [Photos and video files](https://khalid999devs.github.io/react-native-pose-detection/files): landmarks from files, and painted copies
+- [What you can build](https://khalid999devs.github.io/react-native-pose-detection/recipes): worked triggers for squats, holds and jumps
+
+### Tune and debug
+
+- [Performance](https://khalid999devs.github.io/react-native-pose-detection/performance): profiles, heat, battery and app size
+- [Troubleshooting](https://khalid999devs.github.io/react-native-pose-detection/troubleshooting): common problems and the log channel
+
+### API reference
+
+- [Props](https://khalid999devs.github.io/react-native-pose-detection/reference/pose-camera): every `<PoseCamera>` prop, its default and range
+- [Events](https://khalid999devs.github.io/react-native-pose-detection/reference/events): every callback, its payload, and every error code
+- [Ref methods](https://khalid999devs.github.io/react-native-pose-detection/reference/ref-methods): `switchCamera`, `snapshot`, `getProfile` and the rest
+- [Functions](https://khalid999devs.github.io/react-native-pose-detection/reference/functions): files, permission, validation, frame accessors, logging
+- [Types](https://khalid999devs.github.io/react-native-pose-detection/reference/types): `PoseFrame`, joint names, the wire format
+- [Trigger schema](https://khalid999devs.github.io/react-native-pose-detection/reference/trigger-schema): conditions, emit modes, validation rules
+- [Camera permission](https://khalid999devs.github.io/react-native-pose-detection/reference/permissions): the four states, and why blocked is not denied
+- [Config plugin](https://khalid999devs.github.io/react-native-pose-detection/reference/config-plugin) and [CLI](https://khalid999devs.github.io/react-native-pose-detection/reference/cli): model install options
+
+The [example app](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example)
+runs all of it, once as an Expo app and once as a bare one.
 
 ## Alternatives
 
