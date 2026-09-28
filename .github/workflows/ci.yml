@@ -47,6 +47,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint:md
+      # npm shows packages/core/README.md, and it must match the README GitHub shows.
+      - run: npm run check:readme
       - run: npm run spell
       # Third-party action, so it is pinned to a commit rather than to a tag its owner can move.
       #

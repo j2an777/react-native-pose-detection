@@ -80,6 +80,8 @@ in `docs/`. If a function needs a paragraph to explain, it probably needs splitt
 - TypeScript strict; no `any` in the public API
 - Swift: `swift-format` defaults · Kotlin: `ktlint`
 - Public API changes require a matching `guides/reference/pose-camera.md` update in the same PR
+- `packages/core/README.md` is what npm shows and must stay a copy of the root `README.md`; edit
+  the root one, keep its links absolute, since npm resolves no relative link, and copy it over
 
 ## Non-negotiable rules
 

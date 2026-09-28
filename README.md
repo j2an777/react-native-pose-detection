@@ -9,16 +9,16 @@ Powered by MediaPipe, running entirely on the device.
 
 [![CI](https://github.com/khalid999devs/react-native-pose-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/khalid999devs/react-native-pose-detection/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/react-native-pose-detection)](https://www.npmjs.com/package/react-native-pose-detection)
-[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/khalid999devs/react-native-pose-detection/blob/main/LICENSE)
 ![platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android-black)
 
-[Documentation](https://khalid999devs.github.io/react-native-pose-detection/) · [Installation](#installation) · [Quick start](#quick-start) · [Usage](#usage) · [API](#api-at-a-glance) · [Example app](./example)
+[Documentation](https://khalid999devs.github.io/react-native-pose-detection/) · [Installation](#installation) · [Quick start](#quick-start) · [Usage](#usage) · [API](#api-at-a-glance) · [Example app](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example)
 
-![A video frame with the detected pose painted in](./ss/export-frame.png)
+![A video frame with the detected pose painted in](https://raw.githubusercontent.com/khalid999devs/react-native-pose-detection/main/ss/export-frame.png)
 
-<img alt="Live pose detection with a skeleton overlay in a React Native app" src="./ss/live-camera.png" width="30%" /> <img alt="Pose landmarks painted onto an uploaded video" src="./ss/studio-video.png" width="30%" /> <img alt="Pose landmarks painted onto an uploaded photo" src="./ss/studio-photo.png" width="30%" />
+<img alt="Live pose detection with a skeleton overlay in a React Native app" src="https://raw.githubusercontent.com/khalid999devs/react-native-pose-detection/main/ss/live-camera.png" width="30%" /> <img alt="Pose landmarks painted onto an uploaded video" src="https://raw.githubusercontent.com/khalid999devs/react-native-pose-detection/main/ss/studio-video.png" width="30%" /> <img alt="Pose landmarks painted onto an uploaded photo" src="https://raw.githubusercontent.com/khalid999devs/react-native-pose-detection/main/ss/studio-photo.png" width="30%" />
 
-*Screens from [the example app](./example)*
+*Screens from [the example app](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example)*
 
 </div>
 
@@ -213,7 +213,7 @@ searchable and reads in this order:
 8. [What you can build](https://khalid999devs.github.io/react-native-pose-detection/recipes): rep counters, form checks, holds and jumps
 9. [Troubleshooting](https://khalid999devs.github.io/react-native-pose-detection/troubleshooting): common problems and the log channel
 
-The [example app](./example) runs all of it, once as an Expo app and once as a bare one.
+The [example app](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example) runs all of it, once as an Expo app and once as a bare one.
 
 ## Alternatives
 
@@ -229,7 +229,7 @@ The [example app](./example) runs all of it, once as an Expo app and once as a b
 ## Contributing
 
 Issues and pull requests are welcome, especially device reports from phones we have not measured.
-Start with [contributing](./docs/contributing.md).
+Start with [contributing](https://github.com/khalid999devs/react-native-pose-detection/blob/main/docs/contributing.md).
 
 ## License
 

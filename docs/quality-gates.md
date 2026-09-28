@@ -30,6 +30,7 @@ Documentation is a first-class artifact here, so it gets the same treatment as c
 | Gate | Command | Protects against |
 | --- | --- | --- |
 | markdownlint | `npm run lint:md` | inconsistent structure, broken tables |
+| README copy | `npm run check:readme` | the npm page drifting from the GitHub README |
 | cspell | `npm run spell` | typos in user-facing docs |
 | lychee | `npm run lint:links` | dead links, internal and external |
 
@@ -159,7 +160,7 @@ One job per line, in `.github/workflows/ci.yml`, plus CodeQL in its own workflow
 | Job | Runner | Steps |
 | --- | --- | --- |
 | `code` | ubuntu, Node 22.22.1 **and** 24 | `lint`, `format:check`, `typecheck`, `test`, `deadcode` |
-| `docs` | ubuntu | `lint:md`, `spell`, and lychee for links |
+| `docs` | ubuntu | `lint:md`, `check:readme`, `spell`, and lychee for links |
 | `kotlin` | ubuntu | ktlint over `packages/core/android` |
 | `swift-sources` | ubuntu | Looks for `*.swift` and reports whether the macOS job should start |
 | `swift` | macOS, gated on the above | `swiftlint lint --strict` |
