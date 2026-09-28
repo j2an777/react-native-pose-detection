@@ -13,7 +13,7 @@ says what to change, where, and how it is checked. Work that is merged and not y
 | [features.md](./features.md) | New capabilities and new API | 0.3.0 and later |
 | [waiting.md](./waiting.md) | Items blocked on Expo, React Native, GitHub or another project | when that project moves |
 
-**Good first pull requests:** CI-1, CI-4 and EX-8, all in [next-patch.md](./next-patch.md).
+**Good first pull requests:** CI-1, CI-4, EX-8 and EX-10, all in [next-patch.md](./next-patch.md).
 
 ## Picking an item
 

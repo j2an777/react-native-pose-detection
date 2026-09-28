@@ -35,6 +35,16 @@ Nothing here changes a published file, so it can land at any time.
   - `"newArchEnabled": true` in [app.json:7](../../example/expo/app.json#L7). SDK 57 runs only the
     new architecture, and `npx expo-doctor` reports the key as obsolete.
   - **Check:** CI's two Expo cells build as before.
+- [ ] **EX-10 · P2 · The bare example on React Native CLI 20.2.0.**
+  - **Today:** the three `@react-native-community/cli` packages in
+    [example/bare/package.json](../../example/bare/package.json) are pinned at 20.1.0, as React
+    Native 0.86's template pins them. 20.1.0 pulls `fast-xml-parser` 4.5.7, which carries an
+    advisory fixed in 5.7.0 (SEC-1 in [waiting.md](./waiting.md)).
+  - **Fix:** pin 20.2.0, whose Android and Apple config packages depend on `fast-xml-parser`
+    `^5.3.6`.
+  - **Check:** CI's two bare cells, since Android autolinking reads its config through the CLI, and
+    `npx react-native-pose-detection doctor` in `example/bare`. If 20.2.0 turns out to need a newer
+    React Native, leave it for SDK 58 (COMPAT-1).
 - [ ] **EX-9 · P3 · Review the monorepo Metro settings in the Expo example.**
   - `watchFolders`, `nodeModulesPaths` and `disableHierarchicalLookup` in
     [example/expo/metro.config.js](../../example/expo/metro.config.js). `npx expo-doctor` flags
