@@ -14,8 +14,11 @@ on the commit that was published.
 
 ### Documentation
 
-- The README and guides say that Expo has no SDK for React Native 0.87, the React Native CLI's
-  default for new apps, and to start a new bare app on 0.86.
+- A new bare app starts from Expo's bare template, which is always on a React Native an Expo SDK is
+  built for, with Expo modules already wired. The React Native CLI's default can have no SDK, as
+  0.87 has none.
+- The installation guide no longer says `install-expo-modules` stops at React Native 0.78: it wires
+  a React Native 0.85 app completely, and stops only on 0.86.
 
 ## 0.2.1
 

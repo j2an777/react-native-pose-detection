@@ -311,7 +311,7 @@ test passes. Both wait on a device, which is Phase 6. Zero jump-detection code p
         the config plugin, autolinking, the native link and the packaged model end to end
   - [x] `example/bare`, the only thing that exercises the CLI install path. It proved the
         Xcode writer against a real project, and that the bare install path needs Expo modules
-        wired by hand because `install-expo-modules` stops at React Native 0.78
+        wired by hand because `install-expo-modules` knows no Expo SDK for React Native 0.86
   - [x] Either app running on a physical device: the Expo example runs on an iPhone 15,
         live camera, studio and exports included
   - [x] Screens: Home · Basic · Playground · Triggers · Data modes · Performance · Recipes ·

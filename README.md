@@ -89,13 +89,16 @@ npx react-native-pose-detection fetch-model full
 ```
 
 `expo` provides the autolinking that links this Expo module; it does not make your app an Expo
-app. Each Expo SDK is built for one React Native, hence the pinned version. **If your app already
-has `expo`, install the package alone**: a version named in the command replaces the one you have.
-An app that does not use Expo modules yet wires that autolinking into its native projects once:
+app. [Each Expo SDK is built for one React Native](https://docs.expo.dev/versions/latest/#each-expo-sdk-version-depends-on-a-react-native-version),
+hence the pinned version. **If your app already has `expo`, install the package alone**: a
+version named in the command replaces the one you have. An app that does not use Expo modules yet
+wires that autolinking into its native projects once:
 [the steps](https://khalid999devs.github.io/react-native-pose-detection/installation#wiring-expo-modules-into-an-existing-app).
 
-Expo has no SDK for React Native 0.87, the version the React Native CLI starts new apps on, so
-start a new app on 0.86: `npx @react-native-community/cli init MyApp --version 0.86.3`.
+**Starting a new app?** `npx create-expo-app@latest MyApp --template bare-minimum` skips that
+wiring: it creates a bare app with Expo modules already set up, on the React Native the newest
+Expo SDK is built for. The React Native CLI's default can have no SDK at all, since Expo skips
+some versions, such as 0.87.
 
 On iOS, set the deployment target to 16.4 in the `Podfile` and the Xcode target, and add the
 camera permission to **`ios/<YourApp>/Info.plist`**:

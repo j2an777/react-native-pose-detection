@@ -53,18 +53,22 @@ cd ios && pod install                       # after the wiring below
 the Expo Modules API, and that API's autolinking is what finds the native module. You need the
 `expo` package for autolinking. You do not need the config plugin, `app.json`, or prebuild.
 
-Each Expo SDK is built against one React Native, so take the one that matches yours: `expo@56`
-for React Native 0.85 and `expo@57` for 0.86. npm cannot catch a mismatch, since `expo` accepts
-any React Native, and a mismatch shows up later: `expo@57` on React Native 0.85 fails to compile
-for Android. So `fetch-model` warns about one and installs anyway, and `doctor` fails on it, both
-naming the version to install.
+[Each Expo SDK is built against one React Native](https://docs.expo.dev/versions/latest/#each-expo-sdk-version-depends-on-a-react-native-version),
+so take the one that matches yours: `expo@56` for React Native 0.85 and `expo@57` for 0.86. npm
+cannot catch a mismatch, since `expo` accepts any React Native, and a mismatch shows up later:
+`expo@57` on React Native 0.85 fails to compile for Android. So `fetch-model` warns about one and
+installs anyway, and `doctor` fails on it, both naming the version to install.
 
-Expo skips some React Native versions, and 0.87, the one the React Native CLI starts new apps on,
-has no SDK. Start a new bare app on 0.86 instead, which `doctor` also suggests on 0.87:
+**Starting a new app?** Create it from Expo's bare template: a plain React Native app with
+`android/` and `ios/` checked in, on the React Native the newest Expo SDK is built for, with the
+[wiring below](#wiring-expo-modules-into-an-existing-app) and the iOS 16.4 target already done.
 
 ```bash
-npx @react-native-community/cli init MyApp --version 0.86.3
+npx create-expo-app@latest MyApp --template bare-minimum
 ```
+
+The React Native CLI's default can have no Expo SDK at all, since Expo skips some React Native
+versions, such as 0.87. On one of those, `doctor` names the newest pair this package supports.
 
 **An app that already has `expo` keeps it.** Install the package alone,
 `npm i react-native-pose-detection`: an `expo@…` in the command replaces the SDK you have, and
@@ -78,10 +82,11 @@ install it anyway, and `doctor` then fails on the version, see
 
 ### Wiring Expo modules into an existing app
 
-The documented tool for this is `npx install-expo-modules@latest`, and on a recent React Native
-it will not run: version 0.16.0 knows Expo SDK 53 and React Native 0.78 at the newest, and stops
-with `Unable to find compatible Expo SDK version`. Until it catches up, the edits are below.
-A working copy of all of them is [`example/bare`](../example/bare), which CI builds on every push.
+On React Native 0.85, `npx install-expo-modules@latest` makes every edit below for you: it adds
+`expo@56`, raises iOS to 16.4 in both places and wires both native projects. Its version 0.16.0
+knows Expo SDKs up to 56, so on React Native 0.86 it stops with
+`Unable to find compatible Expo SDK version`, and the edits are yours to make. A working copy of
+all of them is [`example/bare`](../example/bare), which CI builds on every push.
 
 `android/settings.gradle`, above `include ':app'`, merged into the `pluginManagement`, `plugins`
 and `extensions.configure` blocks the template already has rather than added beside them:
@@ -161,7 +166,7 @@ And on the app target in Xcode, **General → Minimum Deployments**, which is
 
 A bare app also needs Expo's autolinking in its `Podfile`, the counterpart of
 `expo-autolinking-settings` in `settings.gradle`. `install-expo-modules` writes it for you on
-React Native 0.78 and below; above that, add it by hand:
+React Native 0.85; on 0.86, add it by hand:
 
 ```ruby
 require File.join(
