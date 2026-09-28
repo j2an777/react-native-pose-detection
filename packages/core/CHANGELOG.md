@@ -6,9 +6,8 @@ on the commit that was published.
 
 ## 0.2.1
 
-A shorter README: the requirements first, then installation, a quick start and usage from the
-simplest case to the advanced ones, with the guides and the API reference linked on the
-documentation site. No code changes.
+The README is back to the shape of 0.1.0's, updated for 0.2, with every event and function listed
+and its links now going to the documentation site. No code changes.
 
 ## 0.2.0
 
