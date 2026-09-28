@@ -54,8 +54,9 @@ the Expo Modules API, and that API's autolinking is what finds the native module
 `expo` package for autolinking. You do not need the config plugin, `app.json`, or prebuild.
 
 Each Expo SDK is built against one React Native, so take the one that matches yours: `expo@56`
-for React Native 0.85 and `expo@57` for 0.86. A plain `expo` installs the newest SDK, which may
-not match.
+for React Native 0.85 and `expo@57` for 0.86. npm cannot catch a mismatch, since `expo` accepts
+any React Native, so `fetch-model` warns about one and `doctor` fails on it, naming the version
+to install.
 
 ### Wiring Expo modules into an existing app
 

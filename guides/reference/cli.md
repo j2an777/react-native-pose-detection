@@ -53,6 +53,7 @@ npx react-native-pose-detection doctor
 Checks the things that actually break:
 
 ```text
+✓ Expo SDK for React Native   expo 57 with react-native 0.86.2
 ✓ model installed             android/app/src/main/assets/pose_landmarker_full.task
 ✓ SHA-256 matches manifest    pose_landmarker_full.task
 ✓ model installed             ios/MyApp/Resources/pose_landmarker_full.task
@@ -62,7 +63,7 @@ Checks the things that actually break:
 ✓ iOS deployment target 16.4  found 16.4
 ✓ android.permission.CAMERA   AndroidManifest.xml
 ✗ NSCameraUsageDescription    missing from Info.plist
-1 of 9 checks failed
+1 of 10 checks failed
 ```
 
 | Mark | Meaning |

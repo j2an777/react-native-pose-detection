@@ -7,8 +7,13 @@ on the commit that was published.
 ## 0.2.1
 
 The first 0.2 release on `latest`. 0.2.0 went out on `next` only, so an app coming from 0.1.0
-gets everything under [0.2.0](#020); start with [Upgrading from 0.1.0](#upgrading-from-010). The
-code is identical to 0.2.0.
+gets everything under [0.2.0](#020); start with [Upgrading from 0.1.0](#upgrading-from-010).
+
+### Added
+
+- `doctor` and `fetch-model` check that the installed Expo SDK is the one built for the app's
+  React Native, and name the version to install. npm cannot catch this, since `expo` accepts any
+  React Native, and a mismatch only fails later in the native build.
 
 ### Changed
 
