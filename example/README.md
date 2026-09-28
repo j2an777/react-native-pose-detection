@@ -19,7 +19,8 @@ and registers the resource in the Xcode target. The bare app proves
 already exist, and that autolinking finds the module without a plugin. A bug that appears in
 only one of them is the common case, not the rare one.
 
-CI builds both apps on both platforms on every commit, so four install cells stay proven:
+CI builds both apps on both platforms on every push that changes code, so four install cells stay
+proven:
 see [testing](../docs/testing.md#ci-matrix).
 
 ## What is inside

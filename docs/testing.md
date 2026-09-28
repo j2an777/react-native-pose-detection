@@ -1,7 +1,7 @@
 # Testing
 
 Three layers, each saying plainly what it proves: a JavaScript suite on every push, native unit
-suites on every push, and a device sweep that drives the example app on a real phone or an
+suites on every push that changes code, and a device sweep that drives the example app on a real phone or an
 emulator with nobody tapping. What none of them covers is listed at the end, because a testing
 document that blurs that is worse than none.
 

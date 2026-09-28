@@ -1,0 +1,42 @@
+name: Docs
+
+# Every push, since CI skips one that only changes documentation. Cheap: one Linux job, no builds.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# `npm ci` executes third-party lifecycle scripts, so the token those scripts inherit is read-only.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docs:
+    name: 'Docs: markdown, spelling, links'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint:md
+      # npm shows packages/core/README.md, and it must match the README GitHub shows.
+      - run: npm run check:readme
+      - run: npm run spell
+      # The reference-parity tests read guides/, so a docs-only change can fail them.
+      - run: npm test
+      # Third-party action, so it is pinned to a commit rather than to a tag its owner can move.
+      #
+      # The token is not for private links: with one, lychee resolves github.com URLs through the
+      # API instead of fetching the pages, which is what stops the runner's `HTTP/2 protocol
+      # error` against github.com from failing a build over links that are fine.
+      - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: '--config lychee.toml --no-progress "**/*.md"'
+          token: ${{ secrets.GITHUB_TOKEN }}

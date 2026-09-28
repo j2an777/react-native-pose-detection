@@ -1,11 +1,26 @@
 name: CodeQL
 
-# Changes land on main directly, so every push is scanned, plus pull requests and a weekly sweep.
+# Only JavaScript and TypeScript are analyzed, so only a change to them is scanned, plus a weekly
+# sweep that picks up new queries.
 on:
   push:
     branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.js'
+      - '**/*.mjs'
+      - '**/*.cjs'
+      - '.github/workflows/codeql.yml'
   pull_request:
     branches: [main]
+    paths:
+      - '**/*.ts'
+      - '**/*.tsx'
+      - '**/*.js'
+      - '**/*.mjs'
+      - '**/*.cjs'
+      - '.github/workflows/codeql.yml'
   schedule:
     - cron: '0 3 * * 1'
 

@@ -86,7 +86,7 @@ On React Native 0.85, `npx install-expo-modules@latest` makes every edit below f
 `expo@56`, raises iOS to 16.4 in both places and wires both native projects. Its version 0.16.0
 knows Expo SDKs up to 56, so on React Native 0.86 it stops with
 `Unable to find compatible Expo SDK version`, and the edits are yours to make. A working copy of
-all of them is [`example/bare`](../example/bare), which CI builds on every push.
+all of them is [`example/bare`](../example/bare), which CI builds on every push that changes code.
 
 `android/settings.gradle`, above `include ':app'`, merged into the `pluginManagement`, `plugins`
 and `extensions.configure` blocks the template already has rather than added beside them:

@@ -18,7 +18,7 @@ react-native-pose-detection/
 │   └── bare/                  bare React Native app, the same screens, installed via the CLI
 ├── scripts/                   the device sweep, and the dependency and lint guards
 ├── ss/                        the README's screenshots
-└── .github/                   CI, CodeQL, the docs-site deploy, Dependabot, issue templates
+└── .github/                   CI, docs checks, CodeQL, the docs-site deploy, Dependabot, issue templates
 ```
 
 `example/bare` commits its `android/` and `ios/` directories; `example/expo` does not. That is

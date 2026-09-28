@@ -78,7 +78,7 @@ public API by accident.
 | Zero runtime deps | `npm run audit:deps` | a dependency reaching a consumer's app at all |
 | npm audit (dev) | `npm run audit:dev` | build-chain vulnerabilities at critical |
 | License check | `npm run audit:license` | copyleft contamination |
-| CodeQL | `.github/workflows/codeql.yml` | static analysis on JavaScript and TypeScript, per PR and weekly |
+| CodeQL | `.github/workflows/codeql.yml` | static analysis on JavaScript and TypeScript, when they change and weekly |
 | Dependabot | `.github/dependabot.yml` | security advisories, and GitHub Actions whose tag moved or was yanked |
 
 `audit:deps` asserts that `react-native-pose-detection` declares no `dependencies`, which is the
@@ -139,8 +139,8 @@ seconds; CI runs the tests on the push.
 
 Not part of `npm run check`, and not part of CI either: they need hardware. The device sweep
 drives the example app on a phone or an emulator with nobody tapping, and runs before a release.
-What CI does run on every push is the build matrix, platform × install method, in the four cells
-below. See [testing](./testing.md).
+What CI does run, on every push that changes more than documentation, is the build matrix,
+platform × install method, in the four cells below. See [testing](./testing.md).
 
 ## Running links locally
 
@@ -150,19 +150,20 @@ below. See [testing](./testing.md).
 brew install lychee   # macOS
 ```
 
-It is not part of `npm run check` for that reason, but it runs on every PR. Run it before
+It is not part of `npm run check` for that reason, but `docs.yml` runs it on every push. Run it before
 pushing documentation changes. A hand-rolled grep will miss malformed links like
 `](.reference/file.md)`, which resolve to nothing but look plausible.
 
 ## What CI actually runs
 
-One job per line, in `.github/workflows/ci.yml`, plus CodeQL and the docs site in workflows of
-their own.
+One job per line. `.github/workflows/ci.yml` skips a push that only changes documentation, which
+cannot break a build, so `docs` runs in `docs.yml` on every push instead. CodeQL and the docs site
+have workflows of their own.
 
 | Job | Runner | Steps |
 | --- | --- | --- |
 | `code` | ubuntu, Node 22.22.1 **and** 24 | `lint`, `format:check`, `typecheck`, `test`, `deadcode` |
-| `docs` | ubuntu | `lint:md`, `check:readme`, `spell`, and lychee for links |
+| `docs` | ubuntu, `docs.yml`, every push | `lint:md`, `check:readme`, `spell`, `test` for the reference-parity tests that read `guides/`, and lychee for links |
 | `kotlin` | ubuntu | ktlint over `packages/core/android` |
 | `swift` | macOS | `swiftlint lint --strict`, and the engine suite with `swift test` |
 | `package` | ubuntu, Node 22.22.1 **and** 24 | `check:package`, the tarball guard, and a smoke test of the packed CLI |
@@ -172,7 +173,7 @@ their own.
 | `ios-expo` | macOS | Prebuilds `example/expo`, `pod install`, simulator build, asserts the plugin registered the model in the target and that exactly one reached the app bundle |
 | `ios-bare` | macOS | Installs the model into `example/bare` with the CLI, asserts the CLI left the Xcode project and `Podfile.lock` unchanged, builds **Release** so dead-stripping runs, and asserts the module survived it |
 | `commits` | ubuntu, pull requests only | commitlint from the base commit to HEAD |
-| CodeQL | ubuntu | Per PR, on every push to `main` and weekly, JavaScript and TypeScript |
+| CodeQL | ubuntu | JavaScript and TypeScript, on a push to `main` or a PR that changes them, and weekly |
 | Docs site | ubuntu, on a push that touches `guides/` | VitePress builds `guides/` into the site, failing on a dead link, and deploys it to GitHub Pages |
 
 Three details worth knowing before editing the file. Every action is pinned to a commit SHA

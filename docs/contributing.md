@@ -307,8 +307,9 @@ squash-merge commit, so they are what the CHANGELOG is written from.
 
 ### What CI checks
 
-`code`, `docs`, `kotlin`, `swift`, `package`, `security`, the four build cells `android-expo`,
-`android-bare`, `ios-expo` and `ios-bare`, and `commits`, plus CodeQL in its own workflow. `code`
+`code`, `kotlin`, `swift`, `package`, `security`, the four build cells `android-expo`,
+`android-bare`, `ios-expo` and `ios-bare`, and `commits`, on every push that changes more than
+documentation. `docs` runs on every push, in `docs.yml`, and CodeQL in its own workflow. `code`
 and `package` each run twice, on Node 22.22.1 and on 24. Run the local half first:
 
 ```bash
