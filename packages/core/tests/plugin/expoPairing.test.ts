@@ -62,6 +62,29 @@ test('a React Native newer than the table still fails, without inventing an SDK'
   assert.match(check.detail, /npm i expo@<the SDK for React Native 0\.87>$/);
 });
 
+test('a React Native older than the package supports fails, even with its own SDK', async () => {
+  const check = await checkExpoMatchesReactNative(
+    project({ reactNative: '0.83.10', expo: '55.0.31', bundledReactNative: '0.83.10' }),
+  );
+  assert.equal(check.status, 'fail');
+  assert.equal(
+    check.detail,
+    'react-native 0.83.10 is older than this package supports, which needs React Native 0.85 and ' +
+      'Expo SDK 56 or newer',
+  );
+});
+
+test('an SDK older than the package supports fails, naming the one for this React Native', async () => {
+  const check = await checkExpoMatchesReactNative(
+    project({ reactNative: '0.85.3', expo: '55.0.31', bundledReactNative: '0.83.10' }),
+  );
+  assert.equal(check.status, 'fail');
+  assert.equal(
+    check.detail,
+    'expo 55 is older than this package supports, which needs SDK 56 or newer: npm i expo@56',
+  );
+});
+
 test('a missing expo fails, because it is what links the module', async () => {
   const check = await checkExpoMatchesReactNative(project({ reactNative: '0.85.3' }));
   assert.equal(check.status, 'fail');

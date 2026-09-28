@@ -12,6 +12,10 @@ export const skip = (label: string, detail: string): Check => ({ status: 'skip',
 /** The SDK each supported React Native pairs with, to name the fix; newer pairs fall back to prose. */
 const EXPO_SDK_FOR_REACT_NATIVE: Readonly<Record<string, string>> = { '0.85': '56', '0.86': '57' };
 
+// The floor is the SDK whose NativeArrayBuffer the native code returns frames through.
+const MIN_REACT_NATIVE = '0.85';
+const MIN_EXPO_SDK = 56;
+
 async function readInstalledPackage(
   projectRoot: string,
   name: string,
@@ -41,11 +45,28 @@ function bundledReactNative(json: string | null): string | undefined {
 const minorOf = (version: string): string | undefined =>
   /(\d+)\.(\d+)/.exec(version)?.slice(1, 3).join('.');
 
-/** Expo's peer range accepts any React Native, so npm installs a mismatched SDK without complaint. */
+function isBefore(minor: string, floor: string): boolean {
+  const [major = 0, rest = 0] = minor.split('.').map(Number);
+  const [floorMajor = 0, floorRest = 0] = floor.split('.').map(Number);
+  return major < floorMajor || (major === floorMajor && rest < floorRest);
+}
+
+/**
+ * Expo's peer range accepts any React Native, so npm installs a mismatched SDK without complaint,
+ * and yarn, pnpm and `--legacy-peer-deps` install this package below its floor with a warning.
+ */
 export async function checkExpoMatchesReactNative(projectRoot: string): Promise<Check> {
   const label = 'Expo SDK for React Native';
   const reactNative = await readInstalledPackage(projectRoot, 'react-native');
   const rn = reactNative === null ? undefined : minorOf(reactNative.version);
+  if (reactNative !== null && rn !== undefined && isBefore(rn, MIN_REACT_NATIVE)) {
+    return fail(
+      label,
+      `react-native ${reactNative.version} is older than this package supports, which needs ` +
+        `React Native ${MIN_REACT_NATIVE} and Expo SDK ${MIN_EXPO_SDK} or newer`,
+    );
+  }
+
   const fix =
     rn === undefined
       ? 'npm i expo'
@@ -55,11 +76,18 @@ export async function checkExpoMatchesReactNative(projectRoot: string): Promise<
   if (expo === null) return fail(label, `expo is not installed, and it links this module: ${fix}`);
   if (reactNative === null || rn === undefined) return skip(label, 'react-native is not installed');
 
+  const sdk = expo.version.split('.')[0];
+  if (Number(sdk) < MIN_EXPO_SDK) {
+    return fail(
+      label,
+      `expo ${sdk} is older than this package supports, which needs SDK ${MIN_EXPO_SDK} or newer: ${fix}`,
+    );
+  }
+
   const expected = bundledReactNative(
     await readIfPresent(join(expo.dir, 'bundledNativeModules.json')),
   );
   const built = expected === undefined ? undefined : minorOf(expected);
-  const sdk = expo.version.split('.')[0];
   if (built === undefined) return skip(label, `expo ${sdk} names no React Native version`);
 
   return built === rn
