@@ -327,36 +327,31 @@ Every export on one page, constants included:
 
 ## Documentation
 
-Everything is on the searchable **[documentation site](https://khalid999devs.github.io/react-native-pose-detection/)**, in this order:
+Every guide is also on the searchable **[documentation site](https://khalid999devs.github.io/react-native-pose-detection/)**. Read them in this order:
 
-### Start here
+| Guide | Covers |
+| --- | --- |
+| [Getting started](https://khalid999devs.github.io/react-native-pose-detection/getting-started) | Install, first camera, first data |
+| [Installation](https://khalid999devs.github.io/react-native-pose-detection/installation) | Expo, bare RN, EAS, release builds |
+| [Camera control](https://khalid999devs.github.io/react-native-pose-detection/camera-control) | Lenses, switching, pausing, lifecycle |
+| [Triggers](https://khalid999devs.github.io/react-native-pose-detection/triggers) | Count reps and detect positions natively |
+| [Data delivery](https://khalid999devs.github.io/react-native-pose-detection/data-delivery) | Landmarks in JavaScript, modes and their cost |
+| [Photos and video files](https://khalid999devs.github.io/react-native-pose-detection/files) | Landmarks from files, painted copies |
+| [What you can build](https://khalid999devs.github.io/react-native-pose-detection/recipes) | Worked triggers for squats, holds and jumps |
+| [Performance](https://khalid999devs.github.io/react-native-pose-detection/performance) | Profiles, heat, battery, app size |
+| [Troubleshooting](https://khalid999devs.github.io/react-native-pose-detection/troubleshooting) | Real problems, and the log channel |
 
-- [Getting started](https://khalid999devs.github.io/react-native-pose-detection/getting-started): install, first camera, first data
-- [Installation](https://khalid999devs.github.io/react-native-pose-detection/installation): Expo, bare React Native, EAS and release builds
-
-### Build with it
-
-- [Camera control](https://khalid999devs.github.io/react-native-pose-detection/camera-control): lenses, switching, pausing, lifecycle
-- [Triggers](https://khalid999devs.github.io/react-native-pose-detection/triggers): count reps and detect positions natively
-- [Data delivery](https://khalid999devs.github.io/react-native-pose-detection/data-delivery): read landmarks in JavaScript, and what each mode costs
-- [Photos and video files](https://khalid999devs.github.io/react-native-pose-detection/files): landmarks from files, and painted copies
-- [What you can build](https://khalid999devs.github.io/react-native-pose-detection/recipes): worked triggers for squats, holds and jumps
-
-### Tune and debug
-
-- [Performance](https://khalid999devs.github.io/react-native-pose-detection/performance): profiles, heat, battery and app size
-- [Troubleshooting](https://khalid999devs.github.io/react-native-pose-detection/troubleshooting): common problems and the log channel
-
-### API reference
-
-- [Props](https://khalid999devs.github.io/react-native-pose-detection/reference/pose-camera): every `<PoseCamera>` prop, its default and range
-- [Events](https://khalid999devs.github.io/react-native-pose-detection/reference/events): every callback, its payload, and every error code
-- [Ref methods](https://khalid999devs.github.io/react-native-pose-detection/reference/ref-methods): `switchCamera`, `snapshot`, `getProfile` and the rest
-- [Functions](https://khalid999devs.github.io/react-native-pose-detection/reference/functions): files, permission, validation, frame accessors, logging
-- [Types](https://khalid999devs.github.io/react-native-pose-detection/reference/types): `PoseFrame`, joint names, the wire format
-- [Trigger schema](https://khalid999devs.github.io/react-native-pose-detection/reference/trigger-schema): conditions, emit modes, validation rules
-- [Camera permission](https://khalid999devs.github.io/react-native-pose-detection/reference/permissions): the four states, and why blocked is not denied
-- [Config plugin](https://khalid999devs.github.io/react-native-pose-detection/reference/config-plugin) and [CLI](https://khalid999devs.github.io/react-native-pose-detection/reference/cli): model install options
+| Reference | Covers |
+| --- | --- |
+| [`<PoseCamera>` props](https://khalid999devs.github.io/react-native-pose-detection/reference/pose-camera) | Every prop, its default and its range |
+| [Events](https://khalid999devs.github.io/react-native-pose-detection/reference/events) | Every callback, its payload, every error code |
+| [Ref methods](https://khalid999devs.github.io/react-native-pose-detection/reference/ref-methods) | `switchCamera`, `snapshot`, `getProfile`, … |
+| [Functions](https://khalid999devs.github.io/react-native-pose-detection/reference/functions) | Files, permission, validation, accessors, logging |
+| [Types](https://khalid999devs.github.io/react-native-pose-detection/reference/types) | `PoseFrame`, joint names, the wire format |
+| [Trigger schema](https://khalid999devs.github.io/react-native-pose-detection/reference/trigger-schema) | Conditions, emit modes, validation rules |
+| [Camera permission](https://khalid999devs.github.io/react-native-pose-detection/reference/permissions) | The four states, and why blocked is not denied |
+| [Config plugin](https://khalid999devs.github.io/react-native-pose-detection/reference/config-plugin) | `app.json` options |
+| [CLI](https://khalid999devs.github.io/react-native-pose-detection/reference/cli) | `fetch-model`, `doctor`, `clear-cache` |
 
 The [example app](https://github.com/khalid999devs/react-native-pose-detection/tree/main/example)
 runs all of it, once as an Expo app and once as a bare one.
