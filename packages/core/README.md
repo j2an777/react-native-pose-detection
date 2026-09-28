@@ -26,6 +26,7 @@ until you ask.
 ## Why this one
 
 - **One component.** `<PoseCamera />` opens the camera, finds the body and draws the skeleton.
+- **Joint angles built in.** Knee, elbow, hip and more: twelve angles, measured and drawn natively.
 - **Native triggers.** Rep counting runs on the camera thread; you get one event per rep.
 - **No bridge traffic by default.** Landmarks reach JavaScript only when you ask for them.
 - **Tunes itself.** 30 fps when the phone keeps up, backing off for heat, battery and an empty frame.
