@@ -318,7 +318,7 @@ export async function ensureModel(
     if (cached.bytes === null) {
       log.warn(
         `skipDownload is set and ${model.fileName} is not in the cache (${cacheDir}). ` +
-          `Leaving the native projects untouched.`,
+          `Installing nothing: model files already in the native projects stay as they are.`,
       );
     } else {
       log.warn(
