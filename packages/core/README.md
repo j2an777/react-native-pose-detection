@@ -191,7 +191,49 @@ Override any axis with `profile`, `targetFps`, `resolution`, `analysisResolution
 
 ## The whole surface at a glance
 
-Every prop is optional. Set one to pin that axis; the rest stay automatic.
+Every prop on one component. All of them optional; an explicit value pins that axis and the
+rest stay automatic.
+
+```tsx
+<PoseCamera
+  ref={cam}
+  style={{ flex: 1 }}
+  // camera
+  facing="front"                    // 'auto' | 'front' | 'back'
+  active={isFocused}                // the whole session on/off
+  detection={true}                  // inference on/off; off parks the model
+  resolution="auto"                 // preview: '480p' | '720p' | '1080p'
+  // detection
+  maxPoses={1}                      // 1 to 5
+  minConfidence={0.6}               // what counts as a body
+  smoothing="auto"                  // off for one pose, which MediaPipe smooths already
+  // performance
+  profile="auto"                    // 'efficient' | 'balanced' | 'quality' | 'unrestricted'
+  targetFps="auto"                  // a number replaces the governed rate
+  analysisResolution="auto"         // what the model sees: '360p' | '480p' | '720p'
+  delegate="auto"                   // 'gpu' | 'cpu'
+  thermalPolicy="adaptive"          // 'critical-only' | 'off'
+  // drawing, all native
+  overlay={{
+    color: '#00E5FF',
+    lineWidth: 3,
+    pointRadius: 4,
+    angles: [{ joint: 'leftKnee' }, { joint: 'rightKnee' }],
+  }}
+  // data out, off unless asked
+  data={{ mode: 'throttled', throttleMs: 100, select: ['leftKnee', 'rightKnee'] }}
+  triggers={[squatTrigger]}
+  logLevel="off"
+  // events
+  onReady={(e) => console.log(e.delegate, e.targetFps)}
+  onError={(e) => console.warn(e.code, e.message)}
+  onCameraChange={(e) => setFacing(e.facing)}
+  onPerformanceChange={(e) => console.log(e.reason, e.targetFps)}
+  onTrigger={(e) => setReps(e.count)}
+  onPose={(frame) => setFrame(frame)}
+  onLog={(entries) => entries.forEach((e) => console.log(e.message))}
+/>
+```
 
 | Prop | Default | What it does |
 | --- | --- | --- |
