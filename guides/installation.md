@@ -59,6 +59,13 @@ any React Native, and a mismatch shows up later: `expo@57` on React Native 0.85 
 for Android. So `fetch-model` warns about one and installs anyway, and `doctor` fails on it, both
 naming the version to install.
 
+Expo skips some React Native versions, and 0.87, the one the React Native CLI starts new apps on,
+has no SDK. Start a new bare app on 0.86 instead, which `doctor` also suggests on 0.87:
+
+```bash
+npx @react-native-community/cli init MyApp --version 0.86.3
+```
+
 **An app that already has `expo` keeps it.** Install the package alone,
 `npm i react-native-pose-detection`: an `expo@…` in the command replaces the SDK you have, and
 npm does it without asking. Leave `expo` out, and npm adds the newest SDK, whatever your React

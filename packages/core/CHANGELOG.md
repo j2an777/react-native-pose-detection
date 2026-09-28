@@ -4,6 +4,19 @@ All notable changes to this package are documented here. Versions follow
 [semantic versioning](https://semver.org), and every published version is an annotated `v*` tag
 on the commit that was published.
 
+## Unreleased
+
+### Changed
+
+- `doctor` and `fetch-model` name a pairing that works when React Native is newer than any Expo
+  SDK this package pairs with. React Native 0.87 has no SDK, so they suggest React Native 0.86
+  with `expo@57` instead of a placeholder.
+
+### Documentation
+
+- The README and guides say that Expo has no SDK for React Native 0.87, the React Native CLI's
+  default for new apps, and to start a new bare app on 0.86.
+
 ## 0.2.1
 
 A maintenance release on top of 0.2.0: install checks for the Expo SDK, stricter validation, one

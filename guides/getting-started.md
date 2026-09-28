@@ -59,6 +59,9 @@ npm i expo@56   # skip if the app has expo already; the SDK for React Native 0.8
 npx react-native-pose-detection fetch-model full
 ```
 
+Starting a new app? Expo has no SDK for React Native 0.87, the CLI's default, so create it on
+0.86: `npx @react-native-community/cli init MyApp --version 0.86.3`.
+
 `expo` provides the autolinking that links this package's native code; it does not make your app
 an Expo app. Wire that autolinking into both native projects once, as
 [installation](./installation.md#wiring-expo-modules-into-an-existing-app) walks through, set the

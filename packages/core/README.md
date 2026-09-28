@@ -94,6 +94,9 @@ has `expo`, install the package alone**: a version named in the command replaces
 An app that does not use Expo modules yet wires that autolinking into its native projects once:
 [the steps](https://khalid999devs.github.io/react-native-pose-detection/installation#wiring-expo-modules-into-an-existing-app).
 
+Expo has no SDK for React Native 0.87, the version the React Native CLI starts new apps on, so
+start a new app on 0.86: `npx @react-native-community/cli init MyApp --version 0.86.3`.
+
 On iOS, set the deployment target to 16.4 in the `Podfile` and the Xcode target, and add the
 camera permission to **`ios/<YourApp>/Info.plist`**:
 

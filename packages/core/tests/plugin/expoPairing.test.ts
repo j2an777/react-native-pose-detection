@@ -54,12 +54,22 @@ test('an SDK built for another React Native fails and names the one to install',
   assert.equal(check.detail, 'expo 57 is built for React Native 0.86, found 0.85.3: npm i expo@56');
 });
 
-test('a React Native newer than the table still fails, without inventing an SDK', async () => {
+test('a React Native newer than the table fails, naming the newest pair without inventing an SDK', async () => {
   const check = await checkExpoMatchesReactNative(
-    project({ reactNative: '0.87.0', expo: '57.0.25', bundledReactNative: '0.86.3' }),
+    project({ reactNative: '0.87.1', expo: '57.0.25', bundledReactNative: '0.86.3' }),
   );
   assert.equal(check.status, 'fail');
-  assert.match(check.detail, /npm i expo@<the SDK for React Native 0\.87>$/);
+  assert.equal(
+    check.detail,
+    'expo 57 is built for React Native 0.86, found 0.87.1: install the Expo SDK built for React ' +
+      'Native 0.87 if there is one, or use React Native 0.86 with npm i expo@57',
+  );
+});
+
+test('a missing expo on a React Native newer than the table names the newest pair', async () => {
+  const check = await checkExpoMatchesReactNative(project({ reactNative: '0.87.1' }));
+  assert.equal(check.status, 'fail');
+  assert.match(check.detail, /or use React Native 0\.86 with npm i expo@57$/);
 });
 
 test('a React Native older than the package supports fails, even with its own SDK', async () => {

@@ -9,12 +9,28 @@ export const pass = (label: string, detail: string): Check => ({ status: 'pass',
 export const fail = (label: string, detail: string): Check => ({ status: 'fail', label, detail });
 export const skip = (label: string, detail: string): Check => ({ status: 'skip', label, detail });
 
-/** The SDK each supported React Native pairs with, to name the fix; newer pairs fall back to prose. */
+/** The SDK each supported React Native pairs with, to name the fix; a newer one gets the newest pair. */
 const EXPO_SDK_FOR_REACT_NATIVE: Readonly<Record<string, string>> = { '0.85': '56', '0.86': '57' };
 
 // The floor is the SDK whose NativeArrayBuffer the native code returns frames through.
 const MIN_REACT_NATIVE = '0.85';
 const MIN_EXPO_SDK = 56;
+
+const [NEWEST_REACT_NATIVE, NEWEST_EXPO_SDK] = Object.entries(EXPO_SDK_FOR_REACT_NATIVE).at(-1) ?? [
+  MIN_REACT_NATIVE,
+  String(MIN_EXPO_SDK),
+];
+
+/** Expo skips some React Native versions, so one newer than the table may have no SDK at all. */
+function expoFix(rn: string | undefined): string {
+  if (rn === undefined) return 'npm i expo';
+  const sdk = EXPO_SDK_FOR_REACT_NATIVE[rn];
+  if (sdk !== undefined) return `npm i expo@${sdk}`;
+  return (
+    `install the Expo SDK built for React Native ${rn} if there is one, or use React Native ` +
+    `${NEWEST_REACT_NATIVE} with npm i expo@${NEWEST_EXPO_SDK}`
+  );
+}
 
 async function readInstalledPackage(
   projectRoot: string,
@@ -67,10 +83,7 @@ export async function checkExpoMatchesReactNative(projectRoot: string): Promise<
     );
   }
 
-  const fix =
-    rn === undefined
-      ? 'npm i expo'
-      : `npm i expo@${EXPO_SDK_FOR_REACT_NATIVE[rn] ?? `<the SDK for React Native ${rn}>`}`;
+  const fix = expoFix(rn);
 
   const expo = await readInstalledPackage(projectRoot, 'expo');
   if (expo === null) return fail(label, `expo is not installed, and it links this module: ${fix}`);
