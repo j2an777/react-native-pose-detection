@@ -651,13 +651,15 @@ export const EXTERNAL: readonly {
   {
     title: 'Simulate memory warning',
     verifies: 'The landmarker is released at once and rebuilt when the camera is next used.',
-    android: 'adb shell am send-trim-memory com.posedetection.example RUNNING_CRITICAL',
+    android:
+      'adb shell am send-trim-memory com.posedetection.example RUNNING_CRITICAL (the bare app is com.posedetection.bare)',
     ios: 'Simulator · Features · Trigger Memory Warning',
   },
   {
     title: 'Clear calibration cache',
     verifies: 'The next launch measures from scratch: phase calibrating, then settled.',
-    android: 'adb shell pm clear com.posedetection.example',
+    android:
+      'adb shell pm clear com.posedetection.example (the bare app is com.posedetection.bare)',
     ios: 'Delete the app and reinstall',
   },
   {
