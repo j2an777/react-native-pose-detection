@@ -14,7 +14,12 @@ import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from
 import type { LogEntry } from './types/logging';
 import type { Condition, TriggerEvent } from './types/triggers';
 import { emitLogEntries, holdLogStream } from './logging';
-import { assertValidCameraNumbers, assertValidDataConfig, assertValidTriggers } from './validation';
+import {
+  assertValidCameraNumbers,
+  assertValidDataConfig,
+  assertValidLogLevel,
+  assertValidTriggers,
+} from './validation';
 import { resolveAngleJoints } from './frames/wire';
 
 type NativeEvent<T> = { nativeEvent: T };
@@ -68,6 +73,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
   if (triggers && triggers.length > 0) assertValidTriggers(triggers);
   assertValidCameraNumbers(props);
   assertValidDataConfig(props.data);
+  if (props.logLevel !== undefined) assertValidLogLevel(props.logLevel);
 
   const requestedAngles = data?.angles;
   const angleJoints = useStableList<AngleJointName>(

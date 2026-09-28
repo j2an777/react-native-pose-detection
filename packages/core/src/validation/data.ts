@@ -9,23 +9,19 @@ function describe(value: unknown): string {
 }
 
 // Native drops a name it cannot read, and a dropped `select` joint stops every frame silently.
-export function validateDataConfig(data: unknown): ValidationIssue[] {
-  const issues: ValidationIssue[] = [];
-  if (typeof data !== 'object' || data === null) return issues;
-  const { mode, select, angles } = data as Record<string, unknown>;
-
-  if (mode !== undefined && !MODES.includes(mode as string)) {
-    issues.push({ path: 'data.mode', message: `must be one of: ${MODES.join(', ')}` });
-  }
-
+function checkJoints(
+  { select, angles }: Record<string, unknown>,
+  prefix: string,
+  issues: ValidationIssue[],
+): void {
   if (select !== undefined) {
     if (!Array.isArray(select)) {
-      issues.push({ path: 'data.select', message: 'must be an array of joint names' });
+      issues.push({ path: `${prefix}.select`, message: 'must be an array of joint names' });
     } else {
       select.forEach((joint: unknown, index) => {
         if (!isJointName(joint)) {
           issues.push({
-            path: `data.select[${index}]`,
+            path: `${prefix}.select[${index}]`,
             message: `unknown joint ${describe(joint)}`,
           });
         }
@@ -36,20 +32,40 @@ export function validateDataConfig(data: unknown): ValidationIssue[] {
   if (angles !== undefined && typeof angles !== 'boolean') {
     if (!Array.isArray(angles)) {
       issues.push({
-        path: 'data.angles',
+        path: `${prefix}.angles`,
         message: 'must be true, false or an array of joint names',
       });
     } else {
       angles.forEach((joint: unknown, index) => {
         if (isAngleJointName(joint)) return;
         issues.push({
-          path: `data.angles[${index}]`,
+          path: `${prefix}.angles[${index}]`,
           message: isJointName(joint)
             ? `${describe(joint)} has no angle, only joints where two limb segments meet do`
             : `unknown joint ${describe(joint)}`,
         });
       });
     }
+  }
+}
+
+export function validateDataConfig(data: unknown): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (typeof data !== 'object' || data === null) return issues;
+  const config = data as Record<string, unknown>;
+
+  if (config['mode'] !== undefined && !MODES.includes(config['mode'] as string)) {
+    issues.push({ path: 'data.mode', message: `must be one of: ${MODES.join(', ')}` });
+  }
+  checkJoints(config, 'data', issues);
+  return issues;
+}
+
+/** `select` and `angles` on `detectOnImage` and `detectOnVideo`, held to the rules `data` is. */
+export function validateFileJoints(options: unknown): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (typeof options === 'object' && options !== null) {
+    checkJoints(options as Record<string, unknown>, 'options', issues);
   }
   return issues;
 }

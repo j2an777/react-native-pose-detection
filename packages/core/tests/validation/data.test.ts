@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { PoseConfigError } from '../../src/errors';
-import { assertValidDataConfig, validateDataConfig } from '../../src/validation/data';
+import {
+  assertValidDataConfig,
+  validateDataConfig,
+  validateFileJoints,
+} from '../../src/validation/data';
 
 function paths(issues: readonly { path: string }[]): string[] {
   return issues.map((issue) => issue.path);
@@ -50,6 +54,16 @@ test('select and angles must be arrays', () => {
     'data.select',
     'data.angles',
   ]);
+});
+
+test('the file functions hold select and angles to the same rules, under options', () => {
+  const issues = validateFileJoints({ select: ['nose', 'wrist'], angles: ['leftKnee', 'nose'] });
+  assert.deepEqual(paths(issues), ['options.select[1]', 'options.angles[1]']);
+  assert.match(issues[1]?.message ?? '', /has no angle/);
+
+  assert.deepEqual(validateFileJoints({ select: ['leftKnee'], angles: true, maxPoses: 2 }), []);
+  assert.deepEqual(validateFileJoints({ angles: false }), []);
+  assert.deepEqual(validateFileJoints(undefined), []);
 });
 
 test('the assertion throws one PoseConfigError carrying every issue', () => {

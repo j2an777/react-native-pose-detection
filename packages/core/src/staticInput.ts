@@ -1,3 +1,4 @@
+import { PoseConfigError } from './errors';
 import { decodeFrames } from './frames/decodeFrames';
 import { getNativeModule } from './native';
 import type { AngleJointName, JointName } from './types/joints';
@@ -5,7 +6,7 @@ import { ANGLE_JOINT_NAMES } from './types/joints';
 import type { PoseFrame } from './types/frame';
 import { resolveAngleJoints } from './frames/wire';
 import { resolveSmoothing } from './smoothing';
-import { assertValidFileOptions } from './validation';
+import { validateFileJoints, validateFileOptions } from './validation';
 
 export type StaticOptions = {
   /** 1 to 5. Default 1. The subject, the largest body, is always the first frame. */
@@ -43,6 +44,12 @@ export type VideoTask = {
   cancel(): void;
 };
 
+/** Before native sees them: an unknown `select` joint would otherwise surface as a decode error. */
+function assertValidStaticOptions(options: StaticOptions | VideoOptions | undefined): void {
+  const issues = [...validateFileOptions(options), ...validateFileJoints(options)];
+  if (issues.length > 0) throw new PoseConfigError(issues);
+}
+
 function angleJointsFor(angles: StaticOptions['angles']): readonly AngleJointName[] {
   if (angles === false) return [];
   if (angles === undefined || angles === true) return ANGLE_JOINT_NAMES;
@@ -78,7 +85,7 @@ function decode(
  * `IMAGE_DECODE_FAILED`, `MODEL_NOT_FOUND` or `DETECTION_FAILED`.
  */
 export async function detectOnImage(uri: string, options?: StaticOptions): Promise<PoseFrame[]> {
-  assertValidFileOptions(options);
+  assertValidStaticOptions(options);
   const angleJoints = angleJointsFor(options?.angles);
   const buffer = await getNativeModule().detectOnImage(uri, nativeOptions(options, angleJoints));
   return decode(buffer, angleJoints, options?.select);
@@ -91,7 +98,7 @@ let nextTaskId = 1;
  * video. Cancelling resolves with the frames so far, since those are real.
  */
 export function detectOnVideo(uri: string, options?: VideoOptions): VideoTask {
-  assertValidFileOptions(options);
+  assertValidStaticOptions(options);
   const angleJoints = angleJointsFor(options?.angles);
   const module = getNativeModule();
   const taskId = nextTaskId;

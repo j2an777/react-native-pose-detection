@@ -1,15 +1,7 @@
-import { PoseConfigError } from './errors';
-import type { ValidationIssue } from './errors';
 import { getNativeModule } from './native';
 import { logStreamGate } from './native/logStream';
-import { LOG_CATEGORIES, LOG_LEVELS } from './types/logging';
-import type {
-  LogEntry,
-  LogListener,
-  LogLevel,
-  LogLevelConfig,
-  Subscription,
-} from './types/logging';
+import type { LogEntry, LogListener, LogLevelConfig, Subscription } from './types/logging';
+import { assertValidLogLevel } from './validation/logLevel';
 
 // A multiset: with identity dedupe, one remove() would unsubscribe a handler added twice.
 const listeners: LogListener[] = [];
@@ -32,44 +24,9 @@ const stream = logStreamGate(
   },
 );
 
-function isLogLevel(value: unknown): value is LogLevel {
-  return typeof value === 'string' && (LOG_LEVELS as readonly string[]).includes(value);
-}
-
-function validate(config: LogLevelConfig): ValidationIssue[] {
-  if (isLogLevel(config)) return [];
-
-  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
-    return [
-      { path: 'logLevel', message: `must be a level or a map of categories to levels` },
-      { path: 'logLevel', message: `levels are: ${LOG_LEVELS.join(', ')}` },
-    ];
-  }
-
-  const issues: ValidationIssue[] = [];
-  for (const [category, level] of Object.entries(config)) {
-    if (!(LOG_CATEGORIES as readonly string[]).includes(category)) {
-      issues.push({
-        path: `logLevel.${category}`,
-        message: `unknown category, expected one of: ${LOG_CATEGORIES.join(', ')}`,
-      });
-      continue;
-    }
-    if (!isLogLevel(level)) {
-      issues.push({
-        path: `logLevel.${category}`,
-        message: `must be one of: ${LOG_LEVELS.join(', ')}`,
-      });
-    }
-  }
-  return issues;
-}
-
 /** Sets the level app-wide, or per category. Throws `PoseConfigError` on an unknown one. */
 export function setLogLevel(config: LogLevelConfig): void {
-  const issues = validate(config);
-  if (issues.length > 0) throw new PoseConfigError(issues);
-
+  assertValidLogLevel(config);
   getNativeModule().setLogLevel(config);
 }
 
