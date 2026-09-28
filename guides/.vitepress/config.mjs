@@ -12,8 +12,8 @@ const IMAGE = `https://raw.githubusercontent.com/khalid999devs/react-native-pose
 const NAME = 'React Native Pose Detection';
 const HOME_TITLE = 'Real-time pose detection for React Native and Expo';
 const HOME_DESCRIPTION =
-  'On-device pose estimation, body tracking, joint angles and rep counting for React Native and ' +
-  'Expo, powered by MediaPipe, with a native skeleton overlay and zero runtime dependencies.';
+  'On-device pose detection for React Native and Expo: body tracking, joint angles and rep ' +
+  'counting, powered by MediaPipe, with a native skeleton overlay.';
 
 /** Pages whose first paragraph is a poor search result. Not frontmatter, which GitHub renders. */
 const DESCRIPTIONS = {
