@@ -6,12 +6,13 @@ on the commit that was published.
 
 ## 0.2.2
 
-A small release for bare React Native apps: clearer setup guidance, and a `doctor` fix for React
-Native 0.87. The native code is the same as in 0.2.1, and nothing changes in the API.
+Clearer setup for bare React Native apps and a `doctor` fix for React Native 0.87. Same native
+code as 0.2.1, and no API changes.
 
-0.2.0, 0.2.1 and 0.2.2 came out within days of each other, so this section covers the whole step
-from 0.1.0. Upgrade straight to 0.2.2. The 0.2.0 and 0.2.1 notes below are the full record, and
-you do not need them to upgrade.
+0.2.0, 0.2.1 and 0.2.2 came out days apart, so these notes cover the whole upgrade from 0.1.0: go
+straight to 0.2.2. The full details are in the
+[0.2.0](https://github.com/khalid999devs/react-native-pose-detection/releases/tag/v0.2.0) and
+[0.2.1](https://github.com/khalid999devs/react-native-pose-detection/releases/tag/v0.2.1) notes.
 
 ### Upgrading
 
@@ -25,9 +26,9 @@ you do not need them to upgrade.
 
 **From 0.1.0:** the two above, and:
 
-- **Minimum versions:** Expo SDK 56, React Native 0.85 and iOS 16.4. Pair the Expo SDK with your
-  React Native: SDK 56 with 0.85, SDK 57 with 0.86. Run `npx react-native-pose-detection doctor`,
-  which checks both. Bare apps set iOS 16.4 in the `Podfile` and in the Xcode target.
+- **Minimum versions:** Expo SDK 56, React Native 0.85 and iOS 16.4, with the SDK matching your
+  React Native (56 with 0.85, 57 with 0.86); `npx react-native-pose-detection doctor` checks both.
+  Bare apps set iOS 16.4 in the `Podfile` and in the Xcode target.
 - **`onPose` and `onPoseBatch` follow `data.mode`.** `'batched'` frames go to `onPoseBatch`, and
   `'throttled'` and `'live'` frames go to `onPose`.
 - **`smoothing` defaults to `'auto'`.** It is off for one person and on for several. Set
@@ -52,26 +53,26 @@ you do not need them to upgrade.
 - **Reporting:** `limitedBy` says what limits the rate, and `thermalState`, `lowPower` and a live
   `getState().fps` are reported alongside it.
 - **Install checks:** `doctor` and `fetch-model` check the Expo SDK against React Native.
-- **Fixes:** dozens, across the camera lifecycle, triggers, photos, videos and exports. They are
-  listed under 0.2.0 and 0.2.1.
+- **Fixes:** dozens, across the camera lifecycle, triggers, photos, videos and exports, listed in
+  the [0.2.0](https://github.com/khalid999devs/react-native-pose-detection/releases/tag/v0.2.0)
+  and [0.2.1](https://github.com/khalid999devs/react-native-pose-detection/releases/tag/v0.2.1)
+  notes.
 
 ### Changed
 
-- `doctor` and `fetch-model` name a pairing that works when React Native is newer than any Expo
-  SDK this package pairs with. React Native 0.87 has no SDK, so they suggest React Native 0.86
-  with `expo@57` instead of a placeholder.
-- The podspec declares iOS 16.4, the minimum every supported Expo SDK needs, instead of 15.1. Expo
-  already raised it to 16.4 during `pod install`, so builds do not change.
+- `doctor` and `fetch-model` suggest a working pair when React Native is newer than every supported
+  SDK. On 0.87, which has no Expo SDK, that is React Native 0.86 with `expo@57`.
+- The podspec declares iOS 16.4, the minimum of every supported Expo SDK, instead of 15.1. Expo
+  already raised it during `pod install`, so builds are unchanged.
 
 ### Documentation
 
-- A new bare app starts from Expo's bare template, which is always on a React Native an Expo SDK is
-  built for, with Expo modules already wired. The React Native CLI's default can have no SDK, as
-  0.87 has none.
-- A bare app that uses other Expo packages can check them all against its SDK with
-  `npx expo install --check`; `doctor` only compares `expo` with React Native.
-- The installation guide no longer says `install-expo-modules` stops at React Native 0.78: it wires
-  a React Native 0.85 app completely, and stops only on 0.86.
+- New bare apps start from Expo's `bare-minimum` template: always on a React Native that an Expo
+  SDK is built for, with Expo modules already wired. The React Native CLI's default can have no
+  SDK, as 0.87 has none.
+- `npx expo install --check` checks every Expo package in a bare app against its SDK; `doctor` only
+  compares `expo` with React Native.
+- Corrected: `install-expo-modules` fully wires a React Native 0.85 app and stops only on 0.86.
 
 ## 0.2.1
 
