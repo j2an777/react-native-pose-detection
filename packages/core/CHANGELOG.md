@@ -26,7 +26,7 @@ A maintenance release on top of 0.2.0: install checks for the Expo SDK, stricter
 Android fix and complete documentation. No API changes.
 
 Coming from 0.1.0? 0.2.0 was only published under the `next` tag, so its notes below apply to you
-too. Start with [Upgrading from 0.1.0](#upgrading-from-010).
+too. Start with its **Upgrading from 0.1.0** section.
 
 ### Upgrading from 0.2.0
 

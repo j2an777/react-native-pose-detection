@@ -150,8 +150,8 @@ platform × install method, in the four cells below. See [testing](./testing.md)
 brew install lychee   # macOS
 ```
 
-It is not part of `npm run check` for that reason, but `docs.yml` runs it on every push. Run it before
-pushing documentation changes. A hand-rolled grep will miss malformed links like
+It is not part of `npm run check` for that reason, but `docs.yml` runs it on every push. Run it
+before pushing documentation changes. A hand-rolled grep will miss malformed links like
 `](.reference/file.md)`, which resolve to nothing but look plausible.
 
 ## What CI actually runs
