@@ -139,8 +139,9 @@ seconds; CI runs the tests on the push.
 
 Not part of `npm run check`, and not part of CI either: they need hardware. The device sweep
 drives the example app on a phone or an emulator with nobody tapping, and runs before a release.
-What CI does run, on every push that changes more than documentation, is the build matrix,
-platform × install method, in the four cells below. See [testing](./testing.md).
+What CI does run, on every pull request and on every push that changes more than documentation,
+is the build matrix, platform × install method, in the four cells below. See
+[testing](./testing.md).
 
 ## Running links locally
 
@@ -157,8 +158,9 @@ before pushing documentation changes. A hand-rolled grep will miss malformed lin
 ## What CI actually runs
 
 One job per line. `.github/workflows/ci.yml` skips a push that only changes documentation, which
-cannot break a build, so `docs` runs in `docs.yml` on every push instead. CodeQL and the docs site
-have workflows of their own.
+cannot break a build, so `docs` runs in `docs.yml` on every push instead. A pull request runs
+everything, because a required check that never reports blocks the merge. CodeQL and the docs
+site have workflows of their own.
 
 | Job | Runner | Steps |
 | --- | --- | --- |

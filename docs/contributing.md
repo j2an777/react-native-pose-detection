@@ -174,7 +174,7 @@ change lands through a pull request.
 | 1 approving review | From a code owner, so @khalid999devs approves every merge |
 | Stale reviews dismissed | New commits invalidate an earlier approval |
 | Re-approval after a push | The last push must be approved, not just an earlier state |
-| 5 status checks, up to date | Code, Docs, Package, Security, Commits must pass on current main |
+| Status checks, up to date | Code and Package on both Node versions, Docs, Security and Commits must pass on current main |
 | Conversations resolved | No merging over unanswered review comments |
 | Linear history | Squash merge only, so the changelog stays readable |
 | No force push, no deletion | main cannot be rewritten or removed |
@@ -307,10 +307,11 @@ squash-merge commit, so they are what the CHANGELOG is written from.
 
 ### What CI checks
 
-`code`, `kotlin`, `swift`, `package`, `security`, the four build cells `android-expo`,
-`android-bare`, `ios-expo` and `ios-bare`, and `commits`, on every push that changes more than
-documentation. `docs` runs on every push, in `docs.yml`, and CodeQL in its own workflow. `code`
-and `package` each run twice, on Node 22.22.1 and on 24. Run the local half first:
+`code`, `kotlin`, `swift`, `package`, `security` and the four build cells `android-expo`,
+`android-bare`, `ios-expo` and `ios-bare`, on every pull request and on every push that changes
+more than documentation, and `commits` on pull requests. `docs` runs on every push, in `docs.yml`,
+and CodeQL in its own workflow. `code` and `package` each run twice, on Node 22.22.1 and on 24.
+Run the local half first:
 
 ```bash
 npm run check       # everything that needs no native toolchain

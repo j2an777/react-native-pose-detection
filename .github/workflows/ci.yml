@@ -1,6 +1,7 @@
 name: CI
 
-# A change to documentation alone cannot break a build, and docs.yml checks it on every push.
+# A push of documentation alone cannot break a build, and docs.yml checks it. A pull request runs
+# everything, because a required check that never reports blocks the merge.
 on:
   push:
     branches: [main]
@@ -11,12 +12,6 @@ on:
       - '.cspell-project.txt'
       - 'lychee.toml'
   pull_request:
-    paths-ignore:
-      - '**/*.md'
-      - 'guides/public/**'
-      - 'ss/**'
-      - '.cspell-project.txt'
-      - 'lychee.toml'
 
 # `npm ci` executes third-party lifecycle scripts, so the token those scripts inherit is
 # read-only. Nothing in these jobs writes back to the repository.
