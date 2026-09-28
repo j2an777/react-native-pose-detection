@@ -94,6 +94,8 @@ hence the pinned version. **If your app already has `expo`, install the package 
 version named in the command replaces the one you have. An app that does not use Expo modules yet
 wires that autolinking into its native projects once:
 [the steps](https://khalid999devs.github.io/react-native-pose-detection/installation#wiring-expo-modules-into-an-existing-app).
+If your app uses other Expo packages too, `npx expo install --check` checks each of them against
+your SDK; `doctor` only compares `expo` with React Native.
 
 **Starting a new app?** `npx create-expo-app@latest MyApp --template bare-minimum` skips that
 wiring: it creates a bare app with Expo modules already set up, on the React Native the newest

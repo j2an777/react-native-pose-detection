@@ -1,8 +1,8 @@
 import AVFoundation
 import CoreMedia
 
-/// The asset reads iOS 16 deprecated: their async replacements need 16 and the floor is 15.1, so
-/// the warnings are kept to this one file. See docs/native-modules.md.
+/// The asset reads iOS 16 deprecated. Their async replacements would change how file jobs read
+/// media, so until that ships the warnings are kept to this one file. See docs/native-modules.md.
 enum AssetCompat {
   static func durationSeconds(_ asset: AVAsset) -> Double {
     return CMTimeGetSeconds(asset.duration)

@@ -1,28 +1,7 @@
-# Next patch (0.2.2)
+# Next patch
 
-Nothing here changes a native binary, so none of it needs a phone. What is already merged for
-0.2.2 is under `## Unreleased` in [the changelog](../../packages/core/CHANGELOG.md).
-
-## Package
-
-- [ ] **PKG-1 · P1 · The podspec says iOS 15.1, but Expo needs 16.4.**
-  - **Today:** `s.platforms = { ios: '15.1' }` in
-    [ReactNativePoseDetection.podspec:16](../../packages/core/ios/ReactNativePoseDetection.podspec#L16).
-    ExpoModulesCore needs iOS 16.4 on SDK 56 and 57. `doctor`, the README and the installation guide
-    already say 16.4.
-  - **Fix:** `ios: '16.4'`.
-  - **Why no phone is needed:** Xcode already builds this pod at 16.4 in `example/bare`
-    (`xcodebuild -showBuildSettings -project Pods/Pods.xcodeproj -target ReactNativePoseDetection`
-    from `example/bare/ios`), so the binary does not change.
-  - **Check:** `example/bare/ios/Podfile.lock` records the podspec's checksum, and CI fails when the
-    lock has moved. Run `pod install` in `example/bare/ios` on macOS and commit the updated lock with
-    the change.
-- [ ] **DOC-26 · P1 · Tell bare apps with other Expo packages to run `npx expo install --check`.**
-  - **Why:** `doctor` only checks that `expo` matches `react-native`. `npx expo install --check` and
-    `npx expo-doctor` flag every Expo package that does not match the installed SDK.
-  - **Where:** the bare section of the root `README.md`, which is copied byte for byte to
-    `packages/core/README.md` (`npm run check:readme` enforces it), and `guides/installation.md`.
-  - **Check:** `npm run check`.
+Nothing here changes a native binary, so none of it needs a phone. What is merged and not released
+yet is under `## Unreleased` in [the changelog](../../packages/core/CHANGELOG.md).
 
 ## Repository
 
@@ -66,14 +45,3 @@ Nothing here changes a published file, so it can land at any time.
   - **Fix:** remove the three settings if Metro still resolves `react-native-pose-detection` from
     the workspace without them.
   - **Check:** start Metro in `example/expo`, load the app on a simulator, then run CI.
-
-## Releasing it
-
-The maintainer cuts 0.2.2 following the [release process](../release-process.md):
-
-1. Publish to `next`.
-2. Install it into a fresh Expo app and a fresh `create-expo-app --template bare-minimum` app.
-3. Promote it to `latest`.
-
-The version bump also runs `pod install` in `example/bare/ios`, because the podspec reads its
-version from `package.json`.

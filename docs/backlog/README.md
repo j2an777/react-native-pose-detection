@@ -8,13 +8,12 @@ says what to change, where, and how it is checked. Work that is merged and not y
 
 | File | What is in it | Ships in |
 | --- | --- | --- |
-| [next-patch.md](./next-patch.md) | Small fixes that change no native binary | 0.2.2 |
+| [next-patch.md](./next-patch.md) | Small fixes that change no native binary | the next patch, or any time |
 | [native.md](./native.md) | Native upgrades, and changes only a phone can prove | a release of their own, after a device run |
 | [features.md](./features.md) | New capabilities and new API | 0.3.0 and later |
 | [waiting.md](./waiting.md) | Items blocked on Expo, React Native, GitHub or another project | when that project moves |
 
-**Good first pull requests:** PKG-1 (needs macOS for `pod install`), DOC-26, CI-1, CI-4 and EX-8,
-all in [next-patch.md](./next-patch.md).
+**Good first pull requests:** CI-1, CI-4 and EX-8, all in [next-patch.md](./next-patch.md).
 
 ## Picking an item
 
@@ -37,5 +36,5 @@ all in [next-patch.md](./next-patch.md).
 | **P2** | Follow-up within 0.2.x or 0.3.0 |
 | **P3** | Optional, later |
 
-IDs never change. An item is deleted from here once the version that ships it is on npm
-`latest`, and from then on the changelog records it.
+IDs never change. An item is deleted from here in the commit that completes it, so nothing listed
+is already done; the changelog records it from then on.

@@ -73,7 +73,9 @@ versions, such as 0.87. On one of those, `doctor` names the newest pair this pac
 **An app that already has `expo` keeps it.** Install the package alone,
 `npm i react-native-pose-detection`: an `expo@…` in the command replaces the SDK you have, and
 npm does it without asking. Leave `expo` out, and npm adds the newest SDK, whatever your React
-Native is, which is why the command above names one.
+Native is, which is why the command above names one. If the app uses other Expo packages too,
+`npx expo install --check` checks each of them against the SDK and names the versions to install;
+`doctor` only compares `expo` with React Native.
 
 This package needs Expo SDK 56 and React Native 0.85 or newer. Below that npm refuses the install
 with `ERESOLVE`, naming `peer expo@">=56"`; yarn, pnpm and `--legacy-peer-deps` only warn and

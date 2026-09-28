@@ -4,19 +4,72 @@ All notable changes to this package are documented here. Versions follow
 [semantic versioning](https://semver.org), and every published version is an annotated `v*` tag
 on the commit that was published.
 
-## Unreleased
+## 0.2.2
+
+A small release for bare React Native apps: clearer setup guidance, and a `doctor` fix for React
+Native 0.87. The native code is the same as in 0.2.1, and nothing changes in the API.
+
+0.2.0, 0.2.1 and 0.2.2 came out within days of each other, so this section covers the whole step
+from 0.1.0. Upgrade straight to 0.2.2. The 0.2.0 and 0.2.1 notes below are the full record, and
+you do not need them to upgrade.
+
+### Upgrading
+
+**From 0.2.1:** nothing to change.
+
+**From 0.2.0:** two values that used to be ignored now fail with `PoseConfigError`:
+
+- an unknown level or category in the `logLevel` prop
+- an `angles` entry for a joint that has no angle, such as `'nose'`, in `detectOnImage` or
+  `detectOnVideo`
+
+**From 0.1.0:** the two above, and:
+
+- **Minimum versions:** Expo SDK 56, React Native 0.85 and iOS 16.4. Pair the Expo SDK with your
+  React Native: SDK 56 with 0.85, SDK 57 with 0.86. Run `npx react-native-pose-detection doctor`,
+  which checks both. Bare apps set iOS 16.4 in the `Podfile` and in the Xcode target.
+- **`onPose` and `onPoseBatch` follow `data.mode`.** `'batched'` frames go to `onPoseBatch`, and
+  `'throttled'` and `'live'` frames go to `onPose`.
+- **`smoothing` defaults to `'auto'`.** It is off for one person and on for several. Set
+  `smoothing: true` to keep it on.
+- **A bad `data` config throws.** An unknown `data.mode`, or an unknown joint in `select` or
+  `angles`, throws `PoseConfigError` at render.
+- **Triggers.** `emit: 'while'` fires only while `enter` holds. A `minDurationMs` hold ends when
+  frames stop.
+- **`targetFps`** is capped by the camera and by what the device can keep up with.
+- **Error codes.** A `delegate="gpu"` that cannot run reports `DETECTOR_INIT_FAILED`, and a
+  `facing` the device lacks reports `CAMERA_UNAVAILABLE`. Photo and video jobs name their failure.
+- **The `logLevel` prop** raises the log level only while its camera is mounted.
+- **Android `delegate="auto"`** starts on the CPU and moves to the GPU once it is ready. `onReady`
+  reports `'CPU'`, and `onPerformanceChange` reports the move.
+
+### New since 0.1.0
+
+- **Frame rate:** as fast as the device can sustain, up to the camera's 30 fps.
+- **Slowing down:** the rate drops when the phone heats up, and to 12 then 5 fps when nobody is in
+  frame. Low Power Mode and Battery Saver cap it at 24 fps.
+- **Android:** the first skeleton appears about twice as fast, with about a fifth less CPU.
+- **Reporting:** `limitedBy` says what limits the rate, and `thermalState`, `lowPower` and a live
+  `getState().fps` are reported alongside it.
+- **Install checks:** `doctor` and `fetch-model` check the Expo SDK against React Native.
+- **Fixes:** dozens, across the camera lifecycle, triggers, photos, videos and exports. They are
+  listed under 0.2.0 and 0.2.1.
 
 ### Changed
 
 - `doctor` and `fetch-model` name a pairing that works when React Native is newer than any Expo
   SDK this package pairs with. React Native 0.87 has no SDK, so they suggest React Native 0.86
   with `expo@57` instead of a placeholder.
+- The podspec declares iOS 16.4, the minimum every supported Expo SDK needs, instead of 15.1. Expo
+  already raised it to 16.4 during `pod install`, so builds do not change.
 
 ### Documentation
 
 - A new bare app starts from Expo's bare template, which is always on a React Native an Expo SDK is
   built for, with Expo modules already wired. The React Native CLI's default can have no SDK, as
   0.87 has none.
+- A bare app that uses other Expo packages can check them all against its SDK with
+  `npx expo install --check`; `doctor` only compares `expo` with React Native.
 - The installation guide no longer says `install-expo-modules` stops at React Native 0.78: it wires
   a React Native 0.85 app completely, and stops only on 0.86.
 

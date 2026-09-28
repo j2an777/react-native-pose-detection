@@ -215,16 +215,16 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
 - **The preview is a view, not a layer somebody keeps in sync.** `PreviewView` overrides
   `layerClass`, so UIKit resizes the preview layer during layout and there is no frame assignment
   to mistime on rotation.
-- **Six AVFoundation reads are deprecated in iOS 16** and every replacement is async and 16-only.
-  The podspec still declares 15.1, React Native's floor, so the old calls are still the ones that
-  run and each one warns, though every supported Expo SDK now needs 16.4. They live in
+- **Six AVFoundation reads are deprecated in iOS 16** and every replacement is async. The podspec
+  declares 16.4 since 0.2.2, so the replacements are available, but moving to them changes how
+  file jobs read media and needs a device run, so it is its own backlog item
+  ([IOS-1](./backlog/native.md)). Until then the old calls run and each one warns. They live in
   `AssetCompat` and nowhere else, so one comment explains all of them rather than a warning
-  appearing wherever a track or a frame is read. Raising the floor to 16 is the fix, and it is a
-  compatibility decision rather than a cleanup.
+  appearing wherever a track or a frame is read.
 - **Expo SDK 56 and later require iOS 16.4**, so an app that targets lower gets every Expo pod silently
   skipped by autolinking, and this package fails to resolve `ExpoModulesCore`. `example/bare`
-  pins 16.4 for exactly that reason. The podspec itself declares 15.1, which is this package's own
-  floor; Expo raises it to match `ExpoModulesCore` during `pod install`.
+  pins 16.4 for exactly that reason, and the podspec declares 16.4 as well. Up to 0.2.1 it
+  declared 15.1, and Expo raised it to match `ExpoModulesCore` during `pod install`.
 
 ## MediaPipe on both platforms
 

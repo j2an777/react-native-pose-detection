@@ -45,6 +45,16 @@ run on an iPhone and on an Android phone: the sweep in `scripts/device-diagnosti
   - This changes the native runtime the examples run, so run the device sweep again. Then check
     the dev-only advisories (SEC-1 in [waiting.md](./waiting.md)).
 
+- [ ] **IOS-1 · P3 · iOS: move file jobs to AVFoundation's async asset loading.**
+  - **Today:** the synchronous track and duration reads that iOS 16 deprecated, each one warning,
+    all kept in [AssetCompat.swift](../../packages/core/ios/AssetCompat.swift). Since 0.2.2 the
+    podspec declares iOS 16.4, so the async `load(_:)` and `loadTracks(withMediaType:)` replacements
+    are available.
+  - **Fix:** load the properties asynchronously before a video or export job starts, and delete
+    `AssetCompat`.
+  - **Check:** the sweep's `files` scenario and a video export on an iPhone, since this changes how
+    every video job opens its media.
+
 ## Performance
 
 - [ ] **PERF-14 · P2 · Android: one copy fewer per frame.**

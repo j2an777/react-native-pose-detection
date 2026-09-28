@@ -13,7 +13,7 @@ Pod::Spec.new do |s|
   s.source         = { git: package['repository']['url'] }
 
   # React Native's own floor. Apps need 16.4, which Expo SDK 56 and later require.
-  s.platforms      = { ios: '15.1' }
+  s.platforms      = { ios: '16.4' }
   s.swift_version  = '5.9'
 
   # MediaPipe ships static libraries, so anything linking it has to be static too.

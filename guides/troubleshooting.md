@@ -115,8 +115,7 @@ React Native in line with the SDK instead.
 target, not the dependency. Expo SDK 56 and later require iOS 16.4, and autolinking silently skips every
 Expo pod in an app that targets lower, so the first thing to fail is the one that resolves this
 package. Raise `platform :ios` in the Podfile and `IPHONEOS_DEPLOYMENT_TARGET` in the project to
-`16.4`. The podspec itself declares 15.1, which is this package's own floor; Expo raises it during
-`pod install` and prints that it did.
+`16.4`, which this package's podspec declares too.
 
 **`compiling for iOS 15.1, but module 'Expo' has a minimum deployment target of iOS 16.4`** is the
 app target still at React Native's 15.1 while the Podfile says 16.4. Raise **General → Minimum
