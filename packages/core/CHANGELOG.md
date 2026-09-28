@@ -6,8 +6,27 @@ on the commit that was published.
 
 ## 0.2.1
 
-The README is back to the shape of 0.1.0's, updated for 0.2, with every event and function listed
-and its links now going to the documentation site. No code changes.
+The first 0.2 release on `latest`: 0.2.0 went out on `next` only, so an app upgrading from 0.1.0
+gets everything listed under 0.2.0 below. The code is the same as 0.2.0; only the README changed.
+
+### Upgrading from 0.1.0
+
+Check these first. The full list is under [0.2.0](#020).
+
+- **Minimums:** Expo SDK 56, React Native 0.85 and iOS 16.4. A bare app raises iOS 16.4 in both
+  the `Podfile` and the Xcode target.
+- **`onPose` and `onPoseBatch` follow `data.mode`:** `'batched'` goes to `onPoseBatch`,
+  `'throttled'` and `'live'` to `onPose`.
+- **`smoothing` defaults to `'auto'`**, off for one pose. Pass `smoothing: true` to keep it on.
+- **An unknown `data.mode`, `select` or `angles` name throws `PoseConfigError`** at render instead
+  of silently delivering nothing.
+- **`emit: 'while'` fires only while `enter` holds**, and a `minDurationMs` hold ends when frames
+  stop.
+
+### Changed
+
+- The README is back to the shape of 0.1.0's, with every event and function listed and its links
+  going to the documentation site.
 
 ## 0.2.0
 
