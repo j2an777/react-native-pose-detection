@@ -120,6 +120,10 @@ export default {
   sitemap: { hostname: SITE },
 
   head: [
+    [
+      'meta',
+      { name: 'google-site-verification', content: 'a4I3azigiyEuCmLprLB-DcH2DT_7onAR-fMiwVkEJzU' },
+    ],
     ['meta', { name: 'theme-color', content: '#0B1220' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: NAME }],

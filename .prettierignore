@@ -22,3 +22,6 @@ packages/core/ios/.swiftpm
 # The documentation site VitePress builds from guides/.
 guides/.vitepress/dist
 guides/.vitepress/cache
+
+# Search Console checks this file byte for byte, as Google issued it.
+guides/public/google*.html
