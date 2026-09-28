@@ -44,9 +44,9 @@ Full plugin options: [config plugin reference](./reference/config-plugin.md).
 ## Bare React Native
 
 ```bash
-npm i react-native-pose-detection expo
+npm i react-native-pose-detection expo@56   # expo@57 on React Native 0.86
 npx react-native-pose-detection fetch-model full
-cd ios && pod install   # after the wiring below
+cd ios && pod install                       # after the wiring below
 ```
 
 `expo` is not a typo and it does not turn your app into an Expo app. This package is built with
@@ -54,7 +54,8 @@ the Expo Modules API, and that API's autolinking is what finds the native module
 `expo` package for autolinking. You do not need the config plugin, `app.json`, or prebuild.
 
 Each Expo SDK is built against one React Native, so take the one that matches yours: `expo@56`
-for React Native 0.85 and `expo@57` for 0.86. A plain `expo` installs the newest SDK.
+for React Native 0.85 and `expo@57` for 0.86. A plain `expo` installs the newest SDK, which may
+not match.
 
 ### Wiring Expo modules into an existing app
 
