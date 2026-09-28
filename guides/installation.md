@@ -59,6 +59,16 @@ any React Native, and a mismatch shows up later: `expo@57` on React Native 0.85 
 for Android. So `fetch-model` warns about one and installs anyway, and `doctor` fails on it, both
 naming the version to install.
 
+**An app that already has `expo` keeps it.** Install the package alone,
+`npm i react-native-pose-detection`: an `expo@…` in the command replaces the SDK you have, and
+npm does it without asking. Leave `expo` out, and npm adds the newest SDK, whatever your React
+Native is, which is why the command above names one.
+
+This package needs Expo SDK 56 and React Native 0.85 or newer. Below that npm refuses the install
+with `ERESOLVE`, naming `peer expo@">=56"`; yarn, pnpm and `--legacy-peer-deps` only warn and
+install it anyway, and `doctor` then fails on the version, see
+[troubleshooting](./troubleshooting.md#npm-refuses-the-install-with-eresolve).
+
 ### Wiring Expo modules into an existing app
 
 The documented tool for this is `npx install-expo-modules@latest`, and on a recent React Native

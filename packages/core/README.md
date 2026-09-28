@@ -88,8 +88,9 @@ npx react-native-pose-detection fetch-model full
 ```
 
 `expo` provides the autolinking that links this Expo module; it does not make your app an Expo
-app. Each Expo SDK is built for one React Native, hence the pinned version. An app that does not
-use Expo modules yet wires that autolinking into its native projects once:
+app. Each Expo SDK is built for one React Native, hence the pinned version. **If your app already
+has `expo`, install the package alone**: a version named in the command replaces the one you have.
+An app that does not use Expo modules yet wires that autolinking into its native projects once:
 [the steps](https://khalid999devs.github.io/react-native-pose-detection/installation#wiring-expo-modules-into-an-existing-app).
 
 On iOS, set the deployment target to 16.4 in the `Podfile` and the Xcode target, and add the

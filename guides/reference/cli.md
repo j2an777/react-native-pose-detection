@@ -96,8 +96,10 @@ its `expo` package names, and npm installs any pairing, since `expo` accepts any
 `expo@57` on React Native 0.85 installs cleanly and then fails to compile for Android. The check
 compares minor versions. A mismatch is a `✗` naming the SDK to install, `npm i expo@56` for
 React Native 0.85 and `npm i expo@57` for 0.86, and so is a missing `expo`, since it is what links
-this package. With no `react-native` installed, or an `expo` that names no React Native, there is
-nothing to compare, and that is a `–`.
+this package. So is a version below what this package needs, React Native 0.85 and Expo SDK 56,
+which yarn, pnpm and `--legacy-peer-deps` install over with only a warning. With no
+`react-native` installed, or an `expo` that names no React Native, there is nothing to compare,
+and that is a `–`.
 
 The `–` state matters. An Expo prebuild resolves `minSdkVersion` inside a Gradle plugin, so no
 file in the project holds the number. Reporting that as a failure would train you to ignore the

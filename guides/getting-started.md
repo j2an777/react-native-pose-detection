@@ -55,7 +55,7 @@ both native projects. Nothing is committed to your repo.
 ### Bare React Native
 
 ```bash
-npm i expo@56   # the Expo SDK built for React Native 0.85; expo@57 on 0.86
+npm i expo@56   # skip if the app has expo already; the SDK for React Native 0.85, expo@57 on 0.86
 npx react-native-pose-detection fetch-model full
 ```
 

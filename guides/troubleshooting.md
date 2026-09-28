@@ -75,6 +75,20 @@ The other way to cause it is `abiFilters` on a debug build. Filter release build
 
 On Apple Silicon, use an arm64 emulator image, which is what Android Studio gives you by default.
 
+## npm refuses the install with `ERESOLVE`
+
+The line that matters is `peer expo@">=56" from react-native-pose-detection`, or the same for
+`react-native@">=0.85"`. The app is older than this package supports: it needs Expo SDK 56 and
+React Native 0.85 or newer, because the Expo API it hands frames to JavaScript through arrived in
+SDK 56. Upgrade React Native, then take the SDK built for it.
+
+`--legacy-peer-deps` or `--force` gets past npm, not past the build: on SDK 55 this package's Swift
+does not compile. yarn and pnpm only warn about a peer, so with them `doctor` is where it shows:
+
+```text
+› ✗ Expo SDK for React Native   expo 55 is older than this package supports, which needs SDK 56 or newer: npm i expo@56
+```
+
 ## Android build fails inside `expo-modules-core`
 
 ```text

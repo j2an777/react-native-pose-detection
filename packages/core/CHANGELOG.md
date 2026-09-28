@@ -14,7 +14,8 @@ gets everything under [0.2.0](#020); start with [Upgrading from 0.1.0](#upgradin
 - `doctor` and `fetch-model` check that the installed Expo SDK is the one built for the app's
   React Native, and name the version to install. npm cannot catch this, since `expo` accepts any
   React Native, and the mismatch only shows later: `expo@57` on React Native 0.85 fails to
-  compile for Android.
+  compile for Android. They also catch a React Native below 0.85 or an SDK below 56, which yarn,
+  pnpm and `--legacy-peer-deps` install over with only a warning.
 
 ### Changed
 
