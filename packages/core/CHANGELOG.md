@@ -4,6 +4,12 @@ All notable changes to this package are documented here. Versions follow
 [semantic versioning](https://semver.org), and every published version is an annotated `v*` tag
 on the commit that was published.
 
+## 0.2.1
+
+A shorter README: the requirements first, then installation, a quick start and usage from the
+simplest case to the advanced ones, with the guides and the API reference linked on the
+documentation site. No code changes.
+
 ## 0.2.0
 
 Faster, cooler and steadier on both platforms, with the lifecycle bugs found by driving the example
