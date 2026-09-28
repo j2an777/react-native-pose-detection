@@ -22,8 +22,8 @@ New contributor, in order:
 | --- | --- |
 | [Native modules](./native-modules.md) | How the iOS and Android layers are built, and how to extend them |
 | [Logging](./logging.md) | The zero-overhead diagnostic channel and its contract |
-| [Example apps](../example/README.md) | The reference implementation and manual QA harness. Both apps build for Android |
-| [Development plan](./development-plan.md) | The 7 phases to v0.1.0, with exit criteria |
+| [Example apps](../example/README.md) | The reference implementation and manual QA harness. Both apps build for iOS and Android |
+| [Development plan](./development-plan.md) | The phases, 0 to 7, that led to v0.1.0, with exit criteria |
 | [Release process](./release-process.md) | Versioning, publishing, what gets checked |
 | [ADRs](./adr/README.md) | Why decisions were made: read before proposing a reversal |
 
@@ -57,13 +57,14 @@ Details and rationale in [architecture](./architecture.md#camera-switching).
 
 ## Current status
 
-Pre-release. Phases 0 to 5 are done: contracts, config plugin and CLI, the Android camera and
-engine in Kotlin, and the iOS one in Swift. Phase 6 is where it stands, so both example apps are
-built and every CI cell is wired, and the one thing that has never happened is a physical device.
-Every number in `guides/performance.md` is still a target.
+Published and pre-1.0. 0.1.0 shipped on 2026-08-13, and the 0.2 line is the current one, with
+its changes in [packages/core/CHANGELOG.md](../packages/core/CHANGELOG.md). Both platforms run on
+physical hardware, an iPhone 15 and a Redmi Note 12, through the device sweep in
+[testing](./testing.md). `guides/performance.md` says which of its numbers were measured on those
+phones and which are still targets or estimates.
 
-The phase table in the [development plan](./development-plan.md) is the record. Check the boxes
-there rather than trusting this paragraph, which is the one that goes stale.
+The [development plan](./development-plan.md) is the record of how it got to 0.1.0, and npm and
+the changelog are the record since.
 
 Documentation follows [Diátaxis](https://diataxis.fr/): `guides/` holds tutorials, how-to guides,
 and user-facing reference; `docs/` holds explanation and contributor reference.

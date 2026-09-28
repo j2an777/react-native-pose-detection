@@ -1,9 +1,7 @@
 # Architecture
 
-This is the design, and all of it is built on both platforms. None of it has run on a physical
-device, so where the present tense below describes native behavior, read it as what the code does
-rather than as what anyone has watched it do. The [development plan](./development-plan.md) has
-the current checkboxes.
+This is the design, and all of it is built on both platforms and runs on physical hardware: the
+device sweep in [testing](./testing.md) drives it on an iPhone 15 and a Redmi Note 12.
 
 ## Layers
 
@@ -11,7 +9,7 @@ the current checkboxes.
 ┌─ JS ───────────────────────────────────────────────┐
 │  <PoseCamera>  ·  types  ·  config plugin  ·  CLI   │
 └────────────────────────┬───────────────────────────┘
-                         │ Expo Modules (old + new arch)
+                         │ Expo Modules (new architecture)
 ┌─ Native ───────────────┴───────────────────────────┐
 │  CameraSource      platform camera + lifecycle      │
 │  PoseEngine        detector, geometry, triggers     │

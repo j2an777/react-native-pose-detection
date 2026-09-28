@@ -4,7 +4,7 @@ Every check that runs, what it protects, and how to run it locally.
 
 ```bash
 npm run check       # everything that runs without native toolchains
-npm run check:all   # adds Swift/Kotlin lint, audit, licenses
+npm run check:all   # adds Swift/Kotlin lint and unit tests, audit, licenses
 ```
 
 ## Code
@@ -14,7 +14,7 @@ npm run check:all   # adds Swift/Kotlin lint, audit, licenses
 | ESLint | `npm run lint` | `any` in the public API, untyped imports, stray `console.log` |
 | Prettier | `npm run format:check` | formatting churn in diffs |
 | TypeScript | `npm run typecheck` | strict mode, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` |
-| Tests | `npm test` | the wire format, the accessors, trigger validation, the joint tables |
+| Tests | `npm test` | the wire format, the accessors, config validation, the joint tables, the CLI's Expo check, and the reference drifting from the types |
 | Knip | `npm run deadcode` | unused exports, unused dependencies, orphaned files |
 
 `--max-warnings=0`, warnings are errors. A warning nobody fixes is noise that hides real ones.
@@ -123,23 +123,24 @@ around to triage them.
 | CI `commits` job | catching it on the PR |
 
 Format, type list, and scope list: [contributing → Commits](./contributing.md#commits).
-Conventional commits are what make automated changelog generation possible, the type decides
-whether a release is major, minor, or patch.
+Conventional commits keep the history the CHANGELOG is written from readable, and the type
+decides whether a release is major, minor, or patch.
 
 ## Pre-commit
 
 `lint-staged` runs on staged files only, ESLint, Prettier, markdownlint, cspell, SwiftFormat,
 SwiftLint, ktlint. Fast enough not to be bypassed, which is the only property that matters
 in a pre-commit hook. The native linters go through `scripts/optional-lint.sh`, so a contributor
-who installed none of the Homebrew tools is not blocked from committing. CI runs ktlint on every
-PR, and SwiftLint once Swift sources exist, and blocks there. The hook also skips `npm test`, to
-stay under a couple of seconds; CI runs the tests on the push.
+who installed none of the Homebrew tools is not blocked from committing. CI runs ktlint and
+SwiftLint on every PR, and blocks there. The hook also skips `npm test`, to stay under a couple of
+seconds; CI runs the tests on the push.
 
 ## Device tests
 
-Not part of `npm run check`, and not part of CI either: they need hardware, and the two example
-apps they would run in do not exist yet. Phase 6 adds them on a schedule, plus the build matrix
-of platform × install method × architecture. See [testing](./testing.md).
+Not part of `npm run check`, and not part of CI either: they need hardware. The device sweep
+drives the example app on a phone or an emulator with nobody tapping, and runs before a release.
+What CI does run on every push is the build matrix, platform × install method, in the four cells
+below. See [testing](./testing.md).
 
 ## Running links locally
 
@@ -155,23 +156,24 @@ pushing documentation changes. A hand-rolled grep will miss malformed links like
 
 ## What CI actually runs
 
-One job per line, in `.github/workflows/ci.yml`, plus CodeQL in its own workflow.
+One job per line, in `.github/workflows/ci.yml`, plus CodeQL and the docs site in workflows of
+their own.
 
 | Job | Runner | Steps |
 | --- | --- | --- |
 | `code` | ubuntu, Node 22.22.1 **and** 24 | `lint`, `format:check`, `typecheck`, `test`, `deadcode` |
 | `docs` | ubuntu | `lint:md`, `check:readme`, `spell`, and lychee for links |
 | `kotlin` | ubuntu | ktlint over `packages/core/android` |
-| `swift-sources` | ubuntu | Looks for `*.swift` and reports whether the macOS job should start |
-| `swift` | macOS, gated on the above | `swiftlint lint --strict` |
+| `swift` | macOS | `swiftlint lint --strict`, and the engine suite with `swift test` |
 | `package` | ubuntu, Node 22.22.1 **and** 24 | `check:package`, the tarball guard, and a smoke test of the packed CLI |
 | `security` | ubuntu | `audit:deps`, `audit:license`, `audit:dev` |
-| `android-expo` | ubuntu | Prebuilds `example/expo`, builds the APK, asserts four ABIs and one model |
-| `android-bare` | ubuntu | Installs the model into `example/bare` with the CLI, runs `doctor`, builds the APK, asserts four ABIs, one model, and that the module was autolinked |
+| `android-expo` | ubuntu | Prebuilds `example/expo`, asserts the plugin wrote the model and the camera permission, builds the APK, asserts four ABIs and one model |
+| `android-bare` | ubuntu | Installs the model into `example/bare` with the CLI, runs `doctor`, asserts the CLI left the Xcode project unchanged, runs the JUnit suite, builds the APK, asserts four ABIs, one model, and that the module was autolinked |
 | `ios-expo` | macOS | Prebuilds `example/expo`, `pod install`, simulator build, asserts the plugin registered the model in the target and that exactly one reached the app bundle |
 | `ios-bare` | macOS | Installs the model into `example/bare` with the CLI, asserts the CLI left the Xcode project and `Podfile.lock` unchanged, builds **Release** so dead-stripping runs, and asserts the module survived it |
 | `commits` | ubuntu, pull requests only | commitlint from the base commit to HEAD |
-| CodeQL | ubuntu | Per PR and weekly, JavaScript and TypeScript |
+| CodeQL | ubuntu | Per PR, on every push to `main` and weekly, JavaScript and TypeScript |
+| Docs site | ubuntu, on a push that touches `guides/` | VitePress builds `guides/` into the site, failing on a dead link, and deploys it to GitHub Pages |
 
 Three details worth knowing before editing the file. Every action is pinned to a commit SHA
 rather than a tag, because a tag is a pointer its owner can move onto different code after review.

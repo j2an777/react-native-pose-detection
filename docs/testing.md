@@ -11,7 +11,7 @@ document that blurs that is worse than none.
 npm test
 ```
 
-That is `tsc -p packages/core/tsconfig.test.json && node --test ".test-build/tests/**/*.test.js"`.
+That is `rm -rf .test-build && tsc -p packages/core/tsconfig.test.json && node --test ".test-build/tests/**/*.test.js"`.
 It is part of `npm run check`, and CI runs it on Node 22.22.1 and 24, the floor declared in
 `engines` and the version `.nvmrc` pins for development.
 
@@ -38,10 +38,15 @@ list needs no exclusion rule to keep them out of the tarball: `src` ships, `test
 | Accessors | `tests/frames/accessors.test.ts` | Reading landmarks out of a full buffer and out of one `data.select` narrowed, including that a joint `select` left out throws instead of returning another joint's numbers |
 | Trigger validation | `tests/validation/triggers.test.ts` | Every rejection the validator promises: unknown keys, `between` outside an angle condition, out-of-range bounds, contradictions that can never fire, an explicitly `undefined` bound, and a cyclic or BigInt config |
 | Number validation | `tests/validation/numbers.test.ts` | `NaN` and the infinities are refused with a path, on the camera's props and on every file option, before anything crosses to native |
+| Data validation | `tests/validation/data.test.ts` | An unknown `data.mode`, an unknown `select` joint and an `angles` joint with no angle are refused with their index, and the file functions' `select` and `angles` are held to the same rules |
+| Log level validation | `tests/validation/logLevel.test.ts` | An unknown level, category or shape is refused with its path, the check `setLogLevel()` and the `logLevel` prop share |
 | Smoothing | `tests/smoothing.test.ts` | `'auto'` is off for one pose and on for several, and a config object means on |
 | Joint tables | `tests/types/joints.test.ts` | 33 landmarks, 35 skeleton connections, 12 angle joints, and that the type guards reject `Object.prototype` keys such as `toString` |
+| Log stream | `tests/native/logStream.test.ts` | The native log stream starts with the first holder and stops with the last, a camera's `onLog` counts as one, a double release counts once, and a later holder starts it again |
+| View calls | `tests/native/viewCalls.test.ts` | A ref call made before the native view mounts waits for it, one that never mounts rejects once the wait is over, any other failure rejects at once, and an unmounted component resolves to nothing |
+| Expo pairing | `tests/plugin/expoPairing.test.ts` | The CLI's check of the Expo SDK against React Native: a match passes, a mismatch or a missing `expo` fails naming the SDK to install, and an unreadable version list is a skip rather than a crash |
 | Wire parity | `tests/frames/wireParity.test.ts` | That the Kotlin and the Swift agree with `wire.ts` on every header slot, every flag, the landmark count and stride, the twelve angles, and the pinned MediaPipe version |
-| Reference parity | `tests/docs/referenceParity.test.ts` | That every prop and ref method the types declare appears in `guides/reference/`, that the events table lists exactly the callbacks the props declare, and that the `ErrorCode` union and its documented table are the same set |
+| Reference parity | `tests/docs/referenceParity.test.ts` | That every prop and ref method the types declare appears in `guides/reference/`, that the events table lists exactly the callbacks the props declare, that the `ErrorCode` union and its documented table are the same set, and that every value and type the package exports is named there |
 
 The wire format and the joint tables are shared with native code that cannot be imported here,
 so what is testable in JavaScript is the contract, and it is worth testing precisely because the
@@ -187,7 +192,7 @@ from the table rather than pinned at one.
 
 | Cell | Builds | Also asserts |
 | --- | --- | --- |
-| `android-expo` | Debug APK after `expo prebuild` | four ABIs, exactly one model, the camera permission in the merged manifest |
+| `android-expo` | Debug APK after `expo prebuild` | the model and the camera permission written by the plugin, four ABIs, exactly one model |
 | `android-bare` | Debug APK after the CLI install | `doctor`, the committed Xcode project unchanged, the module autolinked, and the JUnit suite |
 | `ios-expo` | Simulator Debug after `pod install` | the model registered in the target, and exactly one in the app bundle |
 | `ios-bare` | Simulator **Release** after `pod install` | `Podfile.lock` unchanged, the pod autolinked, and `PoseDetectionModule` still in the binary after dead-stripping |
@@ -205,4 +210,5 @@ runner does not have.
 Include the device model, the OS version, `data.mode`, the model variant, and whether it
 reproduces on the other platform. `getProfile()` output is the single most useful thing to attach:
 it says what the device was measured to cost, what rate that allowed, and why. If the example app
-reproduces it, a `diagnostics.json` from the sweep is the next most useful.
+reproduces it, a `diagnostics.json` from the sweep is the next most useful. For a build or install
+problem, the `doctor` output comes first.

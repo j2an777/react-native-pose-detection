@@ -29,20 +29,21 @@ path end to end.
 
 | Screen | What it shows |
 | --- | --- |
-| **Overview** | What the package is, entry points to the other screens, device summary |
+| **Overview** | What the package is, entry points to the other screens, the package's key figures and the platform it runs on |
 | **Capture** | The live camera: skeleton overlay, lens switching, and panels exposing most props, with a stat readout of measured fps, target, delegate and analysis size |
 | **Studio** | Pick a photo or clip, paint it, keep the file. Shows size, frames and poses found, and a history of previous exports to reopen or delete |
 | **Diagnostics** | Stress scenarios: repeated camera switches, remounts, detection toggles, pause and resume cycles, each awaited on a real signal and reporting pass or fail |
 | **About** | The feature list and package information |
 
 ```text
-expo/ (bare/ mirrors it)
-├── App.tsx                  three tabs and two modals, nothing else
-├── app.json                 plugin configured with model: "full"
+expo/ (bare/ has the same App.tsx and src/)
+├── App.tsx                  three tabs and two modals, and a sweep's launch request
+├── app.json                 plugin configured with model: "full"; bare's names the app only
 └── src/
     ├── screens/             one file per screen above
     ├── components/          the small control kit: buttons, choices, sheets, glass panels
     ├── scenarios/           stress runners, each returning a pass/fail report
+    ├── diagnosticsRequest.ts  what the device sweep asked Diagnostics to run at launch
     ├── theme.ts             one palette and scale for everything
     └── memory.ts            the JS heap where the runtime offers it
 ```

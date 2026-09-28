@@ -73,23 +73,38 @@ someone actually needs the backport.
       and `scripts/device-diagnostics.sh ios`, then the soak by name. See [testing](./testing.md)
 - [ ] `guides/reference/` matches the exported types exactly
 - [ ] App-size table in `guides/performance.md` re-measured if native deps changed
-- [ ] CHANGELOG entry written for humans, not generated from commit subjects
+- [ ] The version's section of `packages/core/CHANGELOG.md` written for humans, not generated from
+      commit subjects
 - [ ] After the version bump, `pod install` in `example/bare/ios`: the podspec reads its version
       from `package.json`, and CI fails a `Podfile.lock` that moves under it
 - [ ] Verified in a clean Expo app **and** a clean bare app, not just `example/`
+- [ ] Breaking changes posted to Discussions before the release, not after
 
 ## Publishing
 
 ```bash
-CI=1 npm publish -w react-native-pose-detection --tag next   # verify in clean apps first
-npm dist-tag add react-native-pose-detection@x.y.z latest
+CI=1 npm publish -w react-native-pose-detection --tag next
 ```
 
 `CI=1` matters in a terminal: `prepack` runs `expo-module build`, which starts the TypeScript
 compiler in watch mode when it sees a TTY, and the publish never finishes.
 
 Never publish straight to `latest`. The install path is the thing most likely to break, and
-it can't be tested from inside this repo.
+it can't be tested from inside this repo. While a version is only on `next`, its GitHub release
+is marked a pre-release, so npm and GitHub agree on what is current.
+
+## Promoting to `latest`
+
+Once the version from `next` has been installed into a clean Expo app and a clean bare app, and
+has passed the `person` scenario on a phone of each platform:
+
+```bash
+npm dist-tag add react-native-pose-detection@X.Y.Z latest
+gh release edit vX.Y.Z --prerelease=false --latest
+```
+
+- [ ] npm's `latest` and GitHub's latest release name the same version
+- [ ] `SECURITY.md`'s supported versions still include what `latest` now installs
 
 ## Verifying the tarball
 
@@ -116,6 +131,7 @@ out. A tarball that grows by megabytes means something leaked into `files`.
 ## After a release
 
 - [ ] Tag the published commit, `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`
-- [ ] Cut the GitHub release from that tag, body is the CHANGELOG section
-- [ ] Update the version support table in `guides/installation.md` if minimums moved
-- [ ] Post breaking changes to Discussions before the release, not after
+- [ ] Cut the GitHub release from that tag, a pre-release while the version is on `next`; the
+      body is the version's section of `packages/core/CHANGELOG.md`
+- [ ] Update the requirements in `guides/installation.md` and the supported versions table in
+      `README.md` if minimums moved

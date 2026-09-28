@@ -45,10 +45,10 @@ packages/core/
   tests/        Node test runner suites, mirroring src/
   ios/          Swift: CameraSource, PoseDetector, OverlayRenderer, AVFoundation-based
   android/      Kotlin: same three, CameraX-based
-  plugin/       Expo config plugin
-  cli/          fetch-model
+  plugin/       Expo config plugin, and the CLI in plugin/src/cli.ts
+  cli/          the CLI's entry point: fetch-model, doctor, clear-cache
 example/
-  expo/         Expo app, the config-plugin install path   (Phase 6)
+  expo/         Expo app, the config-plugin install path
   bare/         bare React Native app, the CLI install path
 docs/           this directory
 ```
@@ -78,7 +78,7 @@ No file-header blocks, no doc-comment walls, no ASCII banners. Prose documentati
 in `docs/`. If a function needs a paragraph to explain, it probably needs splitting.
 
 - TypeScript strict; no `any` in the public API
-- Swift: `swift-format` defaults · Kotlin: `ktlint`
+- Swift: SwiftFormat and SwiftLint · Kotlin: `ktlint`
 - Public API changes require a matching `guides/reference/pose-camera.md` update in the same PR
 - `packages/core/README.md` is what npm shows and must stay a copy of the root `README.md`; edit
   the root one, keep its links absolute, since npm resolves no relative link, and copy it over
@@ -103,7 +103,7 @@ pass. `isSquatting` does not, that's a recipe.
 
 1. Extend the `Condition` union in `src/types/triggers.ts`
 2. Teach `src/validation/triggers.ts` about it, and add the rejection cases to
-   `src/validation/triggers.test.ts`. A condition the validator does not know is a condition
+   `tests/validation/triggers.test.ts`. A condition the validator does not know is a condition
    whose typos reach native
 3. Implement in both evaluators (Swift + Kotlin), they must agree exactly
 4. Unit test both
@@ -223,8 +223,8 @@ docs(guides): add plank hold recipe
 ```
 
 It isn't ceremony. The type drives the release. `feat` produces a minor bump, `fix` a patch,
-and a `BREAKING CHANGE:` footer a major, which is how the CHANGELOG and version numbers are
-generated.
+and a `BREAKING CHANGE:` footer a major. The CHANGELOG is written by hand, for the people
+upgrading, but from exactly this history, see [release process](./release-process.md).
 
 ### Types
 
@@ -247,7 +247,7 @@ Optional, but validated when present. Kept in sync with `commitlint.config.mjs`.
 | Group | Scopes |
 | --- | --- |
 | Package | `core` `ios` `android` `engine` `camera` `triggers` `calibration` `overlay` `logging` `plugin` `cli` |
-| Repository | `repo` `example` `docs` `guides` `ci` `deps` `release` |
+| Repository | `repo` `example` `docs` `guides` `ci` `deps` `deps-dev` `release` |
 
 Adding a scope means editing `commitlint.config.mjs` and this table in the same commit.
 
@@ -260,8 +260,8 @@ BREAKING CHANGE: `data.mode: 'stream'` is now `'live'`. Update any component
 passing 'stream'.
 ```
 
-Both the `!` and the footer are required. The footer text goes into the CHANGELOG verbatim, so
-write it for someone upgrading, not for yourself.
+Both the `!` and the footer are required. The footer is what the CHANGELOG's upgrade notes are
+written from, so write it for someone upgrading, not for yourself.
 
 ### When a commit is rejected
 
@@ -277,7 +277,7 @@ git commit --amend
 ```
 
 Don't bypass with `--no-verify`. A message that skips the hook still fails the `commits` job in
-CI, and it breaks changelog generation for the release it lands in.
+CI, and it leaves a gap in the history the release notes are written from.
 
 ## Pull requests
 
@@ -285,7 +285,8 @@ CI, and it breaks changelog generation for the release it lands in.
 - Tested on a physical device, both platforms (say so if you couldn't)
 - Include device model + OS version for anything performance-related
 - Public API changes need docs in the same PR
-- New props, events, or trigger conditions need a control in `example/expo`, once it exists
+- New props, events, or trigger conditions need a control in the example apps' Capture panels,
+  see [example/README.md](../example/README.md#when-to-update-it)
 
 ### Demo
 
@@ -302,7 +303,7 @@ Docs, CI, and internal refactors can delete the section.
 ### Title
 
 PR titles follow the same Conventional Commits format as commit messages, they become the
-squash-merge commit, so they land in the CHANGELOG.
+squash-merge commit, so they are what the CHANGELOG is written from.
 
 ### What CI checks
 
@@ -312,7 +313,7 @@ and `package` each run twice, on Node 22.22.1 and on 24. Run the local half firs
 
 ```bash
 npm run check       # everything that needs no native toolchain
-npm run check:all   # adds Swift/Kotlin lint, audit, licenses
+npm run check:all   # adds Swift/Kotlin lint and unit tests, audit, licenses
 ```
 
 Full list and rationale: [quality gates](./quality-gates.md).
@@ -329,8 +330,10 @@ cost real crashes and real scope creep in the past.
 Include:
 
 - Device model and OS version
-- `await cam.current?.getProfile()` output. Failing that, send the
+- `cam.current?.getState()` and `await cam.current?.getProfile()` output. Failing that, send the
   `onReady` and `onPerformanceChange` payloads instead
+- The log entries around the failure, with `setLogLevel('debug')`
+- `npx react-native-pose-detection doctor` output, for anything about building or installing
 - `data.mode`, `maxPoses`, model variant
 - Expo or bare
 - Minimal reproduction

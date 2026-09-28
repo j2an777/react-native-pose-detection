@@ -7,8 +7,8 @@ body:
       value: |
         This library ships **primitives, not policy**. If your idea needs to know what activity
         the user is doing: rep counting, form scoring, sport-specific detection: it belongs in
-        `guides/recipes/` as a trigger config, not in the library. Recipe contributions are very
-        welcome.
+        [what you can build](https://khalid999devs.github.io/react-native-pose-detection/recipes)
+        as a trigger config, not in the library. Recipe contributions are very welcome.
 
   - type: textarea
     attributes:

@@ -18,15 +18,17 @@ TypeScript is lying.
 Name("PoseDetection")
 
 Function("setLogLevel") · Function("startLogStream") · Function("stopLogStream")
+Function("drainFrames") · Function("snapshotFrame") · Function("takeTriggerSnapshot")
+Function("readLiveState")                          each takes the view's streamId
+AsyncFunction("detectOnImage") · AsyncFunction("requestCameraPermission") · …
 Events("onVideoProgress", "onExportProgress", "onLog")
 
 View(PoseCameraView) {
   Prop("profile") · Prop("facing") · Prop("delegate") · …
-  Prop("angleJoints") · Prop("selection")
+  Prop("streamId") · Prop("angleJoints") · Prop("selection")
   Events("onReady", "onError", "onCameraChange", "onPerformanceChange",
          "onTrigger", "onFrames", "onLog")
-  AsyncFunction("switchCamera") · AsyncFunction("drainFrames")
-  AsyncFunction("snapshotFrame") · AsyncFunction("takeTriggerSnapshot") · …
+  AsyncFunction("switchCamera") · AsyncFunction("getProfile") · …
 }
 ```
 
@@ -41,8 +43,8 @@ Three things in it are easy to get wrong:
   [ADR 0008](./adr/0008-frames-are-drained-not-pushed.md).
 - **`onTrigger` carries a `snapshotId`, not a snapshot.** A `PoseFrame` is the same ArrayBuffer
   problem, so native holds the captured frame and puts a claim ticket on the event.
-  `<PoseCamera>` redeems it with a synchronous `takeTriggerSnapshot(id)` and only then calls the
-  user's `onTrigger`, so a snapshot trigger keeps its place among plain ones.
+  `<PoseCamera>` redeems it with a synchronous `takeTriggerSnapshot(streamId, id)` and only then
+  calls the user's `onTrigger`, so a snapshot trigger keeps its place among plain ones.
   Redeeming an unknown or already-redeemed ticket must return an empty buffer rather than
   failing, and native must bound how many unclaimed frames it holds. See
   [ADR 0009](./adr/0009-trigger-snapshots-are-claimed.md).
@@ -51,7 +53,11 @@ Three things in it are easy to get wrong:
   sides cannot disagree about the shape of a frame.
 
 Ref methods are view functions, not module functions taking a view tag. The legacy package
-used `switchCamera(viewTag)`; that pattern is not used here.
+used `switchCamera(viewTag)`; that pattern is not used here. The frame reads are the one
+exception, on purpose: `drainFrames`, `snapshotFrame`, `takeTriggerSnapshot` and `readLiveState`
+are synchronous module functions keyed by the `streamId` prop each camera gets, so they run on the
+JavaScript thread instead of queueing behind the main one. See
+[ADR 0010](./adr/0010-frames-are-read-on-the-javascript-thread.md).
 
 ## Frame path
 
@@ -138,7 +144,6 @@ each one is a decision rather than an oversight.
 | Rotation | left on the buffer, passed to MediaPipe as `ImageProcessingOptions` | applied by the capture connection, so MediaPipe is always handed `.up` |
 | Buffer conversion | `FrameConverter` copies the `ImageProxy` into a reused bitmap | none: `MPImage(sampleBuffer:)` takes the `CMSampleBuffer` directly |
 | Teardown | four registrations and an explicit destroy hook | `deinit`, plus notification tokens removed on detach |
-| Drain queue | off the main queue, deliberately | on it: ExpoModulesCore puts every view function there and offers no opt-out |
 | Permission states | `denied` and `blocked` are distinguishable | a refusal is always `blocked`; iOS prompts once |
 | Device probe | cores and memory | memory only, because Apple has shipped six cores since the A11 |
 | Volatile reads | `@Volatile` | a lock, through `Guarded<T>`, since Swift has no equivalent below iOS 18 |
@@ -190,10 +195,10 @@ Measured from an assembled debug APK on the 0.10.35 pin, not from the AAR:
 
 | ABI | `libmediapipe_tasks_jni.so` |
 | --- | --- |
-| `arm64-v8a` | 10.5 MB |
-| `armeabi-v7a` | 7.4 MB |
-| `x86` | 15.0 MB |
-| `x86_64` | 13.0 MB |
+| `arm64-v8a` | 10.1 MB |
+| `armeabi-v7a` | 7.1 MB |
+| `x86` | 14.3 MB |
+| `x86_64` | 12.5 MB |
 
 Google does not publish every version to CocoaPods, so iOS choices are narrower than Android's.
 
@@ -216,12 +221,6 @@ Google does not publish every version to CocoaPods, so iOS choices are narrower 
   `AssetCompat` and nowhere else, so one comment explains all of them rather than a warning
   appearing wherever a track or a frame is read. Raising the floor to 16 is the fix, and it is a
   compatibility decision rather than a cleanup.
-- **Three view functions warn under Swift 6 strict concurrency.** `drainFrames`, `snapshotFrame`
-  and `takeTriggerSnapshot` use `PoseCameraView`'s `AnyArgument` conformance, which `ExpoView`
-  isolates to the main actor, from the nonisolated closure `AsyncFunction` takes. Both halves are
-  Expo's, so there is nothing to change here: marking the closure `@MainActor` adds a second warning
-  about losing that isolation instead of removing the first. They are warnings under the Swift 5
-  language mode this package builds in, and the fix is upstream.
 - **Expo SDK 56 and later require iOS 16.4**, so an app that targets lower gets every Expo pod silently
   skipped by autolinking, and this package fails to resolve `ExpoModulesCore`. `example/bare`
   pins 16.4 for exactly that reason. The podspec itself declares 15.1, which is this package's own

@@ -22,14 +22,14 @@ body:
 
   - type: textarea
     attributes:
-      label: getProfile() output
-      description: '`console.log(cam.current.getProfile())`. Required for anything performance-related.'
+      label: getState() and getProfile() output
+      description: '`console.log(cam.current?.getState(), await cam.current?.getProfile())`. Required for anything performance-related.'
       render: json
 
   - type: textarea
     attributes:
       label: Logs
-      description: "Run with `setLogLevel('debug')` and paste the entries around the failure. See guides/debugging.md."
+      description: "Run with `setLogLevel('debug')` and paste the entries around the failure. See [the log channel](https://khalid999devs.github.io/react-native-pose-detection/troubleshooting#watching-it-work-the-log-channel)."
       render: text
 
   - type: dropdown
@@ -42,3 +42,19 @@ body:
     attributes:
       label: Package version
     validations: { required: true }
+
+  - type: input
+    attributes:
+      label: React Native and Expo SDK versions
+      placeholder: react-native 0.86.2, expo 57
+
+  - type: dropdown
+    attributes:
+      label: Model
+      options: [full, lite, heavy]
+
+  - type: textarea
+    attributes:
+      label: doctor output
+      description: '`npx react-native-pose-detection doctor`, run in the app root. Required for build and setup problems.'
+      render: text
