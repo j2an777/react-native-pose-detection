@@ -50,9 +50,9 @@ Any explicit value pins that axis. The rest stay automatic.
 
 ```ts
 type OverlayConfig = {
-  landmarks?: boolean;
-  connections?: boolean;
-  color?: string;
+  landmarks?: boolean;       // the joints, default true
+  connections?: boolean;     // the bones between them, default true
+  color?: string;            // '#RRGGBB', '#AARRGGBB' or a color name, default '#00E5FF'
   lineWidth?: number;        // points, default 3
   pointRadius?: number;      // points, default 4
   minVisibility?: number;    // hide low-confidence joints, default 0.5
@@ -111,8 +111,8 @@ data?: {
   mode?: 'off' | 'throttled' | 'batched' | 'live';   // default 'off'
   throttleMs?: number;      // 'throttled' only, default 100
   flushMs?: number;         // 'batched' only, default 500
-  landmarks?: boolean;
-  worldLandmarks?: boolean;
+  landmarks?: boolean;      // default true
+  worldLandmarks?: boolean; // default false
   angles?: boolean | readonly AngleJointName[];
   select?: readonly JointName[];
 };
@@ -151,9 +151,9 @@ onLog?: (entries: readonly LogEntry[]) => void;
 `logLevel` raises the level on top of `setLogLevel()` while this camera is mounted, and gives it
 back when the camera unmounts or the prop is removed. The level itself is global, so the raise
 covers everything that logs meanwhile, not only this camera; without the prop the camera leaves
-it alone. `setLogLevel()` sets the level for the whole app, and throws `PoseConfigError` on an
-unknown level or category rather than doing nothing, because a silently ignored level looks
-exactly like a bug in whatever you were trying to diagnose.
+it alone. `setLogLevel()` sets the level for the whole app. Both it and this prop, during render,
+throw `PoseConfigError` on an unknown level or category rather than doing nothing, because a
+silently ignored level looks exactly like a bug in whatever you were trying to diagnose.
 
 Entries reach Logcat, or `os.Logger` on iOS, whatever is attached, and are batched to JavaScript
 while a listener is: `onLog` on a mounted camera, or `addLogListener()`, which hears photo

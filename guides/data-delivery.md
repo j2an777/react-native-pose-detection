@@ -53,13 +53,14 @@ Frequency is only half of it. What you carry matters just as much:
 ```tsx
 data={{
   mode: 'throttled',
-  landmarks: false,                          // skip raw landmarks entirely
   angles: ['leftKnee'],                      // one angle, not all twelve
   select: ['leftKnee', 'rightKnee', 'leftHip'],
 }}
 ```
 
-A full frame is 33 landmarks × 4 floats = 528 bytes. Three joints is 48 bytes.
+A full frame is 33 landmarks × 4 floats = 528 bytes. Three joints is 48 bytes. When the angles are
+all you read, `landmarks: false` drops the landmark block entirely, `select` or not, and
+`landmark()` then throws for any joint.
 
 `select` narrows the landmark buffer and does nothing else. It holds **exactly** the joints you
 named, in the order you named them, and `frame.selection` lists them. Angles are computed

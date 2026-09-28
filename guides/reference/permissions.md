@@ -37,9 +37,11 @@ camera lives behind a button rather than on the first screen.
 rejected by the system, so a second `request()` while one is open returns the same promise rather
 than starting another.
 
-`error` is set when reading or asking fails, which happens only on an incomplete install: on
-Android without a registered Expo permissions manager, `requestCameraPermission()` rejects with
-`PERMISSIONS_UNAVAILABLE`.
+`error` is set when reading or asking fails, which happens only on an incomplete install: an app
+built without this package's native module, an Expo Go session for instance, or on Android an app
+with no registered Expo permissions manager, where `requestCameraPermission()` rejects with
+`PERMISSIONS_UNAVAILABLE`. `request()` itself never rejects: a failure resolves with
+`undetermined`, so `granted` stays false, and sets `error`.
 
 ## The four states
 
@@ -91,5 +93,7 @@ mounts is rarely the right one, and a library cannot know where the good moment 
 Declaring the permission is separate from being granted it. Android is handled for you, this
 package declares `android.permission.CAMERA` in its own manifest and the merger adds it to your
 app. iOS has no manifest merging, so `NSCameraUsageDescription` in `Info.plist` is yours to add
-in a bare app; in Expo the config plugin writes it, from `cameraPermissionText`. See
-[installation](../installation.md).
+in a bare app; in Expo the config plugin writes it: `cameraPermissionText` if set, else a
+description already in your app config, else a generic fallback. See
+[installation](../installation.md) and the
+[config plugin](./config-plugin.md#camera-permission-text).

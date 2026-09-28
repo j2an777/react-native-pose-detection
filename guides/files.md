@@ -18,8 +18,8 @@ const poses = await detectOnImage(uri, { maxPoses: 1 });
 | Option | Default | Notes |
 | --- | --- | --- |
 | `maxPoses` | `1` | 1–5. The subject, the largest body, is always the first frame |
-| `minConfidence` | follows `maxPoses` | `0.5` at `maxPoses: 1`, `0.3` above it, as for [exports](#finding-bodies-the-defaults-miss) |
-| `angles` | `true` | |
+| `minConfidence` | follows `maxPoses` | 0.1 to 1: `0.5` at `maxPoses: 1`, `0.3` above it, as for [exports](#finding-bodies-the-defaults-miss) |
+| `angles` | `true` | `false`, or a list of joints that have one |
 | `worldLandmarks` | `false` | |
 | `select` | all 33 | narrows the landmark buffer, as `data.select` does |
 
@@ -74,7 +74,10 @@ clip at a high `fps` holds a lot: 10 minutes at 30 fps is 18,000 `PoseFrame`s. P
 **When it fails.** A file that cannot be read rejects with `IMAGE_DECODE_FAILED` or
 `VIDEO_DECODE_FAILED`, an app with no model bundled with `MODEL_NOT_FOUND`, and a file that was
 read but could not be processed with `DETECTION_FAILED`, so each can be told apart and explained
-to the person who picked the file.
+to the person who picked the file. A bad option is your mistake rather than the file's, and is a
+`PoseConfigError` naming it, as on the camera: a number that is not finite, or a `select` or
+`angles` joint that does not exist or has no angle. `detectOnImage` rejects with it; `detectOnVideo`
+and `exportPose` throw it from the call, before there is a task.
 
 **No calibration, but heat still counts.** Static input runs at full quality: there is no live
 frame budget to hit, so profiles don't apply. Heat does. A video or export slows to half speed
@@ -197,12 +200,12 @@ screen, not on the way out the door.
 | --- | --- | --- |
 | `overlay` | `true` | The same shape `<PoseCamera overlay>` takes. `false` writes an unpainted, size-capped copy |
 | `maxPoses` | `1` | Up to 5. Every pose found is painted |
-| `minConfidence` | follows `maxPoses` | `0.5` at `maxPoses: 1`, `0.3` above it. See below |
+| `minConfidence` | follows `maxPoses` | 0.1 to 1: `0.5` at `maxPoses: 1`, `0.3` above it. See below |
 | `fps` | `10` | Detection samples a second, not output frame rate |
 | `maxSize` | `1920` | Long edge cap. `0` keeps the source's size |
 | `directory` | `'cache'` | See above |
 | `fileName` | source name + `-pose` | No extension; sanitized before it reaches the filesystem. A finished export replaces one already under the name; a cancelled or failed one leaves it as it was |
-| `quality` | `0.9` | JPEG quality. Images only |
+| `quality` | `0.9` | JPEG quality, 0.1 to 1. Images only |
 | `onProgress` | none | 0 to 1, throttled to about every two percent |
 
 ## Finding bodies the defaults miss

@@ -8,21 +8,22 @@ not re-exported from the root is internal and can change without a major version
 
 ```ts
 type PoseFrame = {
-  landmarks: Float32Array;            // 33 × [x, y, z, visibility]
+  landmarks: Float32Array;            // 33 × [x, y, z, visibility]; empty with data.landmarks off
   selection?: readonly JointName[];   // set when data.select narrowed the buffer
   worldLandmarks?: Float32Array;      // metric 3D, origin at hip center
   angles?: Partial<Record<AngleJointName, number>>;   // degrees
-  centerOfMass: { x: number; y: number };
-  velocity: { x: number; y: number };   // normalized units/sec
-  bodySpan: number;                     // for scale-independent thresholds
+  centerOfMass: { x: number; y: number };   // visibility-weighted: hips 0.5, ankles 0.3, knees 0.2
+  velocity: { x: number; y: number };       // of the center of mass, normalized units/sec
+  bodySpan: number;                   // shoulder midpoint to ankle midpoint, normalized
   timestamp: number;
-  processingMs: number;                 // dispatch to result; 0 from photos and videos
+  processingMs: number;               // dispatch to result; 0 from photos and videos
 };
 ```
 
 **Both platforms produce these**, from one wire format written three times and guarded by a test
-that reads all three. `onPose` and `onPoseBatch` fire as soon as `data.mode` is anything but
-`off`.
+that reads all three. `onPose` delivers them when `data.mode` is `'throttled'` or `'live'`, and
+`onPoseBatch` when it is `'batched'`. Divide a distance by `bodySpan` for a threshold that holds
+whether the person stands near the camera or far from it.
 
 Every field is `readonly` in the real declaration, dropped above for readability. The same is true
 of the event types in [events](./events.md).
@@ -110,6 +111,17 @@ import { landmark, landmarkInto, createLandmark, isVisible } from 'react-native-
 const knee = landmark(frame, 'leftKnee');   // { x, y, z, visibility }
 ```
 
+```ts
+type Landmark = {
+  x: number;            // 0 to 1 across the analysis frame, origin top-left
+  y: number;
+  z: number;            // depth relative to the hip midpoint, about the scale of x; noisier
+  visibility: number;   // 0 to 1; below about 0.5 the point is a guess
+};
+```
+
+`MutableLandmark` is the same shape with writable fields, the target `landmarkInto` fills.
+
 | Function | Returns | Allocates |
 | --- | --- | --- |
 | `landmark(frame, joint)` | `Landmark` | one small object |
@@ -117,8 +129,8 @@ const knee = landmark(frame, 'leftKnee');   // { x, y, z, visibility }
 | `createLandmark()` | a reusable `out` target | once |
 | `worldLandmark(frame, joint)` | `Landmark \| null` | one small object |
 | `visibilityOf(frame, joint)` | `number`, `0` when absent | nothing |
-| `isVisible(frame, joint, min?)` | `boolean`, `min` defaults to `0.5` | nothing |
-| `hasLandmark(frame, joint)` | `boolean` | nothing |
+| `isVisible(frame, joint, minVisibility?)` | `boolean`, `minVisibility` defaults to `0.5` | nothing |
+| `hasLandmark(frame, joint)` | `boolean`: `data.landmarks` is on and `data.select` kept the joint | nothing |
 
 Nothing here copies or parses the buffer. On a `live`-mode path where allocation matters, hoist
 one target and reuse it:
@@ -141,16 +153,24 @@ when you would rather branch than catch.
 
 ## `JointName` / landmark indices
 
-BlazePose, 33 points:
+BlazePose, 33 points, in buffer order:
 
 ```text
-0  nose          11 leftShoulder   23 leftHip     29 leftHeel
-2  leftEye       12 rightShoulder  24 rightHip    30 rightHeel
-5  rightEye      13 leftElbow      25 leftKnee    31 leftFootIndex
-                 14 rightElbow     26 rightKnee   32 rightFootIndex
-                 15 leftWrist      27 leftAnkle
-                 16 rightWrist     28 rightAnkle
+ 0 nose            11 leftShoulder    22 rightThumb
+ 1 leftEyeInner    12 rightShoulder   23 leftHip
+ 2 leftEye         13 leftElbow       24 rightHip
+ 3 leftEyeOuter    14 rightElbow      25 leftKnee
+ 4 rightEyeInner   15 leftWrist       26 rightKnee
+ 5 rightEye        16 rightWrist      27 leftAnkle
+ 6 rightEyeOuter   17 leftPinky       28 rightAnkle
+ 7 leftEar         18 rightPinky      29 leftHeel
+ 8 rightEar        19 leftIndex       30 rightHeel
+ 9 mouthLeft       20 rightIndex      31 leftFootIndex
+10 mouthRight      21 leftThumb       32 rightFootIndex
 ```
+
+`leftIndex` and `rightIndex` are the index fingers, the far point of the wrist angles, and
+`leftFootIndex` and `rightFootIndex` are the tips of the feet.
 
 All 33 names are exported as values, not only as a type. `JointName` is a union of those literals,
 `JOINT_NAMES` is the ordered list, and `JOINT_INDEX` maps a name to its position in the full,
@@ -183,8 +203,8 @@ bound above it can never be met.
 ## Skeleton connections
 
 `POSE_CONNECTIONS` is the 35-pair skeleton, as joint-name pairs. `POSE_CONNECTION_INDICES` is the
-same list as buffer indices, the form the native renderers iterate, and `CONNECTION_COUNT` is
-`35`. Both platforms draw this same table, restated pair for pair in Kotlin and Swift.
+same list as landmark indices in the full, unselected order, the form the native renderers
+iterate, and `CONNECTION_COUNT` is `35`. Both platforms draw this same table, restated pair for pair in Kotlin and Swift.
 
 ## `Profile` / `ProfileState`
 
@@ -229,6 +249,9 @@ type CameraState = {
 };
 ```
 
+Until `onReady` arrives, `facing`, `delegate` and `deviceTier` are placeholders, `'front'`, `'CPU'`
+and `'medium'`, whatever the camera turns out to be.
+
 ## Validation
 
 Trigger configs are checked in JavaScript before they reach native:
@@ -250,11 +273,32 @@ before anything walks the conditions. You only need to call these yourself when 
 configs dynamically and want to check one before rendering.
 
 `PoseConfigError` carries every problem it found on `.issues`, not just the first, so a generated
-config can be fixed in one pass. `setLogLevel()` throws the same error type for an unknown level
-or category.
+config can be fixed in one pass. The rest of the package throws the same error type for its own
+configuration mistakes, listed under [functions → errors](./functions.md#errors).
 
 The full rule list is in [trigger schema → validation](./trigger-schema.md#validation).
 
 ## Events
 
 See [events](./events.md) for `ReadyEvent`, `ErrorEvent`, `TriggerEvent`, `PerformanceEvent`.
+
+## Every exported type
+
+Each one is importable from the package root, and documented where it is used:
+
+| Area | Types | Where |
+| --- | --- | --- |
+| The component | `PoseCameraProps`, `PoseCameraRef` | [props](./pose-camera.md), [ref methods](./ref-methods.md) |
+| Camera settings | `Profile`, `FacingRequest`, `Facing`, `DelegateRequest`, `Delegate`, `ResolutionPreset`, `AnalysisResolutionPreset`, `Resolution`, `ThermalPolicy`, `ThermalState`, `DeviceTier`, `ModelVariant`, `SmoothingConfig` | [props](./pose-camera.md#configuration) |
+| Drawing | `OverlayConfig`, `AngleOverlay` | [props → switches](./pose-camera.md#switches) |
+| Frames | `DataConfig`, `DataMode`, `PoseFrame`, `Landmark`, `MutableLandmark`, `Vec2`, `JointName`, `AngleJointName` | [props → data](./pose-camera.md#data), this page |
+| State | `CameraState`, `ProfileState`, `LimitedBy` | this page |
+| Events | `ReadyEvent`, `ErrorEvent`, `ErrorCode`, `CameraChangeEvent`, `PerformanceEvent`, `TriggerEvent` | [events](./events.md) |
+| Triggers | `Trigger`, `TriggerEmit`, `Condition`, `AngleCondition`, `LandmarkXCondition`, `LandmarkYCondition`, `VelocityXCondition`, `VelocityYCondition`, `VisibilityCondition`, `AllCondition`, `AnyCondition`, `ValidationIssue` | [trigger schema](./trigger-schema.md), [validation](#validation) |
+| Files | `StaticOptions`, `VideoOptions`, `VideoTask`, `ExportOptions`, `ExportTask`, `ExportResult` | [functions → files](./functions.md#files) |
+| Permission | `CameraPermission`, `CameraPermissionStatus`, `UseCameraPermission` | [camera permission](./permissions.md) |
+| Logging | `LogLevel`, `LogCategory`, `LogLevelConfig`, `LogEntry`, `LogListener`, `Subscription` | [functions → diagnostics](./functions.md#diagnostics) |
+| Native contract | `NativePoseModule`, `NativePoseCameraView` | the native module's and native view's own surface, which `<PoseCamera>` and the functions wrap. App code has no need for them |
+
+`Vec2` is `{ x, y }`, the shape of `centerOfMass` and `velocity`. `Resolution` is
+`{ width, height }` in pixels, as `ReadyEvent` and `PerformanceEvent` report sizes.

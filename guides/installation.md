@@ -55,8 +55,9 @@ the Expo Modules API, and that API's autolinking is what finds the native module
 
 Each Expo SDK is built against one React Native, so take the one that matches yours: `expo@56`
 for React Native 0.85 and `expo@57` for 0.86. npm cannot catch a mismatch, since `expo` accepts
-any React Native, so `fetch-model` warns about one and `doctor` fails on it, naming the version
-to install.
+any React Native, and a mismatch shows up later: `expo@57` on React Native 0.85 fails to compile
+for Android. So `fetch-model` warns about one and installs anyway, and `doctor` fails on it, both
+naming the version to install.
 
 ### Wiring Expo modules into an existing app
 
@@ -240,8 +241,8 @@ the model there. Cache `~/.cache/react-native-pose-detection` to skip the downlo
 ## Android release builds
 
 **Ship an AAB.** MediaPipe ships four ABI slices and a universal APK carries all of them:
-10.5 MB for `arm64-v8a`, 7.4 MB for `armeabi-v7a`, 15.0 MB for `x86` and 13.0 MB for `x86_64`,
-45.9 MB of native library against the 10.5 MB a phone actually loads. Measured from an
+10.1 MB for `arm64-v8a`, 7.1 MB for `armeabi-v7a`, 14.3 MB for `x86` and 12.5 MB for `x86_64`,
+44.0 MB of native library against the 10.1 MB a phone actually loads. Measured from an
 assembled APK on the pinned MediaPipe 0.10.35, see
 [ADR 0007](../docs/adr/0007-pin-mediapipe-0-10-35.md).
 

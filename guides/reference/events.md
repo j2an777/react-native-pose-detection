@@ -66,8 +66,9 @@ type ErrorEvent = {
 
 ### Error codes
 
-This is the complete list. Native emits nothing outside it, so a `switch` on `code` can be
-exhaustive and a new failure mode has to be added here rather than appearing as a new string.
+This is the complete list for `onError` and the file functions. Native emits nothing outside it
+there, so a `switch` on `code` can be exhaustive and a new failure mode has to be added here
+rather than appearing as a new string.
 `ERROR_CODES` is exported if you need to iterate them.
 
 | Code | Fatal | Meaning |
@@ -88,7 +89,11 @@ exhaustive and a new failure mode has to be added here rather than appearing as 
 | `EXPORT_CANCELLED` | ❌ | `exportPose` was cancelled; the partial file was deleted |
 
 The last two never arrive on `onError`. They are the codes `exportPose` rejects with, and they
-are in the same set so that one exhaustive switch covers every failure this package reports.
+are in the same set so that one exhaustive switch covers every failure the camera and the file
+functions report. One code sits outside it: on Android, `requestCameraPermission()` rejects with
+`PERMISSIONS_UNAVAILABLE` in an app whose Expo modules are not fully installed, see
+[camera permission](./permissions.md). A configuration mistake is a thrown `PoseConfigError`, never
+a code, see [functions → errors](./functions.md#errors).
 
 `fatal: false` is normal operation, not a bug. Only `fatal: true` means the camera stopped, or with
 `DETECTOR_INIT_FAILED`, that it runs without detection.

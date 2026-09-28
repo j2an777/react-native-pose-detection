@@ -55,15 +55,18 @@ both native projects. Nothing is committed to your repo.
 ### Bare React Native
 
 ```bash
+npm i expo@56   # the Expo SDK built for React Native 0.85; expo@57 on 0.86
 npx react-native-pose-detection fetch-model full
-cd ios && pod install
 ```
 
-A bare app also needs the `expo` package and Expo's autolinking wired in by hand, which
-[installation](./installation.md#bare-react-native) walks through.
+`expo` provides the autolinking that links this package's native code; it does not make your app
+an Expo app. Wire that autolinking into both native projects once, as
+[installation](./installation.md#wiring-expo-modules-into-an-existing-app) walks through, set the
+iOS deployment target to 16.4, then run `pod install` in `ios/`.
 
-Then add `NSCameraUsageDescription` to `Info.plist`. Android needs nothing: this package
-declares `android.permission.CAMERA` in its own manifest and the merger adds it to your app.
+Then add `NSCameraUsageDescription` to `Info.plist`. Android needs nothing for the permission:
+this package declares `android.permission.CAMERA` in its own manifest and the merger adds it to
+your app.
 
 ## Choosing a model
 
@@ -73,7 +76,8 @@ declares `android.permission.CAMERA` in its own manifest and the merger adds it 
 | `full` *(default)* | ~9.0 MB | most apps |
 | `heavy` | ~29.2 MB | accuracy-critical, flagship devices |
 
-Changing it is one word in `app.json` plus `npx expo prebuild`.
+Changing it is one word in `app.json` plus `npx expo prebuild`, or
+`npx react-native-pose-detection fetch-model lite` in a bare app.
 
 ## First camera
 

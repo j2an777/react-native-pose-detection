@@ -31,8 +31,8 @@ import {
 | [`createLandmark()`](#reading-a-frame) | `MutableLandmark` | A reusable target for `landmarkInto` |
 | [`worldLandmark(frame, joint)`](#reading-a-frame) | `Landmark \| null` | One joint in meters, hip-centered |
 | [`visibilityOf(frame, joint)`](#reading-a-frame) | `number` | One joint's visibility, `0` when absent |
-| [`isVisible(frame, joint, min?)`](#reading-a-frame) | `boolean` | Visibility at or above `min`, `0.5` by default |
-| [`hasLandmark(frame, joint)`](#reading-a-frame) | `boolean` | Whether `data.select` kept the joint |
+| [`isVisible(frame, joint, minVisibility?)`](#reading-a-frame) | `boolean` | Visibility at or above `minVisibility`, `0.5` by default |
+| [`hasLandmark(frame, joint)`](#reading-a-frame) | `boolean` | Whether the frame carries the joint: `data.landmarks` on, and kept by `data.select` |
 | [`isJointName(value)`](#joint-names) | `boolean` | Type guard for the 33 `JointName`s |
 | [`isAngleJointName(value)`](#joint-names) | `boolean` | Type guard for the 12 joints that have an angle |
 | [`setLogLevel(config)`](#setloglevel) | `void` | Turns the diagnostic channel on, up or off |
@@ -58,13 +58,17 @@ on Android, or an `http(s)` URL, fetched whole before it is decoded.
 | Option | Default |
 | --- | --- |
 | `maxPoses` | `1`, up to 5 |
-| `minConfidence` | `0.5` at `maxPoses: 1`, `0.3` above it |
+| `minConfidence` | `0.5` at `maxPoses: 1`, `0.3` above it; 0.1 to 1 |
 | `angles` | `true`, all twelve; or a list of `AngleJointName`s |
 | `worldLandmarks` | `false` |
 | `select` | all 33 joints |
 
 Rejects with `IMAGE_DECODE_FAILED`, `MODEL_NOT_FOUND` or `DETECTION_FAILED`. See
 [landmarks from an image](../files.md#landmarks-from-an-image).
+
+A bad option is a `PoseConfigError` instead, as it is on the camera: a number that is not finite,
+or a `select` or `angles` joint that `data` would refuse. `detectOnImage()` rejects with it, and
+`detectOnVideo()` and `exportPose()` throw it from the call itself, before a task exists.
 
 ### `detectOnVideo`
 
@@ -111,12 +115,13 @@ type ExportResult = {
 ```
 
 Paints the skeleton into a copy of a photo or a video with the renderer the live camera uses. The
-options are `overlay`, `maxPoses`, `minConfidence`, `fps`, `maxSize`, `directory`, `fileName`,
-`quality` and `onProgress`; their defaults are in [export options](../files.md#export-options).
-Rejects with `EXPORT_CANCELLED` after `cancel()`, which stops a video export, or any export still
-queued behind another, but not a photo export already running, and `EXPORT_FAILED` when the file cannot be read, painted or written. A cancelled or failed export
-deletes its own partial file and leaves any earlier export under the same name as it was. See
-[painting a copy](../files.md#painting-a-copy).
+options are `overlay`, `maxPoses`, `minConfidence` (0.1 to 1), `fps`, `maxSize`, `directory`,
+`fileName`, `quality` (0.1 to 1) and `onProgress`; their defaults are in
+[export options](../files.md#export-options). Rejects with `EXPORT_CANCELLED` after `cancel()`,
+which stops a video export, or any export still queued behind another, but not a photo export
+already running, and `EXPORT_FAILED` when the file cannot be read, painted or written. A
+cancelled or failed export deletes its own partial file and leaves any earlier export under the
+same name as it was. See [painting a copy](../files.md#painting-a-copy).
 
 ## Camera permission
 
@@ -139,9 +144,10 @@ useCameraPermission(options?: { ask?: boolean }): UseCameraPermission
 ```
 
 The permission as React state, asked for on mount unless `ask` is `false`. It adds `pending`,
-`request()` and `error` to `CameraPermission`; `error` is set when the app was built without the
-native module, an Expo Go session for instance. See
-[camera permission](./permissions.md).
+`request()` and `error` to `CameraPermission`. `error` is set when reading or asking fails, which
+means an incomplete install: an app built without the native module, an Expo Go session for
+instance, or an Android app with no Expo permissions manager. `request()` never rejects: a failure
+resolves with `undetermined` and sets `error`. See [camera permission](./permissions.md).
 
 ### `getCameraPermission`
 
@@ -158,7 +164,9 @@ requestCameraPermission(): Promise<CameraPermission>
 ```
 
 Prompts when the system still will, and resolves with the outcome either way: at once, without a
-dialog, when the status is already `granted` or `blocked`.
+dialog, when the status is already `granted` or `blocked`. On Android, an app whose Expo modules
+are not fully installed has no permissions manager to ask, and this rejects with
+`PERMISSIONS_UNAVAILABLE`.
 
 ## Triggers
 
@@ -195,7 +203,8 @@ if (isVisible(frame, 'leftWrist')) { /* trust its coordinates */ }
 ```
 
 `landmark`, `landmarkInto` and `worldLandmark` throw `PoseConfigError` for a joint `data.select`
-left out; `hasLandmark` and `visibilityOf` let you branch instead. The allocation of each, and the
+left out, and the first two also for a frame sent with `data.landmarks` off; `hasLandmark` and
+`visibilityOf` let you branch instead. The allocation of each, and the
 buffer layout underneath, are in [types → accessors](./types.md#accessors).
 
 ## Joint names
@@ -225,7 +234,8 @@ setLogLevel(config: LogLevel | Partial<Record<LogCategory, LogLevel>>): void
 
 Sets the level for the whole app, or per category with a map. Throws `PoseConfigError` on an
 unknown level or category, because a level that silently failed to apply looks like the bug you
-were trying to find. A camera's `logLevel` prop raises it while that camera is mounted.
+were trying to find. A camera's `logLevel` prop raises it while that camera is mounted, and is
+checked the same way during render.
 
 ### `addLogListener`
 
@@ -246,6 +256,9 @@ detection or an export can be watched too. The native stream runs only while a l
 attached, or a camera with an `onLog` prop is mounted. Call `remove()` on the returned
 subscription to stop; the same function added twice needs two.
 
+When more than 256 entries pile up between two batches, the oldest are dropped, and the next
+batch opens with a `warn` entry whose `data.droppedCount` is how many.
+
 ## Errors
 
 ```ts
@@ -254,11 +267,21 @@ class PoseConfigError extends Error {
 }
 ```
 
-Thrown for a configuration mistake: a bad trigger, a numeric prop or file option that is not a
-finite number, an unknown log level, or a joint read that `data.select` excluded. Out-of-range
-numbers are clamped natively rather than thrown. It carries every problem it found on `issues`.
+Thrown for a configuration mistake:
+
+- a bad trigger, or a bad `data` config: an unknown `mode`, or a `select` or `angles` joint that
+  does not exist or has no angle
+- a numeric prop or file option that is not a finite number, and the same joint mistakes in the
+  file functions' `select` and `angles`
+- an unknown log level or category, from `setLogLevel()` or the `logLevel` prop
+- a landmark read the frame cannot answer: a joint `data.select` excluded, or any joint with
+  `data.landmarks` off
+
+Out-of-range prop and file-option numbers are clamped natively rather than thrown; trigger bounds
+are range-checked and throw. It carries every problem it found on `issues`.
+
 Runtime failures are not thrown: they arrive as `onError` codes on the camera and as rejections
-with a `code` from the file functions, all listed in [error codes](./events.md#onerror).
+with a `code` from the file functions, all listed in [error codes](./events.md#error-codes).
 
 ## Constants
 

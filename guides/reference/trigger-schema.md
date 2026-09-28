@@ -98,14 +98,18 @@ ACTIVE + still matches → emit if 'while' (throttled)
 
 Configs are validated in JavaScript before reaching native. These are errors, not silent failures:
 
+- `triggers` that is not an array, or a trigger or a condition that is not an object
 - an unknown key anywhere on a trigger or a condition
-- unknown `JointName`
+- unknown `JointName`, or a velocity subject that is neither `'centerOfMass'` nor a joint
 - an `angle` on a joint that has none, `nose` for instance
 - missing or empty `id`, or a duplicate `id`
 - unknown `emit`
+- missing `enter`
 - `emit: 'cycle'` or `emit: 'exit'` without `exit`
 - a condition with no key, or with more than one
 - a condition with no bound at all, no `below`, `above`, or `between`
+- a `below`, `above` or `between` value that is not a finite number: `NaN`, `Infinity`, a string
+- a landmark bound that is neither a number nor a joint name
 - `between` on a landmark or velocity condition, where it does not belong
 - `between` that is not a `[min, max]` pair, or where `min >= max`
 - any angle bound outside 0 to 180, including both ends of a `between`
@@ -114,7 +118,7 @@ Configs are validated in JavaScript before reaching native. These are errors, no
 - `visibility` without `above`, or `above` outside 0 to 1
 - a `debounceMs`, `minDurationMs`, or `throttleMs` that is negative or not finite
 - a non-boolean `snapshot`
-- empty `all` / `any`, or nesting deeper than 8 levels
+- `all` / `any` that is not an array, is empty, or nests deeper than 8 levels
 
 A bound that is present but explicitly `undefined` counts as absent, so a condition assembled by
 spreading optional fields is judged by what it actually has rather than by which keys exist.

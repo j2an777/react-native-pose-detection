@@ -13,12 +13,24 @@ gets everything under [0.2.0](#020); start with [Upgrading from 0.1.0](#upgradin
 
 - `doctor` and `fetch-model` check that the installed Expo SDK is the one built for the app's
   React Native, and name the version to install. npm cannot catch this, since `expo` accepts any
-  React Native, and a mismatch only fails later in the native build.
+  React Native, and the mismatch only shows later: `expo@57` on React Native 0.85 fails to
+  compile for Android.
 
 ### Changed
 
-- README reorganized: requirements and supported versions up front, the documentation in reading
-  order, and every event and function linked to its reference.
+- README reorganized: requirements and supported versions up front, a bare setup that pins the
+  Expo SDK and links the autolinking steps, the documentation in reading order, and every event
+  and function linked to its reference.
+- The API and CLI references are complete: every exported type, all 33 joint names, each option's
+  default and range, and every `doctor` check.
+
+### Fixed
+
+- The `logLevel` prop is checked during render, as `setLogLevel()` is: an unknown level or
+  category throws `PoseConfigError` instead of being ignored natively.
+- `detectOnImage` and `detectOnVideo` check `select` and `angles` as `data` does. An unknown joint
+  is a `PoseConfigError` instead of an error with no `code`, and a joint with no angle is refused
+  instead of skipped.
 
 ## 0.2.0
 

@@ -36,7 +36,9 @@ Bare RN:
 npx react-native-pose-detection fetch-model full
 ```
 
-Verify it landed:
+Verify it landed with `npx react-native-pose-detection doctor`. It checks both places, the
+checksum, and on iOS that the file is in the app target, since a model no target builds is never
+bundled and fails the same way:
 
 ```text
 android/app/src/main/assets/pose_landmarker_*.task
@@ -72,6 +74,26 @@ landmarker is constructed. Undo the override, see
 The other way to cause it is `abiFilters` on a debug build. Filter release builds only.
 
 On Apple Silicon, use an arm64 emulator image, which is what Android Studio gives you by default.
+
+## Android build fails inside `expo-modules-core`
+
+```text
+NativeArrayBuffer.cpp:60:36: error: no member named 'tryGetMutableBuffer' in 'facebook::jsi::ArrayBuffer'
+Execution failed for task ':expo-modules-core:buildCMakeDebug[arm64-v8a]'.
+```
+
+That is an Expo SDK built for a different React Native: here `expo@57`, built for React Native
+0.86, in a React Native 0.85 app. npm installs any pairing without a word, since `expo` accepts any
+React Native, and the iOS build of the same app may still succeed, so Android is where it shows.
+Before chasing any compile error inside Expo's own modules, run `doctor`, which names the SDK to
+install:
+
+```text
+› ✗ Expo SDK for React Native   expo 57 is built for React Native 0.86, found 0.85.3: npm i expo@56
+```
+
+`fetch-model` prints the same line as a warning. In an Expo app, `npx expo install --fix` brings
+React Native in line with the SDK instead.
 
 ## iOS build fails
 
@@ -114,8 +136,8 @@ minSdkVersion = 24
 
 ## App size much larger than documented
 
-You're shipping a universal APK. It carries all four MediaPipe ABI slices, 45.9 MB of native
-library where a phone loads 10.5 MB of it. Ship an AAB, or set this on the release build only:
+You're shipping a universal APK. It carries all four MediaPipe ABI slices, 44.0 MB of native
+library where a phone loads 10.1 MB of it. Ship an AAB, or set this on the release build only:
 
 ```groovy
 ndk { abiFilters "arm64-v8a" }
@@ -248,7 +270,7 @@ Categories: `camera` · `detector` · `engine` · `triggers` · `calibration` ·
 
 Entries arrive **batched**, an array every ~250 ms rather than one call per line. If more than 256
 pile up between two batches, the oldest are dropped rather than growing memory, and the next batch
-opens with a `warn` entry carrying the count. `LogEntry.timestamp` uses the same monotonic
+opens with a `warn` entry whose `data.droppedCount` is the count. `LogEntry.timestamp` uses the same monotonic
 clock as `PoseFrame.timestamp`, so a log line can be matched to the exact frame that produced
 it.
 

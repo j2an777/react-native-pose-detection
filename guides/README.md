@@ -12,16 +12,16 @@ Working *on* the library? See [docs/](../docs/README.md).
 | **1.** [Getting started](./getting-started.md) | Install → live skeleton in five minutes |
 | **2.** [Installation](./installation.md) | Expo, bare RN, EAS, release builds |
 | **3.** [Camera control](./camera-control.md) | Switching, pausing, the three toggles |
-| **4.** [Data delivery](./data-delivery.md) | Getting landmarks out without paying for them |
-| **5.** [Triggers](./triggers.md) | Business logic that runs natively |
+| **4.** [Triggers](./triggers.md) | Business logic that runs natively |
+| **5.** [Data delivery](./data-delivery.md) | Getting landmarks out without paying for them |
 
 ## Going further
 
 | | |
 | --- | --- |
-| [Performance](./performance.md) | Profiles, the governor, thermal ladder, app size |
 | [Photos and video files](./files.md) | Landmarks from a file, and painted copies of one |
 | [What you can build](./recipes.md) | Trigger syntax, feasibility, honest limits |
+| [Performance](./performance.md) | Profiles, the governor, thermal ladder, app size |
 | [Troubleshooting](./troubleshooting.md) | When something doesn't work, and the log channel |
 
 ## API reference
@@ -29,12 +29,12 @@ Working *on* the library? See [docs/](../docs/README.md).
 | | |
 | --- | --- |
 | [`<PoseCamera>` props](./reference/pose-camera.md) | Every prop and its default |
-| [Ref methods](./reference/ref-methods.md) | `switchCamera`, `snapshot`, `getState`, … |
 | [Events](./reference/events.md) | Every callback, payload, and error code |
+| [Ref methods](./reference/ref-methods.md) | `switchCamera`, `snapshot`, `getState`, … |
 | [Functions](./reference/functions.md) | `detectOnImage`, `exportPose`, `setLogLevel`, every other export |
 | [Types](./reference/types.md) | `PoseFrame`, `JointName`, wire format |
-| [Camera permission](./reference/permissions.md) | `useCameraPermission`, and why blocked is not denied |
 | [Trigger schema](./reference/trigger-schema.md) | Conditions, emit modes, validation |
+| [Camera permission](./reference/permissions.md) | `useCameraPermission`, and why blocked is not denied |
 | [Config plugin](./reference/config-plugin.md) | `app.json` options |
 | [CLI](./reference/cli.md) | `fetch-model`, `doctor`, `clear-cache` |
 

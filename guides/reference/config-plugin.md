@@ -17,18 +17,19 @@
 
 | Option | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `model` | `'lite' \| 'full' \| 'heavy'` | `'full'` | exactly one is installed |
-| `cameraPermissionText` | `string` | generic | `NSCameraUsageDescription` |
-| `cacheDir` | `string` | `~/.cache/react-native-pose-detection` | |
-| `skipDownload` | `boolean` | `false` | CI where the model is vendored |
+| `model` | `'lite' \| 'full' \| 'heavy'` | `'full'` | exactly one is installed. Case-sensitive: anything else fails the prebuild |
+| `cameraPermissionText` | `string` | see [below](#camera-permission-text) | iOS `NSCameraUsageDescription` |
+| `cacheDir` | `string` | `~/.cache/react-native-pose-detection` | used as given: a `~` in your value is not expanded |
+| `skipDownload` | `boolean` | `false` | CI where the model is vendored, see [offline](#offline) |
 
 ## What it does at prebuild
 
 ```text
 1. resolve model → URL + SHA-256 from the manifest
 2. cache hit?  → verify it        cache miss? → download
-3. verify SHA-256 (mismatch = hard failure, never a warning)
-4. remove any previously installed .task from both native projects
+3. verify SHA-256: a download that does not match fails the build;
+   a damaged cache entry is fetched again
+4. remove every pose_landmarker_*.task from both native projects
 5. copy → android/app/src/main/assets/
    copy → ios/<App>/Resources/  + register in the Xcode project
 6. write camera permission into Info.plist and AndroidManifest.xml
@@ -36,7 +37,8 @@
 
 Step 4 is why switching variants never leaves two models in the build. It removes **every**
 model file it finds, not just the variant you were using before, so a rename or a hand-copied
-file gets cleaned up too. On iOS that includes unregistering the old file from the app target.
+file gets cleaned up too, in `android/app/src/main/assets/`, `ios/<App>/Resources/` and beside the
+sources in `ios/<App>/`. On iOS that includes unregistering the old file from the app target.
 
 The Android and iOS passes run in the same process and share one download, so a cold cache
 fetches the file once, not twice.
@@ -49,7 +51,9 @@ other process on the machine. A copy that does not match is deleted and the preb
 
 `cameraPermissionText` wins over everything. With it unset, a `NSCameraUsageDescription` already
 in your app config wins over the plugin's generic fallback, because that is you being specific and
-the fallback is not. The fallback is only written when nothing else said anything.
+the fallback is not. The fallback, *This app uses the camera to analyse your movement.*, is only
+written when nothing else said anything. Android needs no text: the plugin adds
+`android.permission.CAMERA` to the app manifest.
 
 ### Downloading
 
@@ -60,6 +64,7 @@ looks complete, and the next run resumes it with a range request instead of star
 A cached file is re-verified on every prebuild, not trusted because it exists. That costs a few
 milliseconds and catches a cache damaged by a full disk or an interrupted copy. If a cached file
 fails, it is deleted and fetched again; the fresh copy still has to verify or the build fails.
+Under `skipDownload` it is kept instead, see [offline](#offline).
 See [ADR 0006](../../docs/adr/0006-checksums-are-fatal-except-in-the-cache.md).
 
 ## Model sizes
@@ -82,7 +87,12 @@ so you can place the file manually.
 `skipDownload: true` never touches the network at all. On a cache hit it installs as usual; on
 a cache miss it prints a warning and leaves the model files in both native projects as they were,
 so a vendored model already committed to your repo is not deleted by a build that cannot reach
-the CDN.
+the CDN. A cached file that fails verification is kept rather than deleted, since this machine
+cannot fetch another, and nothing is installed from it.
+
+The rest of the prebuild still runs. The Xcode project is set to reference
+`ios/<App>/Resources/pose_landmarker_<model>.task` and the camera permission is written, so a
+vendored model has to be the variant `model` names, or the iOS build cannot find the file.
 
 ## CI
 

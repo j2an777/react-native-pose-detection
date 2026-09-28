@@ -99,8 +99,8 @@ test('every error code has a row in the events reference', () => {
   assert.deepEqual(stale, []);
 });
 
-/** Every value `src/index.ts` exports: functions, classes and constants, but not types. */
-function runtimeExports(): string[] {
+/** What `src/index.ts` exports: values (functions, classes, constants), or else only types. */
+function exportedNames(kind: 'values' | 'types'): string[] {
   const entry = resolve(CORE, 'src/index.ts');
   const program = ts.createProgram([entry], {
     target: ts.ScriptTarget.ES2022,
@@ -120,7 +120,7 @@ function runtimeExports(): string[] {
     .filter((symbol) => {
       const target =
         symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
-      return (target.flags & ts.SymbolFlags.Value) !== 0;
+      return ((target.flags & ts.SymbolFlags.Value) !== 0) === (kind === 'values');
     })
     .map((symbol) => symbol.getName())
     .sort();
@@ -128,7 +128,7 @@ function runtimeExports(): string[] {
 
 test('every function, class and constant the package exports is documented in the reference', () => {
   const docs = reference();
-  const undocumented = runtimeExports().filter(
+  const undocumented = exportedNames('values').filter(
     (name) => !documents(docs, name) && !docs.includes(`<${name}`),
   );
 
@@ -136,5 +136,16 @@ test('every function, class and constant the package exports is documented in th
     undocumented,
     [],
     'these are exported from src/index.ts but appear nowhere in guides/reference/',
+  );
+});
+
+test('every type the package exports is named in the reference', () => {
+  const docs = reference();
+  const unnamed = exportedNames('types').filter((name) => !documents(docs, name));
+
+  assert.deepEqual(
+    unnamed,
+    [],
+    'these types are exported from src/index.ts but named nowhere in guides/reference/',
   );
 });

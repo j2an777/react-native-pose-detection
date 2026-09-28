@@ -28,10 +28,17 @@ Everything except `getState` and `setProfile` returns a promise, because it reac
 the same asynchronous path every other call takes (`snapshot` excepted, see below). Ignoring the
 promise is fine and common. Awaiting it is how you see a failure instead of losing it.
 
+A method called right after mount, before the native view is ready, waits up to a second for it
+rather than failing. Once the camera has unmounted, the camera and detection methods and
+`setProfile()` resolve without doing anything, and `getProfile()` rejects with a plain `Error`
+that carries no `code`, as it does when the camera unmounts before answering.
+
 `getState()` stays synchronous: it merges a local mirror of the events that carry camera state
 with `fps` and `limitedBy`, which move between events and which it reads from native directly on
 the JavaScript thread. None of it is a trip across the bridge. Its `deviceTier` is the one
-`onReady` reported; `getProfile()` has the tier calibration has refined since.
+`onReady` reported; `getProfile()` has the tier calibration has refined since. Until `onReady`
+arrives, `facing`, `delegate` and `deviceTier` are placeholders: `'front'`, `'CPU'` and
+`'medium'`.
 
 ## Camera
 
@@ -52,7 +59,8 @@ success.
 | --- | --- |
 | `startDetection()` / `stopDetection()` | Preview keeps running. `stopDetection()` stops inference at once and **frees the landmarker's memory after a minute unused**, so a `startDetection()` inside that minute is instant rather than a rebuild. |
 | `setOverlayEnabled(b)` | Drawing only. Inference continues: use when you draw your own UI. Off, the overlay does no work at all. |
-| `snapshot()` | Current `PoseFrame` on demand, regardless of `data.mode`. Resolves to `null` if no pose is present. Read synchronously on the JavaScript thread, so the promise is already settled when it is returned, see [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md). |
+| `snapshot()` | Current `PoseFrame` on demand, regardless of `data.mode`. Resolves to `null` if no pose is present. Read synchronously on the JavaScript thread, so the promise is already settled when it is returned, see [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md). A buffer that cannot be decoded rejects it with a plain `Error`. |
+| `setProfile(p)` | Applies a performance profile at once, rather than at the next render. It returns nothing, so there is no failure to await; `getProfile()` shows what took effect. See [performance](../performance.md). |
 
 ## Introspection
 

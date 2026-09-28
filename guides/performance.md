@@ -274,8 +274,8 @@ The native libraries are already compressed and do not shrink again inside the A
 disk is what is downloaded. The model compresses by about a tenth, 8.96 MB down to 8.03 MB for
 `full`, because float16 weights are close to incompressible.
 
-The JavaScript is the part that rounds to nothing: **66.4 KB** of built output, and no runtime
-dependencies to pull in behind it.
+The JavaScript is the part that rounds to nothing: **about 70 KB** of built output, and no
+runtime dependencies to pull in behind it.
 
 Everything else is an estimate:
 
@@ -285,8 +285,8 @@ Everything else is an estimate:
 | `full` | ~23.2 MB / ~14.2 MB | ~29–44 MB |
 | `heavy` | ~43.4 MB / ~33.0 MB | ~49–64 MB |
 
-No release archive has been built and weighed yet. Phase 6 replaces this table with numbers from
-one, per model and per platform.
+No release archive has been built and weighed yet, so these stay estimates until one has, per
+model and per platform.
 
 **Android requires an AAB.** A universal APK carries all four ABI slices, 43.96 MB of native
 library where a phone loads 10.08 MB of it. Set `abiFilters` on your release build if you must

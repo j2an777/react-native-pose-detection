@@ -88,7 +88,11 @@ npx react-native-pose-detection fetch-model full
 ```
 
 `expo` provides the autolinking that links this Expo module; it does not make your app an Expo
-app. On iOS, set the deployment target to 16.4 in the `Podfile` and the Xcode target, and add the
+app. Each Expo SDK is built for one React Native, hence the pinned version. An app that does not
+use Expo modules yet wires that autolinking into its native projects once:
+[the steps](https://khalid999devs.github.io/react-native-pose-detection/installation#wiring-expo-modules-into-an-existing-app).
+
+On iOS, set the deployment target to 16.4 in the `Podfile` and the Xcode target, and add the
 camera permission to **`ios/<YourApp>/Info.plist`**:
 
 ```xml
@@ -96,10 +100,11 @@ camera permission to **`ios/<YourApp>/Info.plist`**:
 <string>We use the camera to analyze your movement.</string>
 ```
 
-Android needs nothing more: this package's own manifest declares the camera permission.
+On Android, the camera permission comes from this package's own manifest.
 
 Either setup can be verified with `npx react-native-pose-detection doctor`, which checks the
-install and names anything missing. Every step, including EAS and release builds:
+install, including the Expo SDK against React Native, and names anything missing. Every step,
+including EAS and release builds:
 [installation guide](https://khalid999devs.github.io/react-native-pose-detection/installation).
 
 ### Choosing a model
