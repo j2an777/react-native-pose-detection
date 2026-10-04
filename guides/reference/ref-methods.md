@@ -21,6 +21,7 @@ type PoseCameraRef = {
   getState(): CameraState;
 
   snapshot(): Promise<PoseFrame | null>;
+  takePhoto(options?: TakePhotoOptions): Promise<Photo>;
 };
 ```
 
@@ -60,6 +61,7 @@ success.
 | `startDetection()` / `stopDetection()` | Preview keeps running. `stopDetection()` stops inference at once and **frees the landmarker's memory after a minute unused**, so a `startDetection()` inside that minute is instant rather than a rebuild. |
 | `setOverlayEnabled(b)` | Drawing only. Inference continues: use when you draw your own UI. Off, the overlay does no work at all. |
 | `snapshot()` | Current `PoseFrame` on demand, regardless of `data.mode`. Resolves to `null` if no pose is present. Read synchronously on the JavaScript thread, so the promise is already settled when it is returned, see [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md). A buffer that cannot be decoded rejects it with a plain `Error`. |
+| `takePhoto(o)` | A still from the running session, written to the cache directory. Detection and the preview keep going. Front-camera stills match the mirrored preview unless `mirrorFront: false`. Rejects with `CAPTURE_FAILED` when the camera cannot add a capture output beside the analysis one, which an entry-level Android camera cannot; detection still runs there. Nothing prunes the files, so move or delete what you keep. |
 | `setProfile(p)` | Applies a performance profile at once, rather than at the next render. It returns nothing, so there is no failure to await; `getProfile()` shows what took effect. See [performance](../performance.md). |
 
 ## Introspection

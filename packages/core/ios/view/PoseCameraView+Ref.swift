@@ -82,6 +82,25 @@ extension PoseCameraView {
     applyDetectionState()
   }
 
+  /// Detection and the preview keep running; a still does not interrupt the analysis output.
+  func takePhoto(
+    quality: Double,
+    mirrorFront: Bool,
+    onDone: @escaping ([String: Any]) -> Void,
+    onFailed: @escaping (String) -> Void
+  ) {
+    camera.capturePhoto(quality: quality, mirrorFront: mirrorFront) { result in
+      switch result {
+      case .success(let photo):
+        PoseLog.debug(.camera, "photo written: \(photo.width)x\(photo.height), \(photo.size) bytes")
+        onDone(photo.payload)
+      case .failure(let error):
+        PoseLog.warn(.camera, "photo failed: \(error.localizedDescription)")
+        onFailed(error.localizedDescription)
+      }
+    }
+  }
+
   func setOverlayEnabled(_ enabled: Bool) {
     overlayEnabled = enabled
     applyOverlayEnabled()

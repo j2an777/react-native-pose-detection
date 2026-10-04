@@ -42,6 +42,17 @@ extension CameraSource {
     }
     session.addOutput(videoOutput)
 
+    // Optional on purpose: an entry-level camera that will not take a second output still
+    // detects, it just cannot photograph. Throwing here would cost the whole session.
+    let photoOutput = AVCapturePhotoOutput()
+    if session.canAddOutput(photoOutput) {
+      session.addOutput(photoOutput)
+      self.photoOutput = photoOutput
+    } else {
+      self.photoOutput = nil
+      PoseLog.warn(.camera, "this device will not add a photo output; takePhoto is unavailable")
+    }
+
     self.session = session
     self.input = deviceInput
     self.output = videoOutput
@@ -137,10 +148,16 @@ extension CameraSource {
   }
 
   func applyOrientation(_ orientation: AVCaptureVideoOrientation) {
-    guard let connection = output?.connection(with: .video) else { return }
-    CaptureRotation.apply(orientation, to: connection)
-    // Never mirrored: landmarks describe the real world; the overlay flips at draw time.
-    CaptureRotation.mirror(false, on: connection)
+    if let connection = output?.connection(with: .video) {
+      CaptureRotation.apply(orientation, to: connection)
+      // Never mirrored: landmarks describe the real world; the overlay flips at draw time.
+      CaptureRotation.mirror(false, on: connection)
+    }
+    // The photo connection is rotated here too, so a still taken before the first capture is
+    // upright. Mirroring is decided per capture, in `PhotoCapture`.
+    if let photo = photoOutput?.connection(with: .video) {
+      CaptureRotation.apply(orientation, to: photo)
+    }
   }
 
   func videoSettings(_ analysisSize: CaptureSize) -> [String: Any] {

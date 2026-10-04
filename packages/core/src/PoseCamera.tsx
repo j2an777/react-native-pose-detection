@@ -1,5 +1,6 @@
 import * as React from 'react';
 
+import { PoseConfigError } from './errors';
 import { decodeFrames } from './frames/decodeFrames';
 import type { DecodeOptions } from './frames/decodeFrames';
 import { getNativeModule, getNativeView } from './native';
@@ -7,7 +8,7 @@ import type { NativePoseCameraView, NativeTriggerEvent } from './native';
 import { callView } from './native/viewCalls';
 import type { AngleJointName, JointName } from './types/joints';
 import { ANGLE_JOINT_NAMES } from './types/joints';
-import type { CameraState, LimitedBy, ProfileState } from './types/camera';
+import type { CameraState, LimitedBy, Photo, ProfileState } from './types/camera';
 import type { PoseCameraProps, PoseCameraRef } from './types/props';
 import { resolveSmoothing } from './smoothing';
 import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from './types/events';
@@ -57,6 +58,9 @@ function useStableList<T extends string>(value: readonly T[] | undefined): reado
   }
   return held.current.list;
 }
+
+/** JPEG quality when `takePhoto()` is not given one. */
+const DEFAULT_PHOTO_QUALITY = 0.95;
 
 export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(function PoseCamera(
   props,
@@ -252,6 +256,22 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
           if (stale) return null;
           if (error) throw new Error(error);
           return frames[0] ?? null;
+        },
+        takePhoto: async (options) => {
+          const quality = options?.quality;
+          if (quality !== undefined && !(quality >= 0 && quality <= 1)) {
+            throw new PoseConfigError([
+              { path: 'quality', message: `must be between 0 and 1, received ${String(quality)}` },
+            ]);
+          }
+          const photo = await view((native) =>
+            native.takePhoto({
+              quality: quality ?? DEFAULT_PHOTO_QUALITY,
+              mirrorFront: options?.mirrorFront ?? true,
+            }),
+          );
+          if (!photo) throw new Error('The camera was unmounted before the photo was written.');
+          return photo as Photo;
         },
       };
     },

@@ -31,6 +31,8 @@ final class CameraSource {
   var session: AVCaptureSession?
   var input: AVCaptureDeviceInput?
   var output: AVCaptureVideoDataOutput?
+  /// Nil when the device would not take a second output alongside the analysis one.
+  var photoOutput: AVCapturePhotoOutput?
   var boundFacing: Facing = .front
 
   /// Main-thread mirror of the session state, so the view can report it without a queue hop.
@@ -263,6 +265,49 @@ final class CameraSource {
       session = nil
       input = nil
       output = nil
+      photoOutput = nil
+    }
+  }
+
+  // MARK: - Stills
+
+  /// Main thread. `settle` runs on main, exactly once.
+  ///
+  /// The capture itself is fired on the session queue: `photoOutput` belongs to that queue, and
+  /// `capturePhoto(with:delegate:)` is what Apple's own samples call there.
+  func capturePhoto(
+    quality: Double,
+    mirrorFront: Bool,
+    settle: @escaping (Result<CapturedPhoto, Error>) -> Void
+  ) {
+    guard isBound else {
+      settle(.failure(CaptureError("the camera is not running")))
+      return
+    }
+    // The subject framed a mirrored preview, so the front camera matches it by default.
+    let mirror = mirrorFront && facing == .front
+    let current = token.value
+
+    sessionQueue.async { [weak self] in
+      guard let self = self else {
+        DispatchQueue.main.async { settle(.failure(CaptureError("the camera was released"))) }
+        return
+      }
+      guard self.isCurrent(current), let output = self.photoOutput else {
+        let reason =
+          self.photoOutput == nil
+            ? "this device cannot take photos while detecting"
+            : "the camera stopped before the photo was taken"
+        DispatchQueue.main.async { settle(.failure(CaptureError(reason))) }
+        return
+      }
+      PhotoCapture.capture(
+        with: output,
+        quality: quality,
+        mirror: mirror,
+        orientation: self.orientation,
+        settle: settle
+      )
     }
   }
 

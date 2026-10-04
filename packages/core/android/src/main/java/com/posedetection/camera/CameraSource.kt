@@ -6,6 +6,8 @@ import android.util.Size
 import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.core.SessionConfig
 import androidx.camera.core.UseCase
@@ -37,6 +39,9 @@ internal class CameraSource(
 ) {
     private var provider: ProcessCameraProvider? = null
     private var analysis: ImageAnalysis? = null
+
+    /** Null when this camera would not bind a third use case; detection still runs. */
+    private var capture: ImageCapture? = null
 
     /** All a stop unbinds: the provider is per process and may already hold a newer view's session. */
     private var boundConfig: SessionConfig? = null
@@ -191,6 +196,7 @@ internal class CameraSource(
         analysis?.clearAnalyzer()
         unbindOwn()
         analysis = null
+        capture = null
         analyzer = null
         provider = null
         lifecycleOwner = null
@@ -235,26 +241,37 @@ internal class CameraSource(
 
         analyzer?.let { analysis.setAnalyzer(analysisExecutor, it) }
 
-        val selector = selectorFor(lens)
-        val useCases = listOf<UseCase>(preview, analysis)
-        val range = pinnedRange(provider, selector, useCases)
-        val config =
-            if (range !=
-                null
-            ) {
-                SessionConfig(useCases = useCases, frameRateRange = range)
-            } else {
-                SessionConfig(useCases)
-            }
+        val capture =
+            ImageCapture
+                .Builder()
+                // Latency, not quality: this is a framing shot, and the shutter should feel instant.
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .setTargetRotation(rotation)
+                .build()
 
+        val selector = selectorFor(lens)
         // All: one lifecycle owner holds one camera, and another view's session would make this throw.
         provider.unbindAll()
         boundConfig = null
-        provider.bindToLifecycle(owner, selector, config)
-        boundConfig = config
+
+        // Preview + analysis + capture needs a LIMITED camera or better. On a LEGACY device the
+        // third use case throws, and detection matters more than stills, so we drop it and rebind.
+        var bound = bindUseCases(provider, owner, selector, listOf(preview, analysis, capture))
+        if (bound == null) {
+            PoseLog.warn(LogCategory.CAMERA) {
+                "this camera will not bind a capture use case; takePhoto is unavailable"
+            }
+            bound = bindUseCases(provider, owner, selector, listOf(preview, analysis))
+                ?: throw IllegalStateException("this camera will not bind a preview and analysis session")
+            this.capture = null
+        } else {
+            this.capture = capture
+        }
+
+        boundConfig = bound.config
         boundPreviewSize = preview.resolutionInfo?.resolution
         boundAnalysisSize = analysis.resolutionInfo?.resolution
-        val delivered = range?.upper ?: PINNED_FPS
+        val delivered = bound.frameRate ?: PINNED_FPS
         onFrameRate?.invoke(delivered)
 
         this.analysis = analysis
@@ -266,6 +283,87 @@ internal class CameraSource(
                 "analysis=${sizeText(boundAnalysisSize, analysisSize)} rotation=$rotation " +
                 "frames=${range?.let { "${it.lower}-${it.upper}" } ?: "default"} fps"
         }
+    }
+
+    private class BoundSession(
+        val config: SessionConfig,
+        val frameRate: Int?,
+    )
+
+    /**
+     * Binds one set of use cases, pinning the frame rate when this camera supports it. Returns null
+     * when CameraX refuses the combination, which is how a LEGACY camera reports "too many".
+     */
+    private fun bindUseCases(
+        provider: ProcessCameraProvider,
+        owner: LifecycleOwner,
+        selector: CameraSelector,
+        useCases: List<UseCase>,
+    ): BoundSession? {
+        val range = pinnedRange(provider, selector, useCases)
+        val config =
+            if (range != null) {
+                SessionConfig(useCases = useCases, frameRateRange = range)
+            } else {
+                SessionConfig(useCases)
+            }
+        return runCatching {
+            provider.bindToLifecycle(owner, selector, config)
+            BoundSession(config, range?.upper)
+        }.onFailure {
+            // Leave nothing half-bound for the retry to trip over.
+            runCatching { provider.unbindAll() }
+            PoseLog.debug(LogCategory.CAMERA) { "binding ${useCases.size} use cases failed: ${it.message}" }
+        }.getOrNull()
+    }
+
+    // MARK: Stills
+
+    /**
+     * Main thread. [settle] runs on main, exactly once. Detection and the preview keep running.
+     */
+    fun capturePhoto(
+        quality: Double,
+        mirrorFront: Boolean,
+        settle: (Result<CapturedPhoto>) -> Unit,
+    ) {
+        if (!isBound) {
+            settle(Result.failure(IllegalStateException("the camera is not running")))
+            return
+        }
+        val capture =
+            this.capture ?: run {
+                settle(Result.failure(IllegalStateException("this device cannot take photos while detecting")))
+                return
+            }
+
+        val mirror = mirrorFront && facing == Facing.FRONT
+        val file =
+            runCatching { PhotoFiles.create(context) }
+                .getOrElse {
+                    settle(Result.failure(it))
+                    return
+                }
+
+        // The sensor writes a JPEG already; `quality` re-encodes only when it would shrink it.
+        capture.targetRotation = currentRotation()
+        val metadata = ImageCapture.Metadata().apply { isReversedHorizontal = mirror }
+        val options = ImageCapture.OutputFileOptions.Builder(file).setMetadata(metadata).build()
+
+        capture.takePicture(
+            options,
+            mainExecutor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    settle(runCatching { PhotoFiles.describe(file, quality, mirror) })
+                }
+
+                override fun onError(error: ImageCaptureException) {
+                    file.delete()
+                    settle(Result.failure(error))
+                }
+            },
+        )
     }
 
     /** Pinned so auto-exposure cannot drop to a few fps in a dim room; null keeps the default. */

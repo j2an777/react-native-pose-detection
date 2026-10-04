@@ -87,8 +87,9 @@ rather than appearing as a new string.
 | `DETECTION_FAILED` | ❌ | One frame, or one drained batch, failed; the pipeline continues |
 | `EXPORT_FAILED` | ❌ | `exportPose` could not read, paint or write the file |
 | `EXPORT_CANCELLED` | ❌ | `exportPose` was cancelled; the partial file was deleted |
+| `CAPTURE_FAILED` | ❌ | `takePhoto` could not take or write the still; the camera keeps running |
 
-The last two never arrive on `onError`. They are the codes `exportPose` rejects with, and they
+The last three never arrive on `onError`. They are the codes `exportPose` and `takePhoto` reject with, and they
 are in the same set so that one exhaustive switch covers every failure the camera and the file
 functions report. One code sits outside it: on Android, `requestCameraPermission()` rejects with
 `PERMISSIONS_UNAVAILABLE` in an app whose Expo modules are not fully installed, see

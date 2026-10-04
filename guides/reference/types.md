@@ -293,6 +293,7 @@ Each one is importable from the package root, and documented where it is used:
 | Drawing | `OverlayConfig`, `AngleOverlay` | [props → switches](./pose-camera.md#switches) |
 | Frames | `DataConfig`, `DataMode`, `PoseFrame`, `Landmark`, `MutableLandmark`, `Vec2`, `JointName`, `AngleJointName` | [props → data](./pose-camera.md#data), this page |
 | State | `CameraState`, `ProfileState`, `LimitedBy` | this page |
+| Stills | `TakePhotoOptions`, `Photo` | [ref methods](./ref-methods.md) |
 | Events | `ReadyEvent`, `ErrorEvent`, `ErrorCode`, `CameraChangeEvent`, `PerformanceEvent`, `TriggerEvent` | [events](./events.md) |
 | Triggers | `Trigger`, `TriggerEmit`, `Condition`, `AngleCondition`, `LandmarkXCondition`, `LandmarkYCondition`, `VelocityXCondition`, `VelocityYCondition`, `VisibilityCondition`, `AllCondition`, `AnyCondition`, `ValidationIssue` | [trigger schema](./trigger-schema.md), [validation](#validation) |
 | Files | `StaticOptions`, `VideoOptions`, `VideoTask`, `ExportOptions`, `ExportTask`, `ExportResult` | [functions → files](./functions.md#files) |

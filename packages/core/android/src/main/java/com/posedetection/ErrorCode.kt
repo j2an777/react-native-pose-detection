@@ -18,4 +18,5 @@ internal enum class ErrorCode(
     DETECTION_FAILED(false),
     EXPORT_FAILED(false),
     EXPORT_CANCELLED(false),
+    CAPTURE_FAILED(false),
 }

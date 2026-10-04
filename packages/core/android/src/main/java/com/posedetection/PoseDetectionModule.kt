@@ -338,6 +338,17 @@ class PoseDetectionModule : Module() {
                 AsyncFunction("setProfile") { view: PoseCameraView, profile: String ->
                     view.applyProfile(Profile.from(profile))
                 }.runOnQueue(Queues.MAIN)
+
+                AsyncFunction(
+                    "takePhoto",
+                ) { view: PoseCameraView, options: Map<String, Any?>, promise: expo.modules.kotlin.Promise ->
+                    view.takePhoto(
+                        quality = (options["quality"] as? Number)?.toDouble() ?: 1.0,
+                        mirrorFront = options["mirrorFront"] as? Boolean ?: true,
+                        onDone = { payload -> promise.resolve(payload) },
+                        onFailed = { message -> promise.reject("CAPTURE_FAILED", message, null) },
+                    )
+                }.runOnQueue(Queues.MAIN)
             }
         }
 }

@@ -136,3 +136,27 @@ export type DataConfig = {
    */
   select?: readonly JointName[];
 };
+
+/** What `takePhoto()` accepts. Everything optional; the defaults suit a framing shot. */
+export type TakePhotoOptions = {
+  /** JPEG quality, 0 to 1. Default 0.95. */
+  quality?: number;
+  /**
+   * Front-camera photos match the preview by default, which is what the subject framed. `false`
+   * writes the un-mirrored frame instead, the way the rest of the world saw it. No effect on the
+   * back camera.
+   */
+  mirrorFront?: boolean;
+};
+
+/** A still written to the app's cache directory. Nothing prunes it; move or delete what you keep. */
+export type Photo = {
+  /** `file://` URI. */
+  uri: string;
+  width: number;
+  height: number;
+  /** Bytes on disk. */
+  size: number;
+  /** True when the pixels were mirrored to match a front-camera preview. */
+  mirrored: boolean;
+};

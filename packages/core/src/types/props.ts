@@ -14,6 +14,7 @@ import type {
   ThermalPolicy,
   CameraState,
 } from './camera';
+import type { Photo, TakePhotoOptions } from './camera';
 import type { PoseFrame } from './frame';
 import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from './events';
 import type { LogEntry, LogLevelConfig } from './logging';
@@ -108,4 +109,10 @@ export type PoseCameraRef = {
    * promise is already settled when returned. See ADR 0008.
    */
   snapshot(): Promise<PoseFrame | null>;
+  /**
+   * A still from the running session, written to the cache directory. Detection and the preview
+   * keep going. Rejects with `CAPTURE_FAILED` when the device cannot add a capture output
+   * alongside the analysis one, which some entry-level cameras cannot.
+   */
+  takePhoto(options?: TakePhotoOptions): Promise<Photo>;
 };

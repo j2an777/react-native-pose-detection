@@ -24,6 +24,7 @@ const CODES = [
   'DETECTION_FAILED',
   'EXPORT_FAILED',
   'EXPORT_CANCELLED',
+  'CAPTURE_FAILED',
 ] as const;
 
 /** The complete set: native sends nothing outside it, so a `switch` on it can be exhaustive. */

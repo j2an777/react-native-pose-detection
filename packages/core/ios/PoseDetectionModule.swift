@@ -228,6 +228,15 @@ extension PoseDetectionModule {
         view.applyProfile(Profile.from(profile))
       }
 
+      AsyncFunction("takePhoto") { (view: PoseCameraView, options: [String: Any], promise: Promise) in
+        view.takePhoto(
+          quality: JS.number(options["quality"]) ?? 1,
+          mirrorFront: JS.bool(options["mirrorFront"]) ?? true,
+          onDone: { payload in promise.resolve(payload) },
+          onFailed: { message in promise.reject(ErrorCode.captureFailed.rawValue, message) }
+        )
+      }
+
     }
   }
 }

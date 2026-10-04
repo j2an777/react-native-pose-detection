@@ -1549,6 +1549,27 @@ class PoseCameraView(
         applyDetectionState()
     }
 
+    /** Detection and the preview keep running; a still does not interrupt the analysis output. */
+    fun takePhoto(
+        quality: Double,
+        mirrorFront: Boolean,
+        onDone: (Map<String, Any>) -> Unit,
+        onFailed: (String) -> Unit,
+    ) {
+        camera.capturePhoto(quality = quality, mirrorFront = mirrorFront) { result ->
+            result
+                .onSuccess { photo ->
+                    PoseLog.debug(LogCategory.CAMERA) {
+                        "photo written: ${photo.width}x${photo.height}, ${photo.size} bytes"
+                    }
+                    onDone(photo.payload)
+                }.onFailure { error ->
+                    PoseLog.warn(LogCategory.CAMERA) { "photo failed: ${error.message}" }
+                    onFailed(error.message ?: "the photo could not be taken")
+                }
+        }
+    }
+
     fun setOverlayEnabled(enabled: Boolean) {
         overlayEnabled = enabled
         applyOverlayEnabled()
