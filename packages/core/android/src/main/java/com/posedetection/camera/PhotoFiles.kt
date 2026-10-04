@@ -69,15 +69,18 @@ internal object PhotoFiles {
         @Suppress("DEPRECATION")
         val quarterTurned =
             runCatching {
-                when (ExifInterface(file.absolutePath).getAttributeInt(
-                    ExifInterface.TAG_ORIENTATION,
-                    ExifInterface.ORIENTATION_NORMAL,
-                )) {
+                when (
+                    ExifInterface(file.absolutePath).getAttributeInt(
+                        ExifInterface.TAG_ORIENTATION,
+                        ExifInterface.ORIENTATION_NORMAL,
+                    )
+                ) {
                     ExifInterface.ORIENTATION_ROTATE_90,
                     ExifInterface.ORIENTATION_ROTATE_270,
                     ExifInterface.ORIENTATION_TRANSPOSE,
                     ExifInterface.ORIENTATION_TRANSVERSE,
                     -> true
+
                     else -> false
                 }
             }.getOrDefault(false)

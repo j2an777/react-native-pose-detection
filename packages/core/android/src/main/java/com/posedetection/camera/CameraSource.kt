@@ -348,7 +348,11 @@ internal class CameraSource(
         // The sensor writes a JPEG already; `quality` re-encodes only when it would shrink it.
         capture.targetRotation = currentRotation()
         val metadata = ImageCapture.Metadata().apply { isReversedHorizontal = mirror }
-        val options = ImageCapture.OutputFileOptions.Builder(file).setMetadata(metadata).build()
+        val options =
+            ImageCapture.OutputFileOptions
+                .Builder(file)
+                .setMetadata(metadata)
+                .build()
 
         capture.takePicture(
             options,
