@@ -271,7 +271,7 @@ internal class CameraSource(
         boundConfig = bound.config
         boundPreviewSize = preview.resolutionInfo?.resolution
         boundAnalysisSize = analysis.resolutionInfo?.resolution
-        val delivered = bound.frameRate ?: PINNED_FPS
+        val delivered = bound.range?.upper ?: PINNED_FPS
         onFrameRate?.invoke(delivered)
 
         this.analysis = analysis
@@ -281,13 +281,14 @@ internal class CameraSource(
         PoseLog.info(LogCategory.CAMERA) {
             "bound $lens preview=${sizeText(boundPreviewSize, previewSize)} " +
                 "analysis=${sizeText(boundAnalysisSize, analysisSize)} rotation=$rotation " +
-                "frames=${range?.let { "${it.lower}-${it.upper}" } ?: "default"} fps"
+                "frames=${bound.range?.let { "${it.lower}-${it.upper}" } ?: "default"} fps " +
+                "stills=${if (this.capture != null) "yes" else "no"}"
         }
     }
 
     private class BoundSession(
         val config: SessionConfig,
-        val frameRate: Int?,
+        val range: Range<Int>?,
     )
 
     /**
@@ -309,7 +310,7 @@ internal class CameraSource(
             }
         return runCatching {
             provider.bindToLifecycle(owner, selector, config)
-            BoundSession(config, range?.upper)
+            BoundSession(config, range)
         }.onFailure {
             // Leave nothing half-bound for the retry to trip over.
             runCatching { provider.unbindAll() }
