@@ -7,6 +7,22 @@ extension PoseCameraView {
   func setActive(_ value: Bool) { propActive = value }
 
   func setDetection(_ value: Bool) { propDetection = value }
+
+  /// `hasTorch` rides on `onCameraChange` because it changes with the lens: an app told only about
+  /// `facing` would leave a torch button on a front camera that cannot light.
+  func setTorch(_ value: Bool) {
+    guard value != camera.torchRequested else { return }
+    camera.setTorch(value)
+    emitCameraChange()
+  }
+
+  func emitCameraChange(_ facing: String? = nil) {
+    onCameraChange([
+      "facing": facing ?? camera.facing.nameForJs,
+      "hasTorch": camera.hasTorch,
+      "torch": camera.torchOn
+    ])
+  }
   func setMaxPoses(_ value: Int) { propMaxPoses = min(max(value, 1), 5) }
 
   func setMinConfidence(_ value: Double?) {

@@ -9,6 +9,7 @@ const cam = useRef<PoseCameraRef>(null);
 type PoseCameraRef = {
   switchCamera(): Promise<void>;
   setFacing(facing: 'front' | 'back'): Promise<void>;
+  setTorch(on: boolean): Promise<void>;
 
   pause(): Promise<void>;
   resume(): Promise<void>;
@@ -62,6 +63,7 @@ success.
 | `setOverlayEnabled(b)` | Drawing only. Inference continues: use when you draw your own UI. Off, the overlay does no work at all. |
 | `snapshot()` | Current `PoseFrame` on demand, regardless of `data.mode`. Resolves to `null` if no pose is present. Read synchronously on the JavaScript thread, so the promise is already settled when it is returned, see [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md). A buffer that cannot be decoded rejects it with a plain `Error`. |
 | `takePhoto(o)` | A still from the running session, written to the cache directory. Detection and the preview keep going. Front-camera stills match the mirrored preview unless `mirrorFront: false`. Rejects with `CAPTURE_FAILED` when the camera cannot add a capture output beside the analysis one, which an entry-level Android camera cannot; detection still runs there. Nothing prunes the files, so move or delete what you keep. |
+| `setTorch(b)` | Lights the back camera's torch now, rather than at the next render — a torch button should light on the press. A lens with no flash takes the request and stays dark; `getState().hasTorch` says whether to offer the control at all. The request survives a lens switch, so the light returns with the back camera. |
 | `setProfile(p)` | Applies a performance profile at once, rather than at the next render. It returns nothing, so there is no failure to await; `getProfile()` shows what took effect. See [performance](../performance.md). |
 
 ## Introspection

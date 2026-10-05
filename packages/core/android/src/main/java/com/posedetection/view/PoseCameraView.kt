@@ -374,6 +374,12 @@ class PoseCameraView(
         propDetection = value
     }
 
+    fun setTorch(value: Boolean) {
+        if (value == camera.torchRequested) return
+        camera.setTorch(value)
+        emitCameraChange()
+    }
+
     fun setMaxPoses(value: Int) {
         propMaxPoses = value.coerceIn(1, 5)
     }
@@ -1480,6 +1486,20 @@ class PoseCameraView(
         setFacingInternal(target, onDone, onFailed)
     }
 
+    /**
+     * `hasTorch` rides along because it changes with the lens, and an app that only hears about
+     * `facing` would leave a torch button on a front camera that cannot light.
+     */
+    private fun emitCameraChange(facing: String = camera.facing.nameForJs()) {
+        onCameraChange(
+            mapOf(
+                "facing" to facing,
+                "hasTorch" to camera.hasTorch,
+                "torch" to camera.torchOn,
+            ),
+        )
+    }
+
     internal fun setFacingInternal(
         target: Facing,
         onDone: ((String) -> Unit)?,
@@ -1499,7 +1519,7 @@ class PoseCameraView(
                 completeSwitch()
                 val name = facing.nameForJs()
                 pendingSwitchDone = {
-                    onCameraChange(mapOf("facing" to name))
+                    emitCameraChange(name)
                     onDone?.invoke(name)
                 }
                 awaitingFirstFrame.set(true)
@@ -1657,6 +1677,8 @@ class PoseCameraView(
             "delegate" to (resolvedDelegate ?: "CPU"),
             "deviceTier" to calibrator.tier.nameForJs(),
             "limitedBy" to currentLimitedBy().forJs,
+            "hasTorch" to camera.hasTorch,
+            "torch" to camera.torchOn,
         )
 
     // endregion

@@ -73,6 +73,10 @@ export type CameraState = {
   readonly deviceTier: DeviceTier;
   /** Why the rate is what it is, read live like `fps`. */
   readonly limitedBy: LimitedBy;
+  /** False on every front camera and on back cameras with no flash unit. */
+  readonly hasTorch: boolean;
+  /** Lit right now. A lens without a flash reads `false` however `torch` was set. */
+  readonly torch: boolean;
 };
 
 /**

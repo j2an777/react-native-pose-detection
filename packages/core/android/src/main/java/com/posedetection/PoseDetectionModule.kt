@@ -210,6 +210,9 @@ class PoseDetectionModule : Module() {
                 Prop("detection") { view: PoseCameraView, value: Boolean? ->
                     view.setDetection(value ?: true)
                 }
+                Prop("torch") { view: PoseCameraView, value: Boolean? ->
+                    view.setTorch(value ?: false)
+                }
                 Prop("maxPoses") { view: PoseCameraView, value: Int? ->
                     view.setMaxPoses(value ?: 1)
                 }
@@ -333,6 +336,10 @@ class PoseDetectionModule : Module() {
                 // On main because the calibration it reads is main-thread state.
                 AsyncFunction("getProfile") { view: PoseCameraView ->
                     view.profileState()
+                }.runOnQueue(Queues.MAIN)
+
+                AsyncFunction("setTorch") { view: PoseCameraView, on: Boolean ->
+                    view.setTorch(on)
                 }.runOnQueue(Queues.MAIN)
 
                 AsyncFunction("setProfile") { view: PoseCameraView, profile: String ->

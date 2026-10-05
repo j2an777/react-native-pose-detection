@@ -26,6 +26,13 @@ export type PoseCameraProps = {
 
   profile?: Profile;
   facing?: FacingRequest;
+  /**
+   * Keeps the light on, rather than firing it at the shutter — there is no flash mode, because the
+   * session runs continuously for detection and a strobe would blind it mid-frame. A lens with no
+   * flash ignores this; watch `hasTorch` on `onCameraChange` to know whether to offer the control.
+   * A lens switch puts the request back, so the light returns when the back camera does.
+   */
+  torch?: boolean;
   delegate?: DelegateRequest;
   targetFps?: 'auto' | number;
   resolution?: 'auto' | ResolutionPreset;
@@ -96,6 +103,11 @@ export type PoseCameraRef = {
   stopDetection(): Promise<void>;
   /** Drawing only; inference continues. */
   setOverlayEnabled(enabled: boolean): Promise<void>;
+  /**
+   * Applies now rather than at the next render — a torch button should light on the press, not a
+   * commit later. A lens with no flash takes the request and stays dark; see `torch`.
+   */
+  setTorch(on: boolean): Promise<void>;
 
   /** Applies a profile now, rather than at the next render. See guides/performance.md. */
   setProfile(profile: Profile): void;

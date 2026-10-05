@@ -58,6 +58,7 @@ export type NativePoseCameraView = {
   startDetection(): Promise<void>;
   stopDetection(): Promise<void>;
   setOverlayEnabled(enabled: boolean): Promise<void>;
+  setTorch(on: boolean): Promise<void>;
   getState(): Promise<Record<string, unknown>>;
   getProfile(): Promise<Record<string, unknown>>;
   setProfile(profile: string): Promise<void>;

@@ -27,7 +27,7 @@ extension PoseCameraView {
         let name = facing.nameForJs
         // Weak: this closure is stored on the view.
         self.pendingSwitchDone = { [weak self] in
-          self?.onCameraChange(["facing": name])
+          self?.emitCameraChange(name)
           onDone?(name)
         }
         self.awaitingFirstFrame.value = true
@@ -148,7 +148,9 @@ extension PoseCameraView {
       "fps": currentMeasuredFps(),
       "delegate": resolvedDelegate ?? "CPU",
       "deviceTier": calibrator.tier.rawValue,
-      "limitedBy": currentLimitedBy().rawValue
+      "limitedBy": currentLimitedBy().rawValue,
+      "hasTorch": camera.hasTorch,
+      "torch": camera.torchOn
     ]
   }
 

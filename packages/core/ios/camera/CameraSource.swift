@@ -49,6 +49,18 @@ final class CameraSource {
   /// Only `auto` may fall back to the other lens; a pinned lens fails instead.
   var facingFallbackAllowed = false
 
+  /// Main-thread mirror of the bound device's capability. False on every front camera.
+  /// Not `isTorchAvailable`: that drops out while the device is hot, and a control that
+  /// disappears mid-shoot reads as a bug. See `CameraSource+Torch`.
+  var hasTorch = false
+
+  /// What was asked for, which is not what is lit: a rebind opens the device with the torch off,
+  /// and a lens without a flash never lights. Kept so the light returns with the back camera.
+  var torchRequested = false
+
+  /// Lit right now, as far as this side knows.
+  var torchOn: Bool { torchRequested && hasTorch }
+
   /// Not 60: an iPhone 15 at 60 ran warm within minutes for a skeleton that looked identical.
   static let pinnedFps = 30
 
@@ -111,6 +123,7 @@ final class CameraSource {
         self.targetFacing = resolved
         self.attachPreview(session)
         self.isBound = true
+        self.applyTorch()
         onBound()
       }
     }
@@ -248,6 +261,7 @@ final class CameraSource {
         self.targetFacing = bound
         self.attachPreview(session)
         self.isBound = true
+        self.applyTorch()
         self.onBound?()
       }
     }
@@ -256,6 +270,7 @@ final class CameraSource {
   func release() {
     bump()
     isBound = false
+    hasTorch = false
     onBound = nil
     previewView?.previewLayer?.session = nil
     // Strong capture: the session must stop even if the view is gone by then.
@@ -292,6 +307,8 @@ final class CameraSource {
       let superseded = !self.isCurrent(current)
       if !superseded, let landed = landed {
         self.facing = landed
+        // The new device opened with its torch off, and may not have one at all.
+        self.applyTorch()
         // The preview keeps its connection across an input swap, still mirrored for the old lens.
         self.applyPreviewOrientation()
       }

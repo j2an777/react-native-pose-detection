@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Range
 import android.util.Size
 import android.view.Surface
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -45,6 +46,9 @@ internal class CameraSource(
 
     /** All a stop unbinds: the provider is per process and may already hold a newer view's session. */
     private var boundConfig: SessionConfig? = null
+
+    /** The bound camera, for torch and anything else that goes through CameraControl. */
+    private var camera: Camera? = null
     private var analyzer: ImageAnalysis.Analyzer? = null
     private var lifecycleOwner: LifecycleOwner? = null
 
@@ -66,6 +70,22 @@ internal class CameraSource(
     /** True for `auto`; a pinned lens fails instead of falling back. */
     var facingFallbackAllowed: Boolean = false
 
+    /** False on a front camera and on back cameras without a flash unit. Unbound reads false. */
+    val hasTorch: Boolean
+        get() = camera?.cameraInfo?.hasFlashUnit() == true
+
+    /**
+     * What was asked for, which is not what is lit: a rebind drops the torch, and a lens without a
+     * flash never lights at all. Kept so a switch back to a lens that has one restores it rather
+     * than leaving the app's button on while the light is off.
+     */
+    var torchRequested: Boolean = false
+        private set
+
+    /** True when the torch is actually lit right now. */
+    val torchOn: Boolean
+        get() = torchRequested && hasTorch
+
     /** Called on main with the frame rate the bound session delivers. */
     var onFrameRate: ((Int) -> Unit)? = null
 
@@ -75,6 +95,18 @@ internal class CameraSource(
     private var onBound: (() -> Unit)? = null
 
     private val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
+
+    /** Main thread. Remembers the request even when this camera has no flash; see [torchRequested]. */
+    fun setTorch(on: Boolean) {
+        torchRequested = on
+        applyTorch()
+    }
+
+    private fun applyTorch() {
+        val control = camera?.takeIf { it.cameraInfo.hasFlashUnit() }?.cameraControl ?: return
+        runCatching { control.enableTorch(torchRequested) }
+            .onFailure { PoseLog.warn(LogCategory.CAMERA) { "the torch would not switch: ${it.message}" } }
+    }
 
     fun setAnalyzer(analyzer: ImageAnalysis.Analyzer?) {
         this.analyzer = analyzer
@@ -205,6 +237,7 @@ internal class CameraSource(
     }
 
     private fun unbindOwn() {
+        camera = null
         val config = boundConfig ?: return
         boundConfig = null
         runCatching { provider?.unbind(config) }
@@ -269,6 +302,9 @@ internal class CameraSource(
         }
 
         boundConfig = bound.config
+        this.camera = bound.camera
+        // A rebind opens the camera fresh with the torch off, so put back what was asked for.
+        applyTorch()
         boundPreviewSize = preview.resolutionInfo?.resolution
         boundAnalysisSize = analysis.resolutionInfo?.resolution
         val delivered = bound.range?.upper ?: PINNED_FPS
@@ -289,6 +325,7 @@ internal class CameraSource(
     private class BoundSession(
         val config: SessionConfig,
         val range: Range<Int>?,
+        val camera: Camera,
     )
 
     /**
@@ -309,8 +346,7 @@ internal class CameraSource(
                 SessionConfig(useCases)
             }
         return runCatching {
-            provider.bindToLifecycle(owner, selector, config)
-            BoundSession(config, range)
+            BoundSession(config, range, provider.bindToLifecycle(owner, selector, config))
         }.onFailure {
             // Leave nothing half-bound for the retry to trip over.
             runCatching { provider.unbindAll() }

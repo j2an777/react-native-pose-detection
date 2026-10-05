@@ -54,6 +54,10 @@ export type ErrorEvent = {
 
 export type CameraChangeEvent = {
   readonly facing: Facing;
+  /** False on every front camera and on back cameras with no flash unit. */
+  readonly hasTorch: boolean;
+  /** Lit right now. A lens without a flash reads `false` however `torch` was set. */
+  readonly torch: boolean;
 };
 
 export type PerformanceEvent = {

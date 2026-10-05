@@ -159,6 +159,7 @@ extension PoseDetectionModule {
       Prop("active") { (view: PoseCameraView, value: Bool?) in view.setActive(value ?? true) }
 
       Prop("detection") { (view: PoseCameraView, value: Bool?) in view.setDetection(value ?? true) }
+      Prop("torch") { (view: PoseCameraView, value: Bool?) in view.setTorch(value ?? false) }
       Prop("maxPoses") { (view: PoseCameraView, value: Int?) in view.setMaxPoses(value ?? 1) }
       Prop("minConfidence") { (view: PoseCameraView, value: Double?) in view.setMinConfidence(value) }
       Prop("resolution") { (view: PoseCameraView, value: String?) in view.setResolution(value ?? "auto") }
@@ -219,6 +220,10 @@ extension PoseDetectionModule {
       AsyncFunction("resume") { (view: PoseCameraView) in view.resumeCamera() }
       AsyncFunction("startDetection") { (view: PoseCameraView) in view.startDetection() }
       AsyncFunction("stopDetection") { (view: PoseCameraView) in view.stopDetection() }
+      AsyncFunction("setTorch") { (view: PoseCameraView, on: Bool) in
+        view.setTorch(on)
+      }.runOnQueue(.main)
+
       AsyncFunction("setOverlayEnabled") { (view: PoseCameraView, enabled: Bool) in
         view.setOverlayEnabled(enabled)
       }
