@@ -42,6 +42,10 @@ public class PoseCameraView: ExpoView {
   let onError = EventDispatcher()
   let onCameraChange = EventDispatcher()
 
+  /// An event, not the start promise: a recording ends on the encoder's schedule, and a promise
+  /// that resolved at `stopRecording()` would hand back a file still being flushed.
+  let onRecordingFinished = EventDispatcher()
+
   /// Carries nothing. JavaScript answers it with `drainFrames()`, see ADR 0008.
   let onFrames = EventDispatcher()
 

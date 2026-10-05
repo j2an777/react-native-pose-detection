@@ -14,7 +14,7 @@ import type {
   ThermalPolicy,
   CameraState,
 } from './camera';
-import type { Photo, TakePhotoOptions } from './camera';
+import type { Photo, RecordingOptions, TakePhotoOptions, Video } from './camera';
 import type { PoseFrame } from './frame';
 import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from './events';
 import type { LogEntry, LogLevelConfig } from './logging';
@@ -139,4 +139,20 @@ export type PoseCameraRef = {
    * alongside the analysis one, which some entry-level cameras cannot.
    */
   takePhoto(options?: TakePhotoOptions): Promise<Photo>;
+  /**
+   * Starts recording and resolves once it is running — the file arrives from `stopRecording()`.
+   *
+   * Recording and stills do not coexist: a camera that will not run preview, analysis and video at
+   * once rejects with `RECORDING_UNAVAILABLE` rather than shutting detection down to make room, and
+   * on Android the stills use case is swapped out for the length of the recording, so `takePhoto()`
+   * is refused meanwhile. Rejects with `MICROPHONE_DENIED` when `audio` is asked for without the
+   * permission, and `RECORDING_IN_PROGRESS` when one is already running.
+   */
+  startRecording(options?: RecordingOptions): Promise<void>;
+  /**
+   * Asks the encoder to finish and resolves with the written file. The wait is the flush, which is
+   * why this is where the `Video` arrives rather than `startRecording()`. Rejects with
+   * `NOT_RECORDING` when nothing is running.
+   */
+  stopRecording(): Promise<Video>;
 };

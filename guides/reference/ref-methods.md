@@ -24,6 +24,8 @@ type PoseCameraRef = {
 
   snapshot(): Promise<PoseFrame | null>;
   takePhoto(options?: TakePhotoOptions): Promise<Photo>;
+  startRecording(options?: RecordingOptions): Promise<void>;
+  stopRecording(): Promise<Video>;
 };
 ```
 
@@ -65,6 +67,8 @@ success.
 | `snapshot()` | Current `PoseFrame` on demand, regardless of `data.mode`. Resolves to `null` if no pose is present. Read synchronously on the JavaScript thread, so the promise is already settled when it is returned, see [ADR 0008](../../docs/adr/0008-frames-are-drained-not-pushed.md). A buffer that cannot be decoded rejects it with a plain `Error`. |
 | `takePhoto(o)` | A still from the running session, written to the cache directory. Detection and the preview keep going. Front-camera stills match the mirrored preview unless `mirrorFront: false`. Rejects with `CAPTURE_FAILED` when the camera cannot add a capture output beside the analysis one, which an entry-level Android camera cannot; detection still runs there. Nothing prunes the files, so move or delete what you keep. |
 | `setTorch(b)` | Lights the back camera's torch now, rather than at the next render — a torch button should light on the press. A lens with no flash takes the request and stays dark; `getState().hasTorch` says whether to offer the control at all. The request survives a lens switch, so the light returns with the back camera. |
+| `startRecording(o)` | Starts recording and resolves once it is running. Recording and stills do not coexist: a camera that will not run preview, analysis and video at once rejects with `RECORDING_UNAVAILABLE` rather than shutting detection down to make room, and on Android the stills use case is swapped out for the length of the recording, so `takePhoto()` is refused meanwhile. `audio` defaults to `false` and needs no permission at all; `true` rejects with `MICROPHONE_DENIED` unless the permission is already granted — this package never prompts. Also rejects `RECORDING_IN_PROGRESS`. |
+| `stopRecording()` | Asks the encoder to finish and resolves with the written `Video`. The wait is the flush, which is why the file arrives here and not from `startRecording()`. Rejects with `NOT_RECORDING` when nothing is running. Files land in the cache directory and nothing prunes them. |
 | `setZoom(n)` | Applies now, which is what a pinch needs — a prop waits for a render and a zoom that lags the fingers feels broken. The factor is the device's own: 1 is the whole sensor, and a phone whose back camera starts wider accepts below 1. Clamped into the bound lens's range and capped at 10, past which the device is interpolating pixels and the skeleton is drawn on mush. `getState().zoom` says where it landed. |
 | `setProfile(p)` | Applies a performance profile at once, rather than at the next render. It returns nothing, so there is no failure to await; `getProfile()` shows what took effect. See [performance](../performance.md). |
 

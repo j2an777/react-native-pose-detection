@@ -28,6 +28,12 @@ import com.posedetection.Skeleton
 import com.posedetection.camera.CameraSource
 import com.posedetection.camera.Facing
 import com.posedetection.camera.FrameConverter
+import com.posedetection.camera.MicrophoneDenied
+import com.posedetection.camera.NotRecording
+import com.posedetection.camera.RecordingInProgress
+import com.posedetection.camera.RecordingUnavailable
+import com.posedetection.camera.beginRecording
+import com.posedetection.camera.endRecording
 import com.posedetection.detector.DelegateRequest
 import com.posedetection.detector.DetectorCache
 import com.posedetection.detector.PoseDetector
@@ -85,6 +91,12 @@ class PoseCameraView(
     private val onReady by EventDispatcher<Map<String, Any?>>()
     private val onError by EventDispatcher<Map<String, Any?>>()
     private val onCameraChange by EventDispatcher<Map<String, Any?>>()
+
+    /**
+     * An event, not the start promise: a recording ends on the encoder's schedule, and a promise
+     * that resolved at `stopRecording()` would hand back a file still being flushed.
+     */
+    private val onRecordingFinished by EventDispatcher<Map<String, Any?>>()
 
     /** Carries nothing. JavaScript answers it with `drainFrames()`, see ADR 0008. */
     private val onFrames by EventDispatcher<Map<String, Any?>>()
@@ -379,6 +391,52 @@ class PoseCameraView(
         camera.setTorch(value)
         emitCameraChange()
     }
+
+    val isRecording: Boolean
+        get() = camera.isRecording
+
+    /**
+     * Rebinds into video, records, and rebinds back when it finalizes. `onFailed` carries the
+     * reason code so JavaScript can tell "this camera cannot" from "the microphone is denied".
+     */
+    fun startRecording(
+        audio: Boolean,
+        onFailed: (String, String) -> Unit,
+    ) {
+        try {
+            camera.beginRecording(context, audio) { result ->
+                result
+                    .onSuccess { video ->
+                        PoseLog.info(
+                            LogCategory.CAMERA,
+                        ) { "recording written: ${video.durationMs}ms, ${video.size} bytes" }
+                        onRecordingFinished(video.payload)
+                    }.onFailure { error ->
+                        PoseLog.warn(LogCategory.CAMERA) { "recording failed: ${error.message}" }
+                        onRecordingFinished(mapOf("error" to (error.message ?: "the recording failed")))
+                    }
+            }
+        } catch (error: Throwable) {
+            onFailed(recordingErrorCode(error), error.message ?: "the recording could not start")
+        }
+    }
+
+    fun stopRecording(onFailed: (String, String) -> Unit) {
+        try {
+            camera.endRecording()
+        } catch (error: Throwable) {
+            onFailed(recordingErrorCode(error), error.message ?: "the recording could not be stopped")
+        }
+    }
+
+    private fun recordingErrorCode(error: Throwable): String =
+        when (error) {
+            is RecordingUnavailable -> "RECORDING_UNAVAILABLE"
+            is MicrophoneDenied -> "MICROPHONE_DENIED"
+            is RecordingInProgress -> "RECORDING_IN_PROGRESS"
+            is NotRecording -> "NOT_RECORDING"
+            else -> "RECORDING_FAILED"
+        }
 
     fun setZoom(value: Double) {
         if (value == camera.zoomRequested) return
@@ -1585,6 +1643,11 @@ class PoseCameraView(
         onDone: (Map<String, Any>) -> Unit,
         onFailed: (String) -> Unit,
     ) {
+        // Stills are unbound while recording; say so rather than failing deep inside CameraX.
+        if (camera.isRecording) {
+            onFailed("a recording is running, and this camera cannot do both at once")
+            return
+        }
         camera.capturePhoto(quality = quality, mirrorFront = mirrorFront) { result ->
             result
                 .onSuccess { photo ->
@@ -1688,6 +1751,7 @@ class PoseCameraView(
             "limitedBy" to currentLimitedBy().forJs,
             "hasTorch" to camera.hasTorch,
             "torch" to camera.torchOn,
+            "recording" to camera.isRecording,
             "zoom" to camera.zoom,
             "minZoom" to camera.minZoom,
             "maxZoom" to camera.maxZoom,

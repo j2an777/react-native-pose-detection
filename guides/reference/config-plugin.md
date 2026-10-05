@@ -19,6 +19,7 @@
 | --- | --- | --- | --- |
 | `model` | `'lite' \| 'full' \| 'heavy'` | `'full'` | exactly one is installed. Case-sensitive: anything else fails the prebuild |
 | `cameraPermissionText` | `string` | see [below](#camera-permission-text) | iOS `NSCameraUsageDescription` |
+| `microphonePermissionText` | `string` | — | Opt-in. Writes `NSMicrophoneUsageDescription` and adds Android's `RECORD_AUDIO`. Set it only if the app calls `startRecording({ audio: true })` — a microphone permission an app never uses is a review question nobody wants to answer. |
 | `cacheDir` | `string` | `~/.cache/react-native-pose-detection` | used as given: a `~` in your value is not expanded |
 | `skipDownload` | `boolean` | `false` | CI where the model is vendored, see [offline](#offline) |
 

@@ -33,6 +33,13 @@ final class CameraSource {
   var output: AVCaptureVideoDataOutput?
   /// Nil when the device would not take a second output alongside the analysis one.
   var photoOutput: AVCapturePhotoOutput?
+
+  /// Added for the length of one recording and taken back out afterwards. See `CameraSource+Recording`.
+  var movieOutput: AVCaptureMovieFileOutput?
+  /// The microphone, held only while a recording that asked for audio is running.
+  var audioInput: AVCaptureDeviceInput?
+  /// Kept alive for the recording's lifetime: the output holds its delegate weakly.
+  var recorder: MovieCapture?
   var boundFacing: Facing = .front
 
   /// Main-thread mirror of the session state, so the view can report it without a queue hop.

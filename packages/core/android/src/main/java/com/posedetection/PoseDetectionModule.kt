@@ -196,6 +196,7 @@ class PoseDetectionModule : Module() {
                     "onTrigger",
                     "onPerformanceChange",
                     "onLog",
+                    "onRecordingFinished",
                 )
 
                 Prop("facing") { view: PoseCameraView, value: String? ->
@@ -347,6 +348,26 @@ class PoseDetectionModule : Module() {
 
                 AsyncFunction("setZoom") { view: PoseCameraView, factor: Double ->
                     view.setZoom(factor)
+                }.runOnQueue(Queues.MAIN)
+
+                AsyncFunction(
+                    "startRecording",
+                ) { view: PoseCameraView, options: Map<String, Any?>, promise: expo.modules.kotlin.Promise ->
+                    var failed = false
+                    view.startRecording(audio = options["audio"] as? Boolean ?: false) { code, message ->
+                        failed = true
+                        promise.reject(code, message, null)
+                    }
+                    if (!failed) promise.resolve(null)
+                }.runOnQueue(Queues.MAIN)
+
+                AsyncFunction("stopRecording") { view: PoseCameraView, promise: expo.modules.kotlin.Promise ->
+                    var failed = false
+                    view.stopRecording { code, message ->
+                        failed = true
+                        promise.reject(code, message, null)
+                    }
+                    if (!failed) promise.resolve(null)
                 }.runOnQueue(Queues.MAIN)
 
                 AsyncFunction("setProfile") { view: PoseCameraView, profile: String ->

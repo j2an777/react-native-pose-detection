@@ -64,4 +64,6 @@ export type NativePoseCameraView = {
   getProfile(): Promise<Record<string, unknown>>;
   setProfile(profile: string): Promise<void>;
   takePhoto(options: Record<string, unknown>): Promise<Record<string, unknown>>;
+  startRecording(options: Record<string, unknown>): Promise<void>;
+  stopRecording(): Promise<void>;
 };

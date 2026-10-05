@@ -54,9 +54,19 @@ const withCameraUsageDescription: ConfigPlugin<ResolvedOptions> = (config, optio
     return config;
   });
 
+/** Only when the app asked for it: an unused microphone string is a review question. */
+const withMicrophoneUsageDescription: ConfigPlugin<ResolvedOptions> = (config, options) =>
+  withInfoPlist(config, (config) => {
+    if (options.microphonePermissionText !== null) {
+      config.modResults['NSMicrophoneUsageDescription'] = options.microphonePermissionText;
+    }
+    return config;
+  });
+
 export const withIosModel: ConfigPlugin<ResolvedOptions> = (config, options) => {
   config = withModelResource(config, options);
   config = withModelInXcodeProject(config, options);
   config = withCameraUsageDescription(config, options);
+  config = withMicrophoneUsageDescription(config, options);
   return config;
 };

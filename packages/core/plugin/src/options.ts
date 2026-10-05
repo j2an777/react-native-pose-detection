@@ -7,6 +7,12 @@ export type PoseDetectionPluginOptions = {
   model?: string;
   /** `NSCameraUsageDescription`. */
   cameraPermissionText?: string;
+  /**
+   * `NSMicrophoneUsageDescription` and Android's `RECORD_AUDIO`. Opt-in: set this only if the app
+   * calls `startRecording({ audio: true })`. Declaring a microphone permission an app never uses is
+   * a review question nobody wants to answer.
+   */
+  microphonePermissionText?: string;
   cacheDir?: string;
   /** Never touch the network. For CI where the model is restored from a cache or vendored. */
   skipDownload?: boolean;
@@ -17,6 +23,8 @@ export type ResolvedOptions = {
   cameraPermissionText: string;
   /** Whether the app author asked for that text, or it is our fallback. Decides who wins. */
   cameraPermissionTextExplicit: boolean;
+  /** Null when the app did not ask for audio recording, which is the default. */
+  microphonePermissionText: string | null;
   cacheDir: string;
   skipDownload: boolean;
 };
@@ -30,6 +38,10 @@ export function resolveOptions(options: PoseDetectionPluginOptions | undefined):
     model,
     cameraPermissionText: options?.cameraPermissionText ?? DEFAULT_PERMISSION_TEXT,
     cameraPermissionTextExplicit: typeof options?.cameraPermissionText === 'string',
+    microphonePermissionText:
+      typeof options?.microphonePermissionText === 'string'
+        ? options.microphonePermissionText
+        : null,
     cacheDir: options?.cacheDir ?? DEFAULT_CACHE_DIR,
     skipDownload: options?.skipDownload === true,
   };

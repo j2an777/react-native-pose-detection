@@ -17,6 +17,9 @@ import androidx.camera.core.resolutionselector.ResolutionFilter
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -26,6 +29,10 @@ import com.posedetection.PoseLog
 import java.util.concurrent.Executor
 
 internal enum class Facing { FRONT, BACK }
+
+/** This camera will not run preview, analysis and video at once; recording is refused. */
+internal class RecordingUnavailable :
+    IllegalStateException("this camera will not record while detection is running")
 
 /** Reported as CAMERA_UNAVAILABLE rather than CAMERA_START_FAILED. */
 internal class CameraMissing(
@@ -49,6 +56,43 @@ internal class CameraSource(
 
     /** The bound camera, for torch and anything else that goes through CameraControl. */
     private var camera: Camera? = null
+
+    /**
+     * Non-null only while the session is bound for video. Preview + analysis + capture + video is
+     * more than almost any phone will bind, so recording swaps stills out rather than adding to
+     * them — a phone's own photo and video modes do the same, and detection is what must not stop.
+     */
+    private var videoCapture: VideoCapture<Recorder>? = null
+
+    /** What the next bind should build. Flipped by [bindForRecording] before a rebind. */
+    private var wantsVideo = false
+
+    /** Non-null while a recording runs. Main thread only, like everything CameraX here. */
+    internal var activeRecording: Recording? = null
+
+    /** True while a recording runs, so the view can refuse a still with a reason. */
+    val isRecording: Boolean
+        get() = activeRecording != null
+
+    internal fun videoCaptureOrNull(): VideoCapture<Recorder>? = videoCapture
+
+    /**
+     * Rebinds into or out of the video combination. Restores the previous mode when the new one
+     * will not bind, so a refusal leaves a running camera rather than a dead one.
+     */
+    internal fun bindForRecording(enabled: Boolean) {
+        if (wantsVideo == enabled) return
+        val previous = wantsVideo
+        wantsVideo = enabled
+        try {
+            bind(facing)
+        } catch (error: Throwable) {
+            wantsVideo = previous
+            runCatching { bind(facing) }
+            throw error
+        }
+    }
+
     private var analyzer: ImageAnalysis.Analyzer? = null
     private var lifecycleOwner: LifecycleOwner? = null
 
@@ -349,18 +393,30 @@ internal class CameraSource(
         provider.unbindAll()
         boundConfig = null
 
-        // Preview + analysis + capture needs a LIMITED camera or better. On a LEGACY device the
-        // third use case throws, and detection matters more than stills, so we drop it and rebind.
-        var bound = bindUseCases(provider, owner, selector, listOf(preview, analysis, capture))
-        if (bound == null) {
-            PoseLog.warn(LogCategory.CAMERA) {
-                "this camera will not bind a capture use case; takePhoto is unavailable"
-            }
-            bound = bindUseCases(provider, owner, selector, listOf(preview, analysis))
-                ?: throw IllegalStateException("this camera will not bind a preview and analysis session")
+        var bound: BoundSession?
+        if (wantsVideo) {
+            val video = VideoCapture.withOutput(Recorder.Builder().build())
+            // No fallback that drops the analysis: a recording without detection is not what this
+            // package is for, and the caller is told rather than quietly handed a blind session.
+            bound = bindUseCases(provider, owner, selector, listOf(preview, analysis, video))
+                ?: throw RecordingUnavailable()
+            this.videoCapture = video
             this.capture = null
         } else {
-            this.capture = capture
+            this.videoCapture = null
+            // Preview + analysis + capture needs a LIMITED camera or better. On a LEGACY device the
+            // third use case throws, and detection matters more than stills, so we drop it and rebind.
+            bound = bindUseCases(provider, owner, selector, listOf(preview, analysis, capture))
+            if (bound == null) {
+                PoseLog.warn(LogCategory.CAMERA) {
+                    "this camera will not bind a capture use case; takePhoto is unavailable"
+                }
+                bound = bindUseCases(provider, owner, selector, listOf(preview, analysis))
+                    ?: throw IllegalStateException("this camera will not bind a preview and analysis session")
+                this.capture = null
+            } else {
+                this.capture = capture
+            }
         }
 
         boundConfig = bound.config
@@ -382,7 +438,8 @@ internal class CameraSource(
             "bound $lens preview=${sizeText(boundPreviewSize, previewSize)} " +
                 "analysis=${sizeText(boundAnalysisSize, analysisSize)} rotation=$rotation " +
                 "frames=${bound.range?.let { "${it.lower}-${it.upper}" } ?: "default"} fps " +
-                "stills=${if (this.capture != null) "yes" else "no"}"
+                "stills=${if (this.capture != null) "yes" else "no"} " +
+                "video=${if (this.videoCapture != null) "yes" else "no"}"
         }
     }
 

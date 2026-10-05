@@ -151,7 +151,8 @@ extension PoseDetectionModule {
         "onFrames",
         "onTrigger",
         "onPerformanceChange",
-        "onLog"
+        "onLog",
+        "onRecordingFinished"
       )
 
       Prop("facing") { (view: PoseCameraView, value: String?) in view.setFacing(value ?? "auto") }
@@ -227,6 +228,14 @@ extension PoseDetectionModule {
 
       AsyncFunction("setZoom") { (view: PoseCameraView, factor: Double) in
         view.setZoom(factor)
+      }.runOnQueue(.main)
+
+      AsyncFunction("startRecording") { (view: PoseCameraView, options: [String: Any]) in
+        try view.startRecording(audio: options["audio"] as? Bool ?? false)
+      }.runOnQueue(.main)
+
+      AsyncFunction("stopRecording") { (view: PoseCameraView) in
+        try view.stopRecording()
       }.runOnQueue(.main)
 
       AsyncFunction("setOverlayEnabled") { (view: PoseCameraView, enabled: Bool) in

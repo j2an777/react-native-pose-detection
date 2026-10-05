@@ -151,6 +151,7 @@ extension PoseCameraView {
       "limitedBy": currentLimitedBy().rawValue,
       "hasTorch": camera.hasTorch,
       "torch": camera.torchOn,
+      "recording": camera.isRecording,
       "zoom": camera.zoom,
       "minZoom": camera.minZoom,
       "maxZoom": camera.maxZoom

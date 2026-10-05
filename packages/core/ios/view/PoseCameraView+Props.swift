@@ -22,6 +22,27 @@ extension PoseCameraView {
     emitCameraChange()
   }
 
+  var isRecording: Bool { camera.isRecording }
+
+  /// Throws a `RecordingError` whose `code` JavaScript rejects with, so it can tell "this camera
+  /// cannot" from "the microphone is denied".
+  func startRecording(audio: Bool) throws {
+    try camera.startRecording(audio: audio) { [weak self] result in
+      switch result {
+      case .success(let video):
+        PoseLog.info(.camera, "recording written: \(video.durationMs)ms, \(video.size) bytes")
+        self?.onRecordingFinished(video.payload)
+      case .failure(let error):
+        PoseLog.warn(.camera, "recording failed: \(error.localizedDescription)")
+        self?.onRecordingFinished(["error": error.localizedDescription])
+      }
+    }
+  }
+
+  func stopRecording() throws {
+    try camera.stopRecording()
+  }
+
   func emitCameraChange(_ facing: String? = nil) {
     onCameraChange([
       "facing": facing ?? camera.facing.nameForJs,

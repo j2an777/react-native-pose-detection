@@ -27,14 +27,19 @@ const withModelAsset: ConfigPlugin<ResolvedOptions> = (config, options) =>
     },
   ]);
 
-const withCameraPermission: ConfigPlugin = (config) =>
+const withCameraPermission: ConfigPlugin<ResolvedOptions> = (config, options) =>
   withAndroidManifest(config, (config) => {
-    AndroidConfig.Permissions.ensurePermissions(config.modResults, ['android.permission.CAMERA']);
+    const permissions = ['android.permission.CAMERA'];
+    // Only when the app asked for audio: a microphone permission it never uses is a store listing
+    // nobody wants to explain.
+    if (options.microphonePermissionText !== null)
+      permissions.push('android.permission.RECORD_AUDIO');
+    AndroidConfig.Permissions.ensurePermissions(config.modResults, permissions);
     return config;
   });
 
 export const withAndroidModel: ConfigPlugin<ResolvedOptions> = (config, options) => {
   config = withModelAsset(config, options);
-  config = withCameraPermission(config);
+  config = withCameraPermission(config, options);
   return config;
 };

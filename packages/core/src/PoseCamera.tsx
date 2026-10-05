@@ -8,7 +8,7 @@ import type { NativePoseCameraView, NativeTriggerEvent } from './native';
 import { callView } from './native/viewCalls';
 import type { AngleJointName, JointName } from './types/joints';
 import { ANGLE_JOINT_NAMES } from './types/joints';
-import type { CameraState, LimitedBy, Photo, ProfileState } from './types/camera';
+import type { CameraState, LimitedBy, Photo, ProfileState, Video } from './types/camera';
 import type { PoseCameraProps, PoseCameraRef } from './types/props';
 import { resolveSmoothing } from './smoothing';
 import type { CameraChangeEvent, ErrorEvent, PerformanceEvent, ReadyEvent } from './types/events';
@@ -113,6 +113,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     // Nothing is bound yet, so no flash is known to exist and none is lit.
     hasTorch: false,
     torch: false,
+    recording: false,
     zoom: 1,
     minZoom: 1,
     maxZoom: 1,
@@ -148,6 +149,12 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
   const reportDecodeError = React.useCallback((message: string) => {
     callbacks.current.onError?.({ code: 'DETECTION_FAILED', message, fatal: false });
   }, []);
+
+  /** Settled by `onRecordingFinished`, which is the only place a written file exists. */
+  const pendingRecording = React.useRef<{
+    resolve: (video: Video) => void;
+    reject: (error: Error) => void;
+  } | null>(null);
 
   const mounted = React.useRef(true);
 
@@ -285,6 +292,24 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
           if (!photo) throw new Error('The camera was unmounted before the photo was written.');
           return photo as Photo;
         },
+        startRecording: async (options) => {
+          await view((native) => native.startRecording({ audio: options?.audio ?? false }));
+          state.current = { ...state.current, recording: true };
+        },
+        stopRecording: async () => {
+          // The file arrives on the event, not from this call: native resolves when the encoder was
+          // asked to stop, and the flush that follows is what produces a playable file.
+          const written = new Promise<Video>((resolve, reject) => {
+            pendingRecording.current = { resolve, reject };
+          });
+          try {
+            await view((native) => native.stopRecording());
+          } catch (error) {
+            pendingRecording.current = null;
+            throw error;
+          }
+          return written;
+        },
       };
     },
     [streamId],
@@ -310,6 +335,19 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       state.current = { ...state.current, active: false };
     callbacks.current.onError?.(event.nativeEvent);
   }, []);
+
+  const handleRecordingFinished = React.useCallback(
+    (event: NativeEvent<{ error?: string } & Video>) => {
+      state.current = { ...state.current, recording: false };
+      const waiting = pendingRecording.current;
+      pendingRecording.current = null;
+      if (!waiting) return;
+      const { error, ...video } = event.nativeEvent;
+      if (error !== undefined) waiting.reject(new Error(error));
+      else waiting.resolve(video);
+    },
+    [],
+  );
 
   const handleCameraChange = React.useCallback((event: NativeEvent<CameraChangeEvent>) => {
     const { facing, hasTorch, torch, zoom, minZoom, maxZoom } = event.nativeEvent;
@@ -370,6 +408,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       onReady={handleReady}
       onError={handleError}
       onCameraChange={handleCameraChange}
+      onRecordingFinished={handleRecordingFinished}
       onPerformanceChange={handlePerformanceChange}
       onTrigger={handleTrigger}
       onLog={handleLog}

@@ -77,6 +77,8 @@ export type CameraState = {
   readonly hasTorch: boolean;
   /** Lit right now. A lens without a flash reads `false` however `torch` was set. */
   readonly torch: boolean;
+  /** True while a recording is running. Stills are refused meanwhile; see `startRecording()`. */
+  readonly recording: boolean;
   /** Applied right now. 1 is the whole sensor, not "wide". */
   readonly zoom: number;
   /** The bound lens's own range. Both 1 means this camera does not zoom. */
@@ -168,4 +170,25 @@ export type Photo = {
   size: number;
   /** True when the pixels were mirrored to match a front-camera preview. */
   mirrored: boolean;
+};
+
+/** What `startRecording()` accepts. */
+export type RecordingOptions = {
+  /**
+   * Default `false`, which needs no microphone permission at all. `true` rejects with
+   * `MICROPHONE_DENIED` unless the permission is already granted — this package does not prompt,
+   * because the prompt belongs to the screen that asked for sound.
+   */
+  audio?: boolean;
+};
+
+/** A recording written to the app's cache directory. Nothing prunes it; move or delete what you keep. */
+export type Video = {
+  /** `file://` URI. */
+  uri: string;
+  /** Read back from the written file, not timed in native: the encoder decides where it ends. */
+  durationMs: number;
+  /** Bytes on disk. */
+  size: number;
+  hasAudio: boolean;
 };
