@@ -150,7 +150,10 @@ extension PoseCameraView {
       "deviceTier": calibrator.tier.rawValue,
       "limitedBy": currentLimitedBy().rawValue,
       "hasTorch": camera.hasTorch,
-      "torch": camera.torchOn
+      "torch": camera.torchOn,
+      "zoom": camera.zoom,
+      "minZoom": camera.minZoom,
+      "maxZoom": camera.maxZoom
     ]
   }
 

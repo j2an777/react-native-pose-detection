@@ -113,6 +113,9 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
     // Nothing is bound yet, so no flash is known to exist and none is lit.
     hasTorch: false,
     torch: false,
+    zoom: 1,
+    minZoom: 1,
+    maxZoom: 1,
   });
 
   React.useEffect(() => {
@@ -218,6 +221,9 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
         setTorch: async (on) => {
           await view((native) => native.setTorch(on));
         },
+        setZoom: async (factor) => {
+          await view((native) => native.setZoom(factor));
+        },
         pause: async () => {
           await view((native) => native.pause());
           state.current = { ...state.current, active: false };
@@ -306,8 +312,8 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
   }, []);
 
   const handleCameraChange = React.useCallback((event: NativeEvent<CameraChangeEvent>) => {
-    const { facing, hasTorch, torch } = event.nativeEvent;
-    state.current = { ...state.current, facing, hasTorch, torch };
+    const { facing, hasTorch, torch, zoom, minZoom, maxZoom } = event.nativeEvent;
+    state.current = { ...state.current, facing, hasTorch, torch, zoom, minZoom, maxZoom };
     callbacks.current.onCameraChange?.(event.nativeEvent);
   }, []);
 
@@ -339,6 +345,7 @@ export const PoseCamera = React.forwardRef<PoseCameraRef, PoseCameraProps>(funct
       profile={props.profile}
       facing={props.facing}
       torch={props.torch}
+      zoom={props.zoom}
       delegate={props.delegate}
       // Native takes an integer: 'auto' would fail to convert and keep the last explicit rate.
       // Absent is what native reads as `auto`.

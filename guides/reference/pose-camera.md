@@ -30,6 +30,7 @@ layout moves them.
 | `profile` | `'auto' \| 'efficient' \| 'balanced' \| 'quality' \| 'unrestricted'` | `'auto'` | [performance](../performance.md) |
 | `facing` | `'auto' \| 'front' \| 'back'` | `'auto'` | auto prefers front, falls back to the other lens on the first bind |
 | `torch` | `boolean` | `false` | Keeps the light on, not a shutter flash — the session runs continuously for detection and a strobe would blind it mid-frame. Ignored by a lens with no flash; watch `hasTorch` on [`onCameraChange`](./events.md) to know whether to show the control. Survives a lens switch. |
+| `zoom` | `number` | `1` | Factor, not a step: 1 is the whole sensor. Clamped into the bound lens's range, which a lens switch re-clamps, and capped at 10. Read `zoom` back from [`onCameraChange`](./events.md) rather than assuming the number landed. For a pinch prefer [`setZoom()`](./ref-methods.md). |
 | `delegate` | `'auto' \| 'gpu' \| 'cpu'` | `'auto'` | auto verifies GPU, falls back to CPU. On Android it starts on the CPU and moves to the GPU once that has built |
 | `targetFps` | `'auto' \| number` | `'auto'` | a number replaces the governed rate, capped by the camera and by what the device can finish. [performance](../performance.md) |
 | `resolution` | `'auto' \| '480p' \| '720p' \| '1080p'` | `'auto'` | preview |

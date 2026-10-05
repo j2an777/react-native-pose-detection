@@ -16,11 +16,20 @@ extension PoseCameraView {
     emitCameraChange()
   }
 
+  func setZoom(_ value: Double) {
+    guard value != camera.zoomRequested else { return }
+    camera.setZoom(value)
+    emitCameraChange()
+  }
+
   func emitCameraChange(_ facing: String? = nil) {
     onCameraChange([
       "facing": facing ?? camera.facing.nameForJs,
       "hasTorch": camera.hasTorch,
-      "torch": camera.torchOn
+      "torch": camera.torchOn,
+      "zoom": camera.zoom,
+      "minZoom": camera.minZoom,
+      "maxZoom": camera.maxZoom
     ])
   }
   func setMaxPoses(_ value: Int) { propMaxPoses = min(max(value, 1), 5) }

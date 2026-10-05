@@ -33,6 +33,13 @@ export type PoseCameraProps = {
    * A lens switch puts the request back, so the light returns when the back camera does.
    */
   torch?: boolean;
+  /**
+   * Factor, not a step: 1 is the whole sensor, and a phone whose back camera starts wider accepts
+   * below 1. Clamped into the bound lens's range, which a switch re-clamps — read `zoom` back from
+   * `onCameraChange` rather than assuming the number landed. Prefer `setZoom()` for a pinch: a prop
+   * waits for a render, and a zoom that lags the fingers feels broken.
+   */
+  zoom?: number;
   delegate?: DelegateRequest;
   targetFps?: 'auto' | number;
   resolution?: 'auto' | ResolutionPreset;
@@ -108,6 +115,11 @@ export type PoseCameraRef = {
    * commit later. A lens with no flash takes the request and stays dark; see `torch`.
    */
   setTorch(on: boolean): Promise<void>;
+  /**
+   * Applies now rather than at the next render, which is what a pinch needs. The factor is clamped
+   * into the bound lens's range; `getState().zoom` says where it landed.
+   */
+  setZoom(factor: number): Promise<void>;
 
   /** Applies a profile now, rather than at the next render. See guides/performance.md. */
   setProfile(profile: Profile): void;

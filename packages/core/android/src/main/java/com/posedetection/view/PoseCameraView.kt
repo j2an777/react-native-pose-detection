@@ -380,6 +380,12 @@ class PoseCameraView(
         emitCameraChange()
     }
 
+    fun setZoom(value: Double) {
+        if (value == camera.zoomRequested) return
+        camera.setZoom(value)
+        emitCameraChange()
+    }
+
     fun setMaxPoses(value: Int) {
         propMaxPoses = value.coerceIn(1, 5)
     }
@@ -1496,6 +1502,9 @@ class PoseCameraView(
                 "facing" to facing,
                 "hasTorch" to camera.hasTorch,
                 "torch" to camera.torchOn,
+                "zoom" to camera.zoom,
+                "minZoom" to camera.minZoom,
+                "maxZoom" to camera.maxZoom,
             ),
         )
     }
@@ -1679,6 +1688,9 @@ class PoseCameraView(
             "limitedBy" to currentLimitedBy().forJs,
             "hasTorch" to camera.hasTorch,
             "torch" to camera.torchOn,
+            "zoom" to camera.zoom,
+            "minZoom" to camera.minZoom,
+            "maxZoom" to camera.maxZoom,
         )
 
     // endregion

@@ -61,6 +61,21 @@ final class CameraSource {
   /// Lit right now, as far as this side knows.
   var torchOn: Bool { torchRequested && hasTorch }
 
+  /// Past this it is upscaled pixels, whatever the device claims it can do. See `CameraSource+Zoom`.
+  static let zoomCeiling = 10.0
+
+  /// Main-thread mirrors of the bound device's zoom range. 1 and 1 while nothing is bound, which
+  /// reads as "no zoom available" rather than as a range a pinch could move inside.
+  var minZoom = 1.0
+  var maxZoom = 1.0
+
+  /// What was asked for, kept apart from `zoom` because a lens switch re-clamps it into the new
+  /// device's range — an ultra-wide cannot hold a telephoto's factor.
+  var zoomRequested = 1.0
+
+  /// Applied on the device right now, as far as this side knows.
+  var zoom = 1.0
+
   /// Not 60: an iPhone 15 at 60 ran warm within minutes for a skeleton that looked identical.
   static let pinnedFps = 30
 
@@ -124,6 +139,7 @@ final class CameraSource {
         self.attachPreview(session)
         self.isBound = true
         self.applyTorch()
+        self.applyZoom()
         onBound()
       }
     }
@@ -262,6 +278,7 @@ final class CameraSource {
         self.attachPreview(session)
         self.isBound = true
         self.applyTorch()
+        self.applyZoom()
         self.onBound?()
       }
     }
@@ -271,6 +288,9 @@ final class CameraSource {
     bump()
     isBound = false
     hasTorch = false
+    minZoom = 1
+    maxZoom = 1
+    zoom = 1
     onBound = nil
     previewView?.previewLayer?.session = nil
     // Strong capture: the session must stop even if the view is gone by then.
@@ -309,6 +329,8 @@ final class CameraSource {
         self.facing = landed
         // The new device opened with its torch off, and may not have one at all.
         self.applyTorch()
+        // Its zoom range is its own; the old factor is re-clamped into it.
+        self.applyZoom()
         // The preview keeps its connection across an input swap, still mirrored for the old lens.
         self.applyPreviewOrientation()
       }

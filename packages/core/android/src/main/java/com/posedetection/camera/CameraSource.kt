@@ -86,6 +86,53 @@ internal class CameraSource(
     val torchOn: Boolean
         get() = torchRequested && hasTorch
 
+    /**
+     * The device's own range. 1 is the whole sensor, so a phone whose back camera starts wider
+     * reports a minimum below 1. Both read 1 while nothing is bound, which says "no zoom here"
+     * rather than offering a range a pinch could move inside.
+     */
+    val minZoom: Double
+        get() =
+            camera
+                ?.cameraInfo
+                ?.zoomState
+                ?.value
+                ?.minZoomRatio
+                ?.toDouble() ?: 1.0
+
+    /**
+     * Capped: devices report ceilings they reach by interpolating pixels, and a skeleton drawn on
+     * upscaled mush is worse than a small one.
+     */
+    val maxZoom: Double
+        get() =
+            minOf(
+                camera
+                    ?.cameraInfo
+                    ?.zoomState
+                    ?.value
+                    ?.maxZoomRatio
+                    ?.toDouble() ?: 1.0,
+                ZOOM_CEILING,
+            )
+
+    /**
+     * What was asked for, kept apart from [zoom] because a lens switch re-clamps it into the new
+     * camera's range — an ultra-wide cannot hold a telephoto's factor.
+     */
+    var zoomRequested: Double = 1.0
+        private set
+
+    /** Applied right now, as far as this side knows. */
+    val zoom: Double
+        get() =
+            camera
+                ?.cameraInfo
+                ?.zoomState
+                ?.value
+                ?.zoomRatio
+                ?.toDouble() ?: 1.0
+
     /** Called on main with the frame rate the bound session delivers. */
     var onFrameRate: ((Int) -> Unit)? = null
 
@@ -100,6 +147,21 @@ internal class CameraSource(
     fun setTorch(on: Boolean) {
         torchRequested = on
         applyTorch()
+    }
+
+    /** Main thread. Clamps into the bound camera's range and returns what was actually asked for. */
+    fun setZoom(factor: Double): Double {
+        zoomRequested = factor.coerceIn(minZoom, maxZoom)
+        applyZoom()
+        return zoomRequested
+    }
+
+    private fun applyZoom() {
+        val control = camera?.cameraControl ?: return
+        val settled = zoomRequested.coerceIn(minZoom, maxZoom)
+        zoomRequested = settled
+        runCatching { control.setZoomRatio(settled.toFloat()) }
+            .onFailure { PoseLog.warn(LogCategory.CAMERA) { "the zoom would not change: ${it.message}" } }
     }
 
     private fun applyTorch() {
@@ -305,6 +367,8 @@ internal class CameraSource(
         this.camera = bound.camera
         // A rebind opens the camera fresh with the torch off, so put back what was asked for.
         applyTorch()
+        // The new camera's range is its own; the old factor is re-clamped into it.
+        applyZoom()
         boundPreviewSize = preview.resolutionInfo?.resolution
         boundAnalysisSize = analysis.resolutionInfo?.resolution
         val delivered = bound.range?.upper ?: PINNED_FPS
@@ -494,6 +558,9 @@ internal class CameraSource(
         const val PINNED_FPS = 30
 
         private const val ANALYSIS_SLACK = 1.125f
+
+        /** Past this it is upscaled pixels, whatever the device claims it can reach. */
+        const val ZOOM_CEILING = 10.0
 
         fun previewSizeFor(preset: String): Size =
             when (preset) {

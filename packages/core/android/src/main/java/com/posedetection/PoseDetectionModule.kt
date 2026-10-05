@@ -213,6 +213,9 @@ class PoseDetectionModule : Module() {
                 Prop("torch") { view: PoseCameraView, value: Boolean? ->
                     view.setTorch(value ?: false)
                 }
+                Prop("zoom") { view: PoseCameraView, value: Double? ->
+                    view.setZoom(value ?: 1.0)
+                }
                 Prop("maxPoses") { view: PoseCameraView, value: Int? ->
                     view.setMaxPoses(value ?: 1)
                 }
@@ -340,6 +343,10 @@ class PoseDetectionModule : Module() {
 
                 AsyncFunction("setTorch") { view: PoseCameraView, on: Boolean ->
                     view.setTorch(on)
+                }.runOnQueue(Queues.MAIN)
+
+                AsyncFunction("setZoom") { view: PoseCameraView, factor: Double ->
+                    view.setZoom(factor)
                 }.runOnQueue(Queues.MAIN)
 
                 AsyncFunction("setProfile") { view: PoseCameraView, profile: String ->

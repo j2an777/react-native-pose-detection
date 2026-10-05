@@ -58,6 +58,11 @@ export type CameraChangeEvent = {
   readonly hasTorch: boolean;
   /** Lit right now. A lens without a flash reads `false` however `torch` was set. */
   readonly torch: boolean;
+  /** Applied right now. 1 is the whole sensor, not "wide". */
+  readonly zoom: number;
+  /** The bound lens's own range. Both 1 means this camera does not zoom. */
+  readonly minZoom: number;
+  readonly maxZoom: number;
 };
 
 export type PerformanceEvent = {
